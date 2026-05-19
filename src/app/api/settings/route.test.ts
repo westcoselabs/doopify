@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   requireAdmin: vi.fn(),
-  getStoreSettings: vi.fn(),
+  getStoreSettingsLite: vi.fn(),
   updateStoreSettings: vi.fn(),
 }))
 
@@ -11,7 +11,7 @@ vi.mock('@/server/auth/require-auth', () => ({
 }))
 
 vi.mock('@/server/services/settings.service', () => ({
-  getStoreSettings: mocks.getStoreSettings,
+  getStoreSettingsLite: mocks.getStoreSettingsLite,
   updateStoreSettings: mocks.updateStoreSettings,
 }))
 
@@ -80,7 +80,7 @@ describe('PATCH /api/settings', () => {
       ok: true,
       user: { id: 'owner_1', role: 'OWNER' },
     })
-    mocks.getStoreSettings.mockResolvedValue(storeFixture())
+    mocks.getStoreSettingsLite.mockResolvedValue(storeFixture())
     mocks.updateStoreSettings.mockResolvedValue(
       storeFixture({ currency: 'CAD', timezone: 'America/Chicago' })
     )

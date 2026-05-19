@@ -1,5 +1,6 @@
 import { err, ok } from '@/lib/api'
 import { requireAdmin } from '@/server/auth/require-auth'
+import { withRouteTiming } from '@/server/observability/timing'
 import { getAdminOrderDetailByOrderNumber } from '@/server/services/admin-order-detail.service'
 import {
   OrderIdentifierResolutionError,
@@ -11,21 +12,26 @@ interface Params {
 }
 
 export async function GET(req: Request, { params }: Params) {
-  const auth = await requireAdmin(req)
-  if (!auth.ok) return auth.response
+  return withRouteTiming('GET /api/orders/[orderNumber]/detail', req, async ({ step }) => {
+    const auth = await requireAdmin(req)
+    step('auth')
+    if (!auth.ok) return auth.response
 
-  const { orderNumber } = await params
+    const { orderNumber } = await params
 
-  try {
-    const resolvedOrder = await resolveOrderIdentifier(orderNumber)
-    const detail = await getAdminOrderDetailByOrderNumber(resolvedOrder.orderNumber)
-    if (!detail) return err('Order not found', 404)
-    return ok(detail)
-  } catch (error) {
-    if (error instanceof OrderIdentifierResolutionError) {
-      return err(error.message, error.code === 'INVALID_IDENTIFIER' ? 400 : 404)
+    try {
+      const resolvedOrder = await resolveOrderIdentifier(orderNumber)
+      step('resolve_order')
+      const detail = await getAdminOrderDetailByOrderNumber(resolvedOrder.orderNumber)
+      step('load_detail')
+      if (!detail) return err('Order not found', 404)
+      return ok(detail)
+    } catch (error) {
+      if (error instanceof OrderIdentifierResolutionError) {
+        return err(error.message, error.code === 'INVALID_IDENTIFIER' ? 400 : 404)
+      }
+      console.error('[GET /api/orders/[orderNumber]/detail]', error)
+      return err('Failed to fetch order detail', 500)
     }
-    console.error('[GET /api/orders/[orderNumber]/detail]', error)
-    return err('Failed to fetch order detail', 500)
-  }
+  })
 }

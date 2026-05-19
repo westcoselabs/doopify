@@ -3,27 +3,32 @@ import { ok, err, parseBody } from '@/lib/api'
 import { centsToDollars, dollarsToCents } from '@/lib/money'
 import { SUPPORTED_STORE_CURRENCIES, SUPPORTED_STORE_TIMEZONES } from '@/lib/store-settings-options'
 import { requireAdmin } from '@/server/auth/require-auth'
-import { getStoreSettings, updateStoreSettings } from '@/server/services/settings.service'
+import { withRouteTiming } from '@/server/observability/timing'
+import { getStoreSettingsLite, updateStoreSettings } from '@/server/services/settings.service'
 
 export async function GET(req: Request) {
-  const auth = await requireAdmin(req)
-  if (!auth.ok) return auth.response
+  return withRouteTiming('GET /api/settings', req, async ({ step }) => {
+    const auth = await requireAdmin(req)
+    step('auth')
+    if (!auth.ok) return auth.response
 
-  try {
-    const store = await getStoreSettings()
-    if (!store) return err('Store not configured', 404)
+    try {
+      const store = await getStoreSettingsLite()
+      step('load_settings')
+      if (!store) return err('Store not configured', 404)
 
-    return ok({
-      ...store,
-      shippingThreshold: store.shippingThresholdCents == null ? null : centsToDollars(store.shippingThresholdCents),
-      shippingDomesticRate: centsToDollars(store.shippingDomesticRateCents),
-      shippingInternationalRate: centsToDollars(store.shippingInternationalRateCents),
-      defaultTaxRatePercent: Number(store.defaultTaxRateBps || 0) / 100,
-    })
-  } catch (e) {
-    console.error('[GET /api/settings]', e)
-    return err('Failed to fetch settings', 500)
-  }
+      return ok({
+        ...store,
+        shippingThreshold: store.shippingThresholdCents == null ? null : centsToDollars(store.shippingThresholdCents),
+        shippingDomesticRate: centsToDollars(store.shippingDomesticRateCents),
+        shippingInternationalRate: centsToDollars(store.shippingInternationalRateCents),
+        defaultTaxRatePercent: Number(store.defaultTaxRateBps || 0) / 100,
+      })
+    } catch (e) {
+      console.error('[GET /api/settings]', e)
+      return err('Failed to fetch settings', 500)
+    }
+  })
 }
 
 const updateSchema = z.object({
@@ -67,7 +72,7 @@ export async function PATCH(req: Request) {
   if (!parsed.success) return err(parsed.error.errors[0].message)
 
   try {
-    const store = await getStoreSettings()
+    const store = await getStoreSettingsLite()
     if (!store) return err('Store not found', 404)
 
     const updated = await updateStoreSettings(store.id, {

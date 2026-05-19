@@ -4,7 +4,7 @@ import {
   isTemplateEnabled,
   type EmailTemplateSettingFields,
 } from '@/server/services/email-template-settings.service'
-import { getStoreSettings } from '@/server/services/settings.service'
+import { getStoreSettingsLite } from '@/server/services/settings.service'
 
 export type OrderConfirmationInput = {
   orderId?: string
@@ -80,7 +80,7 @@ function formatMoney(amount: number, currency: string) {
 }
 
 function resolveEmailBranding(
-  store: Awaited<ReturnType<typeof getStoreSettings>>
+  store: Awaited<ReturnType<typeof getStoreSettingsLite>>
 ): EmailBranding {
   return {
     logoUrl: store?.emailLogoUrl || store?.logoUrl || null,
@@ -378,7 +378,7 @@ function buildCustomizedFulfillmentTrackingHtml(
 export function buildOrderConfirmationTestHtml(
   fields: EmailTemplateSettingFields,
   storeName: string,
-  store: Awaited<ReturnType<typeof getStoreSettings>>
+  store: Awaited<ReturnType<typeof getStoreSettingsLite>>
 ): string {
   const branding = resolveEmailBranding(store)
   const sampleInput: OrderConfirmationInput = {
@@ -402,7 +402,7 @@ export function buildOrderConfirmationTestHtml(
 export function buildFulfillmentTrackingTestHtml(
   fields: EmailTemplateSettingFields,
   storeName: string,
-  store: Awaited<ReturnType<typeof getStoreSettings>>
+  store: Awaited<ReturnType<typeof getStoreSettingsLite>>
 ): string {
   const branding = resolveEmailBranding(store)
   const sampleInput: FulfillmentTrackingEmailInput = {
@@ -418,7 +418,7 @@ export function buildFulfillmentTrackingTestHtml(
 }
 
 export async function buildOrderConfirmationEmailMessage(input: OrderConfirmationInput) {
-  const store = await getStoreSettings()
+  const store = await getStoreSettingsLite()
   const storeName = store?.name || 'Doopify'
   const from = store?.email || 'orders@doopify.local'
   const branding = resolveEmailBranding(store)
@@ -438,7 +438,7 @@ export async function buildOrderConfirmationEmailMessage(input: OrderConfirmatio
 }
 
 export async function buildAbandonedCheckoutRecoveryEmailMessage(input: AbandonedCheckoutRecoveryInput) {
-  const store = await getStoreSettings()
+  const store = await getStoreSettingsLite()
   const storeName = store?.name || 'Doopify'
   const from = store?.email || 'orders@doopify.local'
   const branding = resolveEmailBranding(store)
@@ -453,7 +453,7 @@ export async function buildAbandonedCheckoutRecoveryEmailMessage(input: Abandone
 }
 
 export async function buildFulfillmentTrackingEmailMessage(input: FulfillmentTrackingEmailInput) {
-  const store = await getStoreSettings()
+  const store = await getStoreSettingsLite()
   const storeName = store?.name || 'Doopify'
   const from = store?.email || 'orders@doopify.local'
   const branding = resolveEmailBranding(store)

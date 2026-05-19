@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 import { err, ok, parseBody, unprocessable } from '@/lib/api'
 import { requireAdmin } from '@/server/auth/require-auth'
-import { getStoreSettings } from '@/server/services/settings.service'
+import { getStoreSettingsLite } from '@/server/services/settings.service'
 
 const schema = z.object({
   address1: z.string().trim().min(1),
@@ -25,7 +25,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const store = await getStoreSettings()
+    const store = await getStoreSettingsLite()
     const provider = store?.shippingLiveProvider || null
 
     return ok({

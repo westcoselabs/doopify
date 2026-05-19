@@ -110,6 +110,14 @@ async function ensureStoreRow() {
 }
 
 export async function getStoreSettings() {
+  return getStoreSettingsFull()
+}
+
+export async function getStoreSettingsLite() {
+  return prisma.store.findFirst()
+}
+
+export async function getStoreSettingsFull() {
   return prisma.store.findFirst({
     include: {
       shippingPackages: {
@@ -298,7 +306,7 @@ export async function updateBrandKit(input: unknown) {
 }
 
 export async function getPublicStorefrontSettings() {
-  const store = await getStoreSettings()
+  const store = await getStoreSettingsLite()
   if (!store) return null
 
   const brandKit = mapStoreBrandKit(store as BrandKitRecord)

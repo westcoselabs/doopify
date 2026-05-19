@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { err, ok, parseBody, unprocessable } from '@/lib/api'
+import { withRouteTiming } from '@/server/observability/timing'
 import { getCheckoutShippingRates } from '@/server/services/checkout.service'
 
 const itemSchema = z.object({
@@ -27,20 +28,25 @@ const schema = z.object({
 })
 
 export async function POST(req: Request) {
-  const body = await parseBody(req)
-  if (!body) return err('Invalid request body')
+  return withRouteTiming('POST /api/checkout/shipping-rates', req, async ({ step }) => {
+    const body = await parseBody(req)
+    step('parse_body')
+    if (!body) return err('Invalid request body')
 
-  const parsed = schema.safeParse(body)
-  if (!parsed.success) {
-    return unprocessable('Checkout shipping-rates payload is invalid', parsed.error.flatten())
-  }
+    const parsed = schema.safeParse(body)
+    step('validate')
+    if (!parsed.success) {
+      return unprocessable('Checkout shipping-rates payload is invalid', parsed.error.flatten())
+    }
 
-  try {
-    const data = await getCheckoutShippingRates(parsed.data)
-    return ok(data)
-  } catch (error) {
-    console.error('[POST /api/checkout/shipping-rates]', error)
-    const message = error instanceof Error ? error.message : 'Failed to load shipping rates'
-    return err(message, 400)
-  }
+    try {
+      const data = await getCheckoutShippingRates(parsed.data)
+      step('load_rates')
+      return ok(data)
+    } catch (error) {
+      console.error('[POST /api/checkout/shipping-rates]', error)
+      const message = error instanceof Error ? error.message : 'Failed to load shipping rates'
+      return err(message, 400)
+    }
+  })
 }

@@ -272,3 +272,66 @@ A tiny reusable dev-only server timing helper is recommended next, but was not a
 - Integrations list: removed per-row events/secrets relation arrays from list response; replaced with counts and summary fields for list view.
 - Discounts list: replaced full discount row return with explicit list-select fields only.
 - Admin initial load: four high-traffic contexts now request `25` rows instead of `100` on first fetch (75% fewer rows per initial request path).
+
+## Phase C Implementation Notes
+
+### What Changed
+
+- Added split settings read profiles in `src/server/services/settings.service.ts`:
+  - `getStoreSettingsFull()` keeps relation-heavy shipping/tax includes for checkout/shipping-critical consumers.
+  - `getStoreSettingsLite()` reads store scalars only (no heavy relation includes).
+  - `getStoreSettings()` remains a full-profile compatibility alias to avoid breaking existing critical paths.
+- Switched safe consumers to lite profile:
+  - `GET/PATCH /api/settings`
+  - `getPublicStorefrontSettings()` and `GET /api/storefront/settings`
+  - email/template and note-email composition reads
+  - shipping location validation read (`/api/settings/shipping/locations/validate`)
+- Deferred settings workspace non-visible fetches in `src/components/settings/SettingsWorkspace.js`:
+  - Shipping section now loads only shipping profile + setup status.
+  - Taxes section now loads only tax rules/settings + shipping-zone tax region data.
+  - Removed eager setup diagnostics fetch for `payments/shipping/email`; setup diagnostics now load only on the Setup section.
+- Added reusable dev/staging timing helper:
+  - `src/server/observability/timing.ts`
+  - opt-in via `DOOPIFY_ROUTE_TIMING=1`
+  - suppressed in production-like environments by default
+  - logs route, total duration, optional step durations, status code, and request id when available.
+- Added route timing instrumentation to:
+  - `GET /api/orders`
+  - `GET /api/orders/[orderNumber]/detail`
+  - `GET /api/settings`
+  - `POST /api/checkout/create`
+  - `POST /api/checkout/shipping-rates`
+  - `POST /api/webhooks/stripe`
+
+### Settings Consumers Using Lite vs Full
+
+- Lite:
+  - admin general settings reads (`/api/settings`)
+  - storefront-safe settings reads (`getPublicStorefrontSettings`)
+  - non-checkout email/store identity reads (template/note email composition, send-test)
+  - shipping location pre-validation provider lookup
+- Full:
+  - checkout pricing and shipping quote generation paths
+  - shipping label and shipping setup paths that rely on package/location/zone/rate/tax relations
+  - abandoned checkout recovery pricing paths
+  - any path still calling `getStoreSettings()` (compat alias to full)
+
+### Fetch Deferrals Applied
+
+- Settings workspace now avoids fetching tax/rules/zones data while user is on Shipping tab.
+- Settings workspace now avoids fetching shipping setup/profile payloads while user is on Taxes tab.
+- Setup diagnostics payload is no longer fetched when user opens Payments/Shipping/Email tabs.
+- Webhook deliveries workspace already deferred detail payload fetches (diagnostics/retry detail) until row actions; no additional behavior change was required there in this phase.
+
+### Timing Coverage Notes
+
+- Timing is opt-in and response-shape-neutral.
+- Logging includes step checkpoints only (no payload logging, no secrets).
+- Production remains quiet by default unless explicitly changed in code/config.
+
+### Remaining Unresolved Performance Items
+
+- Checkout/create and shipping-rates still include external provider/Stripe latency by design.
+- Stripe webhook processing remains synchronous and correctness-first; no side-effect offloading done in this phase.
+- Delivery logs runner-status still loads on page entry because the panel is visible by default.
+- Additional DTO tightening remains for some read-heavy endpoints beyond Phase B/C scope.

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   requireAdmin: vi.fn(),
-  getStoreSettings: vi.fn(),
+  getStoreSettingsLite: vi.fn(),
 }))
 
 vi.mock('@/server/auth/require-auth', () => ({
@@ -10,7 +10,7 @@ vi.mock('@/server/auth/require-auth', () => ({
 }))
 
 vi.mock('@/server/services/settings.service', () => ({
-  getStoreSettings: mocks.getStoreSettings,
+  getStoreSettingsLite: mocks.getStoreSettingsLite,
 }))
 
 import { POST } from './route'
@@ -25,7 +25,7 @@ describe('POST /api/settings/shipping/locations/validate', () => {
       ok: true,
       user: { id: 'owner_1', email: 'owner@example.com', role: 'OWNER' },
     })
-    mocks.getStoreSettings.mockResolvedValue({
+    mocks.getStoreSettingsLite.mockResolvedValue({
       shippingLiveProvider: 'SHIPPO',
     })
 

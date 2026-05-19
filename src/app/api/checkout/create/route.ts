@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 import { err, ok, parseBody, unprocessable } from '@/lib/api'
+import { withRouteTiming } from '@/server/observability/timing'
 import { createCheckoutPaymentIntent } from '@/server/services/checkout.service'
 
 const itemSchema = z.object({
@@ -31,22 +32,27 @@ const schema = z.object({
 })
 
 export async function POST(req: Request) {
-  const body = await parseBody(req)
-  if (!body) {
-    return err('Invalid request body')
-  }
+  return withRouteTiming('POST /api/checkout/create', req, async ({ step }) => {
+    const body = await parseBody(req)
+    step('parse_body')
+    if (!body) {
+      return err('Invalid request body')
+    }
 
-  const parsed = schema.safeParse(body)
-  if (!parsed.success) {
-    return unprocessable('Checkout payload is invalid', parsed.error.flatten())
-  }
+    const parsed = schema.safeParse(body)
+    step('validate')
+    if (!parsed.success) {
+      return unprocessable('Checkout payload is invalid', parsed.error.flatten())
+    }
 
-  try {
-    const checkout = await createCheckoutPaymentIntent(parsed.data)
-    return ok(checkout, 201)
-  } catch (error) {
-    console.error('[POST /api/checkout/create]', error)
-    const message = error instanceof Error ? error.message : 'Failed to create checkout payment intent'
-    return err(message, 400)
-  }
+    try {
+      const checkout = await createCheckoutPaymentIntent(parsed.data)
+      step('create_payment_intent')
+      return ok(checkout, 201)
+    } catch (error) {
+      console.error('[POST /api/checkout/create]', error)
+      const message = error instanceof Error ? error.message : 'Failed to create checkout payment intent'
+      return err(message, 400)
+    }
+  })
 }

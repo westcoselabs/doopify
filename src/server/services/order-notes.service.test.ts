@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
     },
     $transaction: vi.fn(),
   },
-  getStoreSettings: vi.fn(),
+  getStoreSettingsLite: vi.fn(),
   sendTrackedEmail: vi.fn(),
 }))
 
@@ -20,7 +20,7 @@ vi.mock('@/lib/prisma', () => ({
 }))
 
 vi.mock('@/server/services/settings.service', () => ({
-  getStoreSettings: mocks.getStoreSettings,
+  getStoreSettingsLite: mocks.getStoreSettingsLite,
 }))
 
 vi.mock('@/server/services/email-delivery.service', () => ({
@@ -48,7 +48,7 @@ describe('updateOrderNotes', () => {
       note: 'Internal note',
     })
     mocks.prisma.orderEvent.create.mockResolvedValue({})
-    mocks.getStoreSettings.mockResolvedValue({
+    mocks.getStoreSettingsLite.mockResolvedValue({
       name: 'Doopify',
       email: 'orders@doopify.local',
     })
@@ -142,4 +142,3 @@ describe('updateOrderNotes', () => {
     })
   })
 })
-

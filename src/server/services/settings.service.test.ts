@@ -14,7 +14,14 @@ vi.mock('@/lib/prisma', () => ({
   prisma: mocks.prisma,
 }))
 
-import { getBrandKit, getPublicStorefrontSettings, updateBrandKit } from './settings.service'
+import {
+  getBrandKit,
+  getPublicStorefrontSettings,
+  getStoreSettings,
+  getStoreSettingsFull,
+  getStoreSettingsLite,
+  updateBrandKit,
+} from './settings.service'
 
 function storeFixture(overrides: Record<string, unknown> = {}) {
   return {
@@ -230,5 +237,42 @@ describe('settings.service brand kit', () => {
     expect(result).not.toHaveProperty('domain')
     expect(result).not.toHaveProperty('shippingZones')
     expect(result).not.toHaveProperty('taxRules')
+  })
+
+  it('getStoreSettingsLite fetches store scalars without heavy relation includes', async () => {
+    mocks.prisma.store.findFirst.mockResolvedValue(storeFixture())
+
+    await getStoreSettingsLite()
+
+    expect(mocks.prisma.store.findFirst).toHaveBeenCalledWith()
+  })
+
+  it('getStoreSettingsFull and getStoreSettings keep heavy includes for checkout/shipping consumers', async () => {
+    mocks.prisma.store.findFirst.mockResolvedValue(storeFixture())
+
+    await getStoreSettingsFull()
+    await getStoreSettings()
+
+    const [fullCall, defaultCall] = mocks.prisma.store.findFirst.mock.calls
+    expect(fullCall[0]).toEqual(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          shippingPackages: expect.any(Object),
+          shippingLocations: expect.any(Object),
+          shippingZones: expect.any(Object),
+          taxRules: expect.any(Object),
+        }),
+      })
+    )
+    expect(defaultCall[0]).toEqual(
+      expect.objectContaining({
+        include: expect.objectContaining({
+          shippingPackages: expect.any(Object),
+          shippingLocations: expect.any(Object),
+          shippingZones: expect.any(Object),
+          taxRules: expect.any(Object),
+        }),
+      })
+    )
   })
 })

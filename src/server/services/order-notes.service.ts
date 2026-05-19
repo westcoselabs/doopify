@@ -1,6 +1,6 @@
 import { prisma } from '@/lib/prisma'
 import { sendTrackedEmail } from '@/server/services/email-delivery.service'
-import { getStoreSettings } from '@/server/services/settings.service'
+import { getStoreSettingsLite } from '@/server/services/settings.service'
 
 function normalizeNote(value: string | null | undefined) {
   if (value == null) return null
@@ -107,7 +107,7 @@ export async function updateOrderNotes(input: UpdateOrderNotesInput) {
   if (shouldSendCustomerEmail && normalizedCustomerNote && order.email) {
     emailDelivery = { attempted: true, sent: false, error: null }
     try {
-      const store = await getStoreSettings()
+      const store = await getStoreSettingsLite()
       const storeName = store?.name || 'Doopify'
       const from = store?.email || 'orders@doopify.local'
       const subject = `${storeName} update for order #${order.orderNumber}`
@@ -141,4 +141,3 @@ export async function updateOrderNotes(input: UpdateOrderNotesInput) {
     emailDelivery,
   }
 }
-

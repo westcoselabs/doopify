@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  getStoreSettings: vi.fn(),
+  getStoreSettingsLite: vi.fn(),
   getEmailTemplateSetting: vi.fn(),
 }))
 
 vi.mock('@/server/services/settings.service', () => ({
-  getStoreSettings: mocks.getStoreSettings,
+  getStoreSettingsLite: mocks.getStoreSettingsLite,
 }))
 
 vi.mock('@/server/services/email-template-settings.service', () => ({
@@ -32,7 +32,7 @@ const defaultFields = {
 describe('email template service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.getStoreSettings.mockResolvedValue({
+    mocks.getStoreSettingsLite.mockResolvedValue({
       name: 'Doopify & Co',
       email: 'orders@example.com',
     })

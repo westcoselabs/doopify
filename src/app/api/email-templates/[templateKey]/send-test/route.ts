@@ -8,7 +8,7 @@ import {
   isEditableTemplateKey,
   renderTemplateVariables,
 } from '@/server/services/email-template-settings.service'
-import { getStoreSettings } from '@/server/services/settings.service'
+import { getStoreSettingsLite } from '@/server/services/settings.service'
 import { buildOrderConfirmationTestHtml, buildFulfillmentTrackingTestHtml } from '@/server/services/email-template.service'
 
 export const runtime = 'nodejs'
@@ -50,7 +50,7 @@ export async function POST(req: Request, { params }: Params) {
   try {
     const [setting, store] = await Promise.all([
       getEmailTemplateSetting(templateKey),
-      getStoreSettings(),
+      getStoreSettingsLite(),
     ])
 
     const storeName = store?.name || 'Doopify Store'

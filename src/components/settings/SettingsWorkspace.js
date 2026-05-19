@@ -789,7 +789,10 @@ export default function SettingsWorkspace() {
   const [sessionUser, setSessionUser] = useState(null);
   const [shippingConfigLoading, setShippingConfigLoading] = useState(false);
   const [shippingConfigError, setShippingConfigError] = useState('');
-  const [shippingConfigLoaded, setShippingConfigLoaded] = useState(false);
+  const [shippingConfigLoadedBySection, setShippingConfigLoadedBySection] = useState({
+    shipping: false,
+    taxes: false,
+  });
   const [shippingZones, setShippingZones] = useState([]);
   const [taxRules, setTaxRules] = useState([]);
   const [taxSettings, setTaxSettings] = useState(EMPTY_TAX_SETTINGS);
@@ -987,7 +990,10 @@ export default function SettingsWorkspace() {
   }
 
   useEffect(() => {
-    if (!['shipping', 'taxes'].includes(activeSection) || shippingConfigLoaded) {
+    if (!['shipping', 'taxes'].includes(activeSection)) {
+      return;
+    }
+    if (shippingConfigLoadedBySection[activeSection]) {
       return;
     }
 
@@ -997,12 +1003,23 @@ export default function SettingsWorkspace() {
       setShippingConfigLoading(true);
       setShippingConfigError('');
       try {
-        const [zonesData, taxRulesData, taxSettingsData, shippingSettingsData, shippingSetupData] = await Promise.all([
+        if (activeSection === 'shipping') {
+          const [shippingSettingsData, shippingSetupData] = await Promise.all([
+            fetch('/api/settings/shipping', { cache: 'no-store' }).then(parseApiJson),
+            fetch('/api/settings/shipping/setup-status', { cache: 'no-store' }).then(parseApiJson),
+          ]);
+
+          if (cancelled) return;
+          setShippingSettingsProfile(shippingSettingsData || null);
+          setShippingSetupStatus(shippingSetupData || null);
+          setShippingConfigLoadedBySection((current) => ({ ...current, shipping: true }));
+          return;
+        }
+
+        const [zonesData, taxRulesData, taxSettingsData] = await Promise.all([
           fetch('/api/settings/shipping-zones').then(parseApiJson),
           fetch('/api/settings/tax-rules').then(parseApiJson),
           fetch('/api/settings/tax', { cache: 'no-store' }).then(parseApiJson),
-          fetch('/api/settings/shipping', { cache: 'no-store' }).then(parseApiJson),
-          fetch('/api/settings/shipping/setup-status', { cache: 'no-store' }).then(parseApiJson),
         ]);
 
         if (cancelled) return;
@@ -1018,9 +1035,7 @@ export default function SettingsWorkspace() {
           originState: taxSettingsData?.originState || '',
           originPostalCode: taxSettingsData?.originPostalCode || '',
         });
-        setShippingSettingsProfile(shippingSettingsData || null);
-        setShippingSetupStatus(shippingSetupData || null);
-        setShippingConfigLoaded(true);
+        setShippingConfigLoadedBySection((current) => ({ ...current, taxes: true }));
       } catch (loadError) {
         if (cancelled) return;
         setShippingConfigError(loadError instanceof Error ? loadError.message : 'Failed to load shipping configuration');
@@ -1034,11 +1049,10 @@ export default function SettingsWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [activeSection, shippingConfigLoaded]);
+  }, [activeSection, shippingConfigLoadedBySection]);
 
   useEffect(() => {
-    const shouldLoadSetupDiagnostics = ['setup', 'payments', 'shipping', 'email'].includes(activeSection);
-    if (!shouldLoadSetupDiagnostics || setupLoaded) {
+    if (activeSection !== 'setup' || setupLoaded) {
       return;
     }
 
@@ -1894,32 +1908,58 @@ export default function SettingsWorkspace() {
     );
   }
 
-  async function refreshShippingConfig() {
-    setShippingConfigLoaded(false);
-    setShippingConfigLoading(false);
+  async function refreshShippingConfig(scope = activeSection) {
+    const shouldLoadShipping = scope === 'shipping' || scope === 'all';
+    const shouldLoadTaxes = scope === 'taxes' || scope === 'all';
+
+    setShippingConfigLoading(true);
     setShippingConfigError('');
-    const [zonesData, taxRulesData, taxSettingsData, shippingSettingsData, shippingSetupData] = await Promise.all([
-      fetch('/api/settings/shipping-zones').then(parseApiJson),
-      fetch('/api/settings/tax-rules').then(parseApiJson),
-      fetch('/api/settings/tax', { cache: 'no-store' }).then(parseApiJson),
-      fetch('/api/settings/shipping', { cache: 'no-store' }).then(parseApiJson),
-      fetch('/api/settings/shipping/setup-status', { cache: 'no-store' }).then(parseApiJson),
-    ]);
-    setShippingZones((zonesData || []).map(toZoneForm));
-    setTaxRules((taxRulesData || []).map(toTaxForm));
-    setTaxSettings({
-      enabled: Boolean(taxSettingsData?.enabled),
-      strategy: taxSettingsData?.strategy || 'MANUAL',
-      defaultTaxRatePercent: String(Number(taxSettingsData?.defaultTaxRatePercent ?? 0)),
-      taxShipping: Boolean(taxSettingsData?.taxShipping),
-      pricesIncludeTax: Boolean(taxSettingsData?.pricesIncludeTax),
-      originCountry: taxSettingsData?.originCountry || '',
-      originState: taxSettingsData?.originState || '',
-      originPostalCode: taxSettingsData?.originPostalCode || '',
-    });
-    setShippingSettingsProfile(shippingSettingsData || null);
-    setShippingSetupStatus(shippingSetupData || null);
-    setShippingConfigLoaded(true);
+    setShippingConfigLoadedBySection((current) => ({
+      shipping: shouldLoadShipping ? false : current.shipping,
+      taxes: shouldLoadTaxes ? false : current.taxes,
+    }));
+
+    try {
+      if (shouldLoadShipping) {
+        const [shippingSettingsData, shippingSetupData] = await Promise.all([
+          fetch('/api/settings/shipping', { cache: 'no-store' }).then(parseApiJson),
+          fetch('/api/settings/shipping/setup-status', { cache: 'no-store' }).then(parseApiJson),
+        ]);
+        setShippingSettingsProfile(shippingSettingsData || null);
+        setShippingSetupStatus(shippingSetupData || null);
+      }
+
+      if (shouldLoadTaxes) {
+        const [zonesData, taxRulesData, taxSettingsData] = await Promise.all([
+          fetch('/api/settings/shipping-zones').then(parseApiJson),
+          fetch('/api/settings/tax-rules').then(parseApiJson),
+          fetch('/api/settings/tax', { cache: 'no-store' }).then(parseApiJson),
+        ]);
+        setShippingZones((zonesData || []).map(toZoneForm));
+        setTaxRules((taxRulesData || []).map(toTaxForm));
+        setTaxSettings({
+          enabled: Boolean(taxSettingsData?.enabled),
+          strategy: taxSettingsData?.strategy || 'MANUAL',
+          defaultTaxRatePercent: String(Number(taxSettingsData?.defaultTaxRatePercent ?? 0)),
+          taxShipping: Boolean(taxSettingsData?.taxShipping),
+          pricesIncludeTax: Boolean(taxSettingsData?.pricesIncludeTax),
+          originCountry: taxSettingsData?.originCountry || '',
+          originState: taxSettingsData?.originState || '',
+          originPostalCode: taxSettingsData?.originPostalCode || '',
+        });
+      }
+
+      setShippingConfigLoadedBySection((current) => ({
+        shipping: shouldLoadShipping ? true : current.shipping,
+        taxes: shouldLoadTaxes ? true : current.taxes,
+      }));
+    } catch (refreshError) {
+      setShippingConfigError(
+        refreshError instanceof Error ? refreshError.message : 'Failed to load shipping configuration'
+      );
+    } finally {
+      setShippingConfigLoading(false);
+    }
   }
 
   const taxRegionSummaryRows = useMemo(() => {
@@ -2337,6 +2377,12 @@ export default function SettingsWorkspace() {
     activeSection === 'shipping' ? shippingModeSaveError : activeSection === 'brand-kit' ? brandKitError : '';
   const showPaymentsInitialProviderSkeleton =
     activeSection === 'payments' && !providerStatusLoaded && !providerStatusError;
+  const activeSectionShippingConfigLoaded =
+    activeSection === 'shipping'
+      ? shippingConfigLoadedBySection.shipping
+      : activeSection === 'taxes'
+        ? shippingConfigLoadedBySection.taxes
+        : true;
 
   const showHeaderSaveButton = activeSection === 'brand-kit' || activeSection === 'shipping';
   const activeTabLoading = isSettingsTabLoadingState({
@@ -2346,7 +2392,7 @@ export default function SettingsWorkspace() {
     brandKitLoading,
     brandKitLoaded,
     shippingConfigLoading,
-    shippingConfigLoaded,
+    shippingConfigLoaded: activeSectionShippingConfigLoaded,
     providerStatusLoading,
     providerStatusLoaded,
     paymentActivityLoading,
