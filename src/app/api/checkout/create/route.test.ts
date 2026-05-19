@@ -1,14 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  createCheckoutPaymentIntent: vi.fn(),
+  runCreateCheckoutWorkflow: vi.fn(),
 }))
 
-vi.mock('@/server/services/checkout.service', () => ({
-  createCheckoutPaymentIntent: mocks.createCheckoutPaymentIntent,
+vi.mock('@/workflows/checkout/create-checkout.workflow', () => ({
+  runCreateCheckoutWorkflow: mocks.runCreateCheckoutWorkflow,
 }))
 
 import { POST } from './route'
+
+const originalEnv = { ...process.env }
 
 const validPayload = {
   email: 'ada@example.com',
@@ -26,6 +28,7 @@ const validPayload = {
 describe('POST /api/checkout/create', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    process.env = { ...originalEnv }
   })
 
   it('returns 422 when checkout payload validation fails', async () => {
@@ -44,11 +47,11 @@ describe('POST /api/checkout/create', () => {
       success: false,
       error: 'Checkout payload is invalid',
     })
-    expect(mocks.createCheckoutPaymentIntent).not.toHaveBeenCalled()
+    expect(mocks.runCreateCheckoutWorkflow).not.toHaveBeenCalled()
   })
 
   it('returns 400 with the service error for checkout failures', async () => {
-    mocks.createCheckoutPaymentIntent.mockRejectedValue(
+    mocks.runCreateCheckoutWorkflow.mockRejectedValue(
       new Error('Only 0 units left for Test Shirt')
     )
 
@@ -67,7 +70,7 @@ describe('POST /api/checkout/create', () => {
   })
 
   it('passes an optional discount code to checkout creation', async () => {
-    mocks.createCheckoutPaymentIntent.mockResolvedValue({
+    mocks.runCreateCheckoutWorkflow.mockResolvedValue({
       checkoutSessionId: 'checkout_1',
       paymentIntentId: 'pi_test',
       clientSecret: 'secret_test',
@@ -91,14 +94,19 @@ describe('POST /api/checkout/create', () => {
     )
 
     expect(response.status).toBe(201)
-    expect(mocks.createCheckoutPaymentIntent).toHaveBeenCalledWith({
-      ...validPayload,
-      discountCode: 'LAUNCH10',
-    })
+    expect(mocks.runCreateCheckoutWorkflow).toHaveBeenCalledWith(
+      {
+        ...validPayload,
+        discountCode: 'LAUNCH10',
+      },
+      expect.objectContaining({
+        step: expect.any(Function),
+      })
+    )
   })
 
   it('passes selected shipping quote id for server-side revalidation', async () => {
-    mocks.createCheckoutPaymentIntent.mockResolvedValue({
+    mocks.runCreateCheckoutWorkflow.mockResolvedValue({
       checkoutSessionId: 'checkout_2',
       paymentIntentId: 'pi_test_2',
       clientSecret: 'secret_test_2',
@@ -122,9 +130,51 @@ describe('POST /api/checkout/create', () => {
     )
 
     expect(response.status).toBe(201)
-    expect(mocks.createCheckoutPaymentIntent).toHaveBeenCalledWith({
-      ...validPayload,
-      selectedShippingQuoteId: 'manual:fallback:domestic',
+    expect(mocks.runCreateCheckoutWorkflow).toHaveBeenCalledWith(
+      {
+        ...validPayload,
+        selectedShippingQuoteId: 'manual:fallback:domestic',
+      },
+      expect.objectContaining({
+        step: expect.any(Function),
+      })
+    )
+  })
+
+  it('keeps route timing instrumentation active when enabled', async () => {
+    process.env.DOOPIFY_ROUTE_TIMING = '1'
+    process.env.NODE_ENV = 'test'
+    process.env.VERCEL_ENV = 'preview'
+    const logSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
+
+    mocks.runCreateCheckoutWorkflow.mockResolvedValue({
+      checkoutSessionId: 'checkout_timing',
+      paymentIntentId: 'pi_timing',
+      clientSecret: 'secret_timing',
+      currency: 'USD',
+      subtotal: 50,
+      shippingAmount: 9.99,
+      taxAmount: 0,
+      discountAmount: 0,
+      total: 59.99,
+      items: [],
     })
+
+    const response = await POST(
+      new Request('http://localhost/api/checkout/create', {
+        method: 'POST',
+        body: JSON.stringify(validPayload),
+      })
+    )
+
+    expect(response.status).toBe(201)
+    expect(logSpy).toHaveBeenCalled()
+    const routeTimingCall = logSpy.mock.calls.find(
+      (call) =>
+        call[0] === '[route-timing]' &&
+        typeof call[1] === 'string' &&
+        call[1].includes('"route":"POST /api/checkout/create"')
+    )
+    expect(routeTimingCall).toBeTruthy()
   })
 })

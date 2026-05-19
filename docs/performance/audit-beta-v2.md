@@ -376,3 +376,61 @@ A tiny reusable dev-only server timing helper is recommended next, but was not a
   - `GET /api/orders/[orderNumber]/detail/timeline`
   - `GET /api/orders/[orderNumber]/detail/fulfillment`
 - Coverage includes auth gating, safe invalid identifier behavior, 404 behavior on missing order, and success payload shape checks.
+
+## Phase D2 Implementation Notes (Checkout Create Workflow Wrapper)
+
+### Goal
+
+- Add a tiny, explicit workflow wrapper around `POST /api/checkout/create` so the flow is easier to reason about and test without changing checkout truth behavior.
+
+### What Was Wrapped
+
+- Added minimal workflow engine primitives:
+  - `src/workflows/engine/types.ts`
+  - `src/workflows/engine/define-workflow.ts`
+- Added checkout workflow module:
+  - `src/workflows/checkout/create-checkout.workflow.ts`
+- Switched route integration:
+  - `src/app/api/checkout/create/route.ts` now calls `runCreateCheckoutWorkflow(...)` instead of calling the checkout service directly.
+
+### Explicit Checkout Workflow Steps (Declarative)
+
+- `validate_request_payload`
+- `load_live_cart_items`
+- `calculate_pricing`
+- `resolve_shipping_selection`
+- `create_or_update_checkout_session`
+- `create_payment_intent`
+- `emit_checkout_created_event`
+- `build_response`
+
+### Behavior Confirmed Unchanged
+
+- Checkout totals logic is still server-owned and still executed by existing `createCheckoutPaymentIntent`.
+- Browser-provided totals remain ignored as before.
+- Variant/inventory validation failure paths still fail before Stripe PaymentIntent creation.
+- Shipping selection revalidation still happens before PaymentIntent creation.
+- `checkout.created` event emission behavior remains in the existing checkout service path.
+- Route response status and body shape for successful checkout creation are unchanged.
+- Stripe webhook/order finalization behavior was not touched.
+
+### Timing
+
+- Existing route timing wrapper remains active and unchanged.
+- Added safe workflow timing checkpoints only (`workflow.checkout_create.start`, `workflow.checkout_create.complete`) through the existing route timing helper.
+- No sensitive payload/secret/customer/card logging added.
+
+### Tests Added/Updated
+
+- Updated route test mocks to target the workflow wrapper entrypoint:
+  - `src/app/api/checkout/create/route.test.ts`
+- Added workflow wrapper tests:
+  - `src/workflows/checkout/create-checkout.workflow.test.ts`
+  - verifies named step list
+  - verifies delegation to existing checkout service
+  - verifies error passthrough behavior
+
+### Future Workflow Candidates
+
+- Next safe candidate: `POST /api/checkout/shipping-rates` wrapper with explicit step names while preserving existing shipping-service behavior.
+- Keep Stripe webhook and paid-order finalization flows correctness-first and unchanged until dedicated hardening review.

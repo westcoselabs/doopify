@@ -2,7 +2,7 @@ import { z } from 'zod'
 
 import { err, ok, parseBody, unprocessable } from '@/lib/api'
 import { withRouteTiming } from '@/server/observability/timing'
-import { createCheckoutPaymentIntent } from '@/server/services/checkout.service'
+import { runCreateCheckoutWorkflow } from '@/workflows/checkout/create-checkout.workflow'
 
 const itemSchema = z.object({
   variantId: z.string().min(1),
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
     }
 
     try {
-      const checkout = await createCheckoutPaymentIntent(parsed.data)
+      const checkout = await runCreateCheckoutWorkflow(parsed.data, { step })
       step('create_payment_intent')
       return ok(checkout, 201)
     } catch (error) {
