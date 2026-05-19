@@ -44,10 +44,14 @@ vi.mock('@/server/payments/stripe-runtime.service', () => ({
 
 import { POST } from './route'
 
+const originalEnv = { ...process.env }
+
 describe('Stripe webhook route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    process.env = { ...originalEnv }
     mocks.verifyStripeWebhookSignature.mockImplementation(() => undefined)
+    mocks.processStripeWebhookEvent.mockResolvedValue(undefined)
     mocks.getStripeRuntimeConnection.mockResolvedValue({
       source: 'env',
       verified: false,
@@ -251,6 +255,7 @@ describe('Stripe webhook route', () => {
         type: 'payment_intent.succeeded',
       })
     )
+    expect(mocks.processStripeWebhookEvent).toHaveBeenCalledTimes(1)
     expect(mocks.storeVerifiedWebhookPayload).toHaveBeenCalledWith({
       provider: 'stripe',
       providerEventId: 'evt_test',
@@ -296,5 +301,43 @@ describe('Stripe webhook route', () => {
       retryable: true,
     })
     expect(mocks.markWebhookDeliveryProcessed).not.toHaveBeenCalled()
+  })
+
+  it('keeps webhook route timing instrumentation active when enabled', async () => {
+    process.env.DOOPIFY_ROUTE_TIMING = '1'
+    process.env.NODE_ENV = 'test'
+    process.env.VERCEL_ENV = 'preview'
+    const logSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
+
+    const response = await POST(
+      new Request('http://localhost/api/webhooks/stripe', {
+        method: 'POST',
+        headers: {
+          'stripe-signature': 'good-signature',
+        },
+        body: JSON.stringify({
+          id: 'evt_timing',
+          type: 'payment_intent.succeeded',
+          data: {
+            object: {
+              id: 'pi_timing',
+              amount: 5999,
+              currency: 'usd',
+              status: 'succeeded',
+            },
+          },
+        }),
+      })
+    )
+
+    expect(response.status).toBe(200)
+    expect(mocks.processStripeWebhookEvent).toHaveBeenCalledTimes(1)
+    const routeTimingCall = logSpy.mock.calls.find(
+      (call) =>
+        call[0] === '[route-timing]' &&
+        typeof call[1] === 'string' &&
+        call[1].includes('"route":"POST /api/webhooks/stripe"')
+    )
+    expect(routeTimingCall).toBeTruthy()
   })
 })

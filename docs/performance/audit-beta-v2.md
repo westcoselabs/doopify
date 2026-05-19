@@ -434,3 +434,39 @@ A tiny reusable dev-only server timing helper is recommended next, but was not a
 
 - Next safe candidate: `POST /api/checkout/shipping-rates` wrapper with explicit step names while preserving existing shipping-service behavior.
 - Keep Stripe webhook and paid-order finalization flows correctness-first and unchanged until dedicated hardening review.
+
+## Phase D3 Implementation Notes (Paid-Order Finalization Workflow Wrapper)
+
+### Goal
+
+- Add a tiny, explicit workflow wrapper around paid-order finalization for `payment_intent.succeeded` while preserving exact webhook and checkout-truth behavior.
+
+### What Was Wrapped
+
+- Added paid-order finalization workflow:
+  - `src/workflows/checkout/finalize-paid-order.workflow.ts`
+- Updated webhook event processor:
+  - `src/server/services/stripe-webhook.service.ts`
+  - `payment_intent.succeeded` now calls `runFinalizePaidOrderWorkflow({ paymentIntent })`.
+
+### What Stayed Unchanged
+
+- Stripe signature verification remains in `POST /api/webhooks/stripe`.
+- Raw webhook body handling remains `await req.text()` in route handler.
+- Webhook secret selection remains via existing `getStripeWebhookSecretSelection()`.
+- Duplicate/idempotent finalization remains owned by existing `completeCheckoutFromPaymentIntent`.
+- Inventory decrement timing remains owned by existing paid-order finalization service path.
+- Payment record behavior, discount usage behavior, and order lifecycle event behavior remain in existing service path.
+- Webhook route response/status behavior remains unchanged (`200`/`400`/`500`/`503` behavior preserved).
+
+### Intentionally Not Extracted
+
+- No Stripe verification logic was moved into workflow.
+- No raw request payload parsing/validation logic was moved into workflow.
+- No idempotency logic was duplicated or reimplemented in workflow.
+- No `completeCheckoutFromPaymentIntent` internals were rewritten.
+
+### Why Signature Verification Stays Outside Workflow
+
+- Signature verification must remain at the HTTP boundary before any event processing side effects.
+- This preserves security invariants and keeps workflow scope limited to already-verified payment intent finalization context.
