@@ -40,7 +40,6 @@ const productSummarySelect = {
     orderBy: { position: 'asc' as const },
   },
   media: {
-    where: { isFeatured: true },
     select: {
       id: true,
       isFeatured: true,
@@ -51,7 +50,11 @@ const productSummarySelect = {
       },
     },
     take: 1,
-    orderBy: { position: 'asc' as const },
+    orderBy: [
+      { isFeatured: 'desc' as const },
+      { position: 'asc' as const },
+      { id: 'asc' as const },
+    ],
   },
 } satisfies Prisma.ProductSelect
 
@@ -345,7 +348,7 @@ export async function getProducts(params: {
 }
 
 // Maps the lightweight summary select result to the public API shape.
-// Variants have price in dollars, media is the single featured item only, options is always [].
+// Variants have price in dollars, media is one deterministic item (featured-first, then position), options is always [].
 function toProductSummaryResponse(product: any) {
   const featuredMedia = product.media?.[0] ?? null
   return {
@@ -370,7 +373,7 @@ function toProductSummaryResponse(product: any) {
       ? [
           {
             id: featuredMedia.id,
-            isFeatured: true,
+            isFeatured: Boolean(featuredMedia.isFeatured),
             position: featuredMedia.position ?? 0,
             assetId: featuredMedia.assetId,
             asset: featuredMedia.asset

@@ -5,6 +5,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { useCart } from '@/context/CartContext';
+import {
+  isCheckoutEmailValid,
+  normalizeCheckoutEmail,
+} from './checkout-create.helpers';
 
 const EMPTY_ADDRESS = {
   firstName: '',
@@ -391,9 +395,13 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
     [billingAddress, billingSameAsShipping, shippingAddress]
   );
   const checkoutInitializationFailed = Boolean(error && !paymentReady);
+  const normalizedEmail = normalizeCheckoutEmail({ stateEmail: email });
+  const emailIsValid = isCheckoutEmailValid(normalizedEmail);
   const reviewPaymentDisabledReason = (() => {
     if (creatingIntent) return 'Preparing secure payment form...';
     if (!items.length) return 'Your cart is empty.';
+    if (!normalizedEmail) return 'Enter your email before continuing.';
+    if (!emailIsValid) return 'Enter a valid email address before continuing.';
     if (!shippingAddressValid || !billingAddressValid) {
       return 'Enter a valid shipping and billing address before continuing.';
     }
@@ -687,6 +695,11 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
     event.preventDefault();
     setError('');
     setDiscountError('');
+    const formEmail = new FormData(event.currentTarget).get('email');
+    const resolvedEmail = normalizeCheckoutEmail({
+      stateEmail: email,
+      formEmail,
+    });
 
     if (!publishableKey) {
       setError('Stripe is not configured yet. Verify Stripe in Settings -> Payments or set env fallback keys.');
@@ -698,9 +711,18 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
       return;
     }
 
-    if (!email.trim()) {
+    if (!resolvedEmail) {
       setError('Email is required.');
       return;
+    }
+
+    if (!isCheckoutEmailValid(resolvedEmail)) {
+      setError('Enter a valid email address.');
+      return;
+    }
+
+    if (resolvedEmail !== email.trim()) {
+      setEmail(resolvedEmail);
     }
 
     if (!isAddressComplete(shippingAddress)) {
@@ -727,7 +749,7 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          email: email.trim(),
+          email: resolvedEmail,
           items: buildCheckoutItemsPayload(items),
           shippingAddress: buildAddressPayload(shippingAddress),
           billingAddress: billingSameAsShipping ? buildAddressPayload(shippingAddress) : buildAddressPayload(billingAddress),
@@ -919,9 +941,16 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
                     <label className="field full">
                       <span>Email</span>
                       <input
+                        autoComplete="email"
+                        name="email"
                         onChange={(event) => {
                           if (checkout) resetPaymentStep();
                           setEmail(event.target.value);
+                        }}
+                        onInput={(event) => {
+                          const target = event.currentTarget;
+                          if (checkout) resetPaymentStep();
+                          setEmail(target.value);
                         }}
                         placeholder="you@example.com"
                         type="email"

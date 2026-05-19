@@ -61,7 +61,7 @@ describe('getProductSummaries — lightweight list', () => {
     expect(callArg.select).not.toHaveProperty('options')
   })
 
-  it('summary select includes variants and only the featured media item', async () => {
+  it('summary select includes variants and one deterministic media item', async () => {
     mocks.prisma.product.findMany.mockResolvedValue([])
     mocks.prisma.product.count.mockResolvedValue(0)
 
@@ -70,7 +70,12 @@ describe('getProductSummaries — lightweight list', () => {
     const select = mocks.prisma.product.findMany.mock.calls[0][0].select
     expect(select).toHaveProperty('variants')
     expect(select).toHaveProperty('media')
-    expect(select.media).toMatchObject({ where: { isFeatured: true }, take: 1 })
+    expect(select.media).toMatchObject({ take: 1 })
+    expect(select.media.orderBy).toEqual([
+      { isFeatured: 'desc' },
+      { position: 'asc' },
+      { id: 'asc' },
+    ])
   })
 
   it('converts variant priceCents to dollars and sets options: [] in the response', async () => {
@@ -134,6 +139,71 @@ describe('getProductSummaries — lightweight list', () => {
     const media = result.products[0].media[0]
     expect(media.asset?.url).toBe('/api/media/asset-1')
     expect(media.asset?.altText).toBe('A shirt')
+  })
+
+  it('keeps media mapping deterministic when no media rows exist', async () => {
+    mocks.prisma.product.findMany.mockResolvedValue([
+      {
+        id: 'prod-3',
+        title: 'No Media',
+        handle: 'no-media',
+        status: 'ACTIVE',
+        vendor: null,
+        productType: null,
+        tags: [],
+        createdAt: new Date('2024-01-01'),
+        updatedAt: new Date('2024-01-01'),
+        publishedAt: null,
+        variants: [],
+        media: [],
+      },
+    ])
+    mocks.prisma.product.count.mockResolvedValue(1)
+
+    const result = await getProductSummaries({ page: 1, pageSize: 20 })
+
+    expect(result.products[0].media).toEqual([])
+  })
+
+  it('returns the selected summary media row from the same product', async () => {
+    mocks.prisma.product.findMany.mockResolvedValue([
+      {
+        id: 'prod-4',
+        title: 'Deterministic',
+        handle: 'deterministic',
+        status: 'ACTIVE',
+        vendor: null,
+        productType: null,
+        tags: [],
+        createdAt: new Date('2024-01-01'),
+        updatedAt: new Date('2024-01-01'),
+        publishedAt: null,
+        variants: [],
+        media: [
+          {
+            id: 'media-4',
+            isFeatured: false,
+            position: 2,
+            assetId: 'asset-4',
+            asset: { id: 'asset-4', altText: 'Deterministic image' },
+          },
+        ],
+      },
+    ])
+    mocks.prisma.product.count.mockResolvedValue(1)
+
+    const result = await getProductSummaries({ page: 1, pageSize: 20 })
+
+    expect(result.products[0].id).toBe('prod-4')
+    expect(result.products[0].media[0]).toMatchObject({
+      id: 'media-4',
+      assetId: 'asset-4',
+      isFeatured: false,
+      asset: {
+        id: 'asset-4',
+        url: '/api/media/asset-4',
+      },
+    })
   })
 })
 

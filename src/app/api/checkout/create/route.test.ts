@@ -50,6 +50,24 @@ describe('POST /api/checkout/create', () => {
     expect(mocks.runCreateCheckoutWorkflow).not.toHaveBeenCalled()
   })
 
+  it('returns 422 when email is missing and does not call workflow', async () => {
+    const { email: _email, ...payloadWithoutEmail } = validPayload
+
+    const response = await POST(
+      new Request('http://localhost/api/checkout/create', {
+        method: 'POST',
+        body: JSON.stringify(payloadWithoutEmail),
+      })
+    )
+
+    expect(response.status).toBe(422)
+    expect(await response.json()).toMatchObject({
+      success: false,
+      error: 'Checkout payload is invalid',
+    })
+    expect(mocks.runCreateCheckoutWorkflow).not.toHaveBeenCalled()
+  })
+
   it('returns 400 with the service error for checkout failures', async () => {
     mocks.runCreateCheckoutWorkflow.mockRejectedValue(
       new Error('Only 0 units left for Test Shirt')
