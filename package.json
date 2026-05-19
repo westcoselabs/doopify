@@ -17,6 +17,8 @@
     "doopify:db:check": "node scripts/doopify-cli.mjs db check",
     "doopify:deploy": "node scripts/doopify-cli.mjs deploy",
     "doopify:reset-owner": "node scripts/reset-owner.mjs",
+    "worker": "node --experimental-strip-types src/worker/index.ts --loop",
+    "worker:once": "node --experimental-strip-types src/worker/index.ts --once",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
