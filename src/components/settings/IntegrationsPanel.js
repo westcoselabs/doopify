@@ -126,6 +126,16 @@ function sortByCreatedAtDesc(items) {
   });
 }
 
+function parseIntegrationListData(payload) {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+  if (Array.isArray(payload?.integrations)) {
+    return payload.integrations;
+  }
+  return [];
+}
+
 export default function IntegrationsPanel() {
   const { settings } = useSettings();
   const [integrations, setIntegrations] = useState([]);
@@ -165,12 +175,12 @@ export default function IntegrationsPanel() {
 
     try {
       const [integrationData, failedData, retryingData] = await Promise.all([
-        fetch('/api/settings/integrations', { cache: 'no-store' }).then(parseApiJson),
+        fetch('/api/settings/integrations?page=1&pageSize=100', { cache: 'no-store' }).then(parseApiJson),
         fetch('/api/outbound-webhook-deliveries?status=FAILED&page=1&pageSize=8', { cache: 'no-store' }).then(parseApiJson),
         fetch('/api/outbound-webhook-deliveries?status=RETRYING&page=1&pageSize=8', { cache: 'no-store' }).then(parseApiJson),
       ]);
 
-      setIntegrations(integrationData || []);
+      setIntegrations(parseIntegrationListData(integrationData));
       const mergedAttention = sortByCreatedAtDesc([...(failedData?.deliveries || []), ...(retryingData?.deliveries || [])]);
       setAttentionDeliveries(mergedAttention.slice(0, 8));
     } catch (loadError) {
@@ -189,12 +199,20 @@ export default function IntegrationsPanel() {
     setDrawerMode('create');
   }
 
-  function openManageDrawer(integration) {
+  async function openManageDrawer(integration) {
     setError('');
     setNotice('');
     setEditingIntegrationId(integration.id);
     setDraft(toDraft(integration));
     setDrawerMode('manage');
+
+    try {
+      const detail = await fetch(`/api/settings/integrations/${integration.id}`, { cache: 'no-store' }).then(parseApiJson);
+      setDraft(toDraft(detail));
+      setIntegrations((current) => current.map((entry) => (entry.id === detail.id ? { ...entry, ...detail } : entry)));
+    } catch (loadError) {
+      setNotice(loadError instanceof Error ? loadError.message : 'Could not load integration details');
+    }
   }
 
   function closeDrawer() {
@@ -218,24 +236,22 @@ export default function IntegrationsPanel() {
       }
 
       if (drawerMode === 'create') {
-        const created = await fetch('/api/settings/integrations', {
+        await fetch('/api/settings/integrations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(buildCreatePayload(draft)),
         }).then(parseApiJson);
 
-        setIntegrations((current) => [created, ...current]);
         setNotice('Endpoint created. Signing secret is stored encrypted and hidden.');
       }
 
       if (drawerMode === 'manage' && editingIntegrationId) {
-        const updated = await fetch(`/api/settings/integrations/${editingIntegrationId}`, {
+        await fetch(`/api/settings/integrations/${editingIntegrationId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(buildUpdatePayload(draft)),
         }).then(parseApiJson);
 
-        setIntegrations((current) => current.map((integration) => (integration.id === updated.id ? updated : integration)));
         setNotice('Endpoint updated. Secret values remain hidden.');
       }
 
@@ -267,13 +283,12 @@ export default function IntegrationsPanel() {
     if (!editingIntegrationId) return;
 
     try {
-      const updated = await fetch(`/api/settings/integrations/${editingIntegrationId}`, {
+      await fetch(`/api/settings/integrations/${editingIntegrationId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: nextStatus }),
       }).then(parseApiJson);
 
-      setIntegrations((current) => current.map((integration) => (integration.id === updated.id ? updated : integration)));
       setNotice(nextStatus === 'ACTIVE' ? 'Endpoint enabled.' : 'Endpoint disabled.');
       await refreshAll();
     } catch (statusError) {
@@ -343,19 +358,22 @@ export default function IntegrationsPanel() {
             {integrations.map((integration) => {
               const events = getEventNames(integration);
               const chips = webhookGroupLabelsFromEvents(events);
+              const eventCount = Number(integration.eventCount || 0);
               return (
                 <article className={styles.endpointRow} key={integration.id}>
                   <div className={styles.endpointMain}>
                     <p className={styles.endpointTitle}>{integration.name || 'Unnamed endpoint'}</p>
                     <p className={styles.endpointMeta}>{maskDestination(integration.webhookUrl || '')}</p>
                     <div className={`${styles.methodChipRow} ${styles.compactChipRow}`}>
-                      {chips.length
-                        ? chips.map((chip) => (
-                            <span className={styles.methodChip} key={`${integration.id}-${chip}`}>
-                              {chip}
-                            </span>
-                          ))
-                        : <span className={styles.methodChip}>No event groups selected</span>}
+                      {chips.length ? chips.map((chip) => (
+                        <span className={styles.methodChip} key={`${integration.id}-${chip}`}>
+                          {chip}
+                        </span>
+                      )) : null}
+                      {!chips.length && eventCount > 0 ? (
+                        <span className={styles.methodChip}>{eventCount} events configured</span>
+                      ) : null}
+                      {!chips.length && eventCount === 0 ? <span className={styles.methodChip}>No event groups selected</span> : null}
                     </div>
                   </div>
                   <div className={styles.endpointMain}>

@@ -63,7 +63,7 @@ export function DiscountsProvider({ children }) {
   const fetchDiscounts = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/discounts?pageSize=100');
+      const res = await fetch('/api/discounts?pageSize=25');
       const json = await res.json();
       if (json.success) {
         setDiscounts((json.data.discounts || []).map(transformDiscount));

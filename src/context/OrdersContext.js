@@ -13,7 +13,7 @@ export function OrdersProvider({ children }) {
   const fetchOrders = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/orders?pageSize=100');
+      const res = await fetch('/api/orders?pageSize=25');
       const json = await res.json();
       if (json.success) {
         setOrders((json.data.orders || []).map(transformOrder));

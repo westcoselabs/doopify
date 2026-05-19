@@ -165,6 +165,19 @@ const COLLECTION_SORT_OPTIONS = new Set([
   'PRICE_ASC',
   'PRICE_DESC',
 ])
+const DEFAULT_COLLECTION_LIST_PAGE_SIZE = 25
+const MAX_COLLECTION_LIST_PAGE_SIZE = 100
+
+function clampPage(value?: number) {
+  return Math.max(1, Math.floor(Number(value || 1)))
+}
+
+function clampCollectionListPageSize(value?: number) {
+  return Math.max(
+    1,
+    Math.min(MAX_COLLECTION_LIST_PAGE_SIZE, Math.floor(Number(value || DEFAULT_COLLECTION_LIST_PAGE_SIZE)))
+  )
+}
 
 function slugify(text: string) {
   const slug = text
@@ -429,7 +442,11 @@ async function syncCollectionProducts(
 
 export async function getCollectionSummaries(params: {
   search?: string
+  page?: number
+  pageSize?: number
 } = {}) {
+  const page = clampPage(params.page)
+  const pageSize = clampCollectionListPageSize(params.pageSize)
   const where: Prisma.CollectionWhereInput = params.search
     ? {
         OR: [
@@ -440,15 +457,30 @@ export async function getCollectionSummaries(params: {
       }
     : {}
 
-  const collections = await prisma.collection.findMany({
-    where,
-    select: collectionAdminSummarySelect,
-    orderBy: {
-      updatedAt: 'desc',
-    },
-  })
+  const [collections, total] = await Promise.all([
+    prisma.collection.findMany({
+      where,
+      select: collectionAdminSummarySelect,
+      orderBy: {
+        updatedAt: 'desc',
+      },
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+    prisma.collection.count({
+      where,
+    }),
+  ])
 
-  return collections.map(toAdminCollectionSummary)
+  return {
+    collections: collections.map(toAdminCollectionSummary),
+    pagination: {
+      page,
+      pageSize,
+      total,
+      totalPages: Math.ceil(total / pageSize),
+    },
+  }
 }
 
 export async function getCollection(id: string) {

@@ -2,11 +2,25 @@ import { z } from 'zod'
 import { ok, err, parseBody } from '@/lib/api'
 import { prisma } from '@/lib/prisma'
 
+const DEFAULT_DISCOUNT_LIST_PAGE_SIZE = 20
+const MAX_DISCOUNT_LIST_PAGE_SIZE = 100
+
+function clampPage(value: number) {
+  return Math.max(1, Math.floor(Number(value || 1)))
+}
+
+function clampPageSize(value: number) {
+  return Math.max(
+    1,
+    Math.min(MAX_DISCOUNT_LIST_PAGE_SIZE, Math.floor(Number(value || DEFAULT_DISCOUNT_LIST_PAGE_SIZE)))
+  )
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
-    const page = Number(searchParams.get('page') || 1)
-    const pageSize = Number(searchParams.get('pageSize') || 20)
+    const page = clampPage(Number(searchParams.get('page') || 1))
+    const pageSize = clampPageSize(Number(searchParams.get('pageSize') || DEFAULT_DISCOUNT_LIST_PAGE_SIZE))
     const status = searchParams.get('status') || undefined
 
     const where = status ? { status: status as never } : {}
@@ -14,6 +28,25 @@ export async function GET(req: Request) {
     const [discounts, total] = await Promise.all([
       prisma.discount.findMany({
         where,
+        select: {
+          id: true,
+          code: true,
+          title: true,
+          type: true,
+          method: true,
+          value: true,
+          minimumOrderCents: true,
+          usageLimit: true,
+          usageCount: true,
+          status: true,
+          startsAt: true,
+          endsAt: true,
+          combinesWithOrders: true,
+          combinesWithProducts: true,
+          combinesWithShipping: true,
+          createdAt: true,
+          updatedAt: true,
+        },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,

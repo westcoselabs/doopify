@@ -78,9 +78,12 @@ export default function CollectionsWorkspace() {
   async function loadWorkspace(preferredCollectionId) {
     setLoading(true);
     try {
-      const [collectionsRes, productsRes] = await Promise.all([fetch('/api/collections'), fetch('/api/products?pageSize=200&status=ACTIVE')]);
+      const [collectionsRes, productsRes] = await Promise.all([fetch('/api/collections?page=1&pageSize=100'), fetch('/api/products?pageSize=200&status=ACTIVE')]);
       const [collectionsJson, productsJson] = await Promise.all([collectionsRes.json(), productsRes.json()]);
-      const nextCollections = collectionsJson.success ? collectionsJson.data || [] : [];
+      const nextCollectionsData = collectionsJson.success ? collectionsJson.data : null;
+      const nextCollections = Array.isArray(nextCollectionsData)
+        ? nextCollectionsData
+        : nextCollectionsData?.collections || [];
       const nextProducts = productsJson.success ? productsJson.data?.products || [] : [];
       setCollections(nextCollections); setProducts(nextProducts);
       const selected = nextCollections.find((collection) => collection.id === preferredCollectionId) || nextCollections.find((collection) => collection.id === selectedCollectionId) || nextCollections[0] || null;

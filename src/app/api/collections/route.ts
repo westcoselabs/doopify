@@ -29,10 +29,12 @@ function revalidateCollectionPaths(handle?: string) {
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url)
-    const collections = await getCollectionSummaries({
+    const result = await getCollectionSummaries({
       search: searchParams.get('search') || undefined,
+      page: Number(searchParams.get('page') || 1),
+      pageSize: Number(searchParams.get('pageSize') || 25),
     })
-    return ok(collections)
+    return ok(result)
   } catch (error) {
     console.error('[GET /api/collections]', error)
     return err('Failed to fetch collections', 500)

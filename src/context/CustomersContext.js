@@ -43,7 +43,7 @@ export function CustomersProvider({ children }) {
   const fetchCustomers = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/customers?pageSize=100');
+      const res = await fetch('/api/customers?pageSize=25');
       const json = await res.json();
       if (json.success) {
         setCustomers((json.data.customers || []).map(transformCustomer));

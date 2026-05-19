@@ -39,7 +39,7 @@ export function ProductsProvider({ children }) {
   const fetchProducts = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch('/api/products?pageSize=100');
+      const res = await fetch('/api/products?pageSize=25');
       const json = await res.json();
       if (json.success) {
         setProducts((json.data.products || []).map(transformProduct));

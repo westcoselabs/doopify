@@ -51,6 +51,7 @@ function buildOrder({
     addresses: [],
     payments: [],
     fulfillments,
+    returns: [],
   }
 }
 
@@ -114,6 +115,46 @@ describe('getOrders fulfillment status derivation', () => {
       fulfillmentStatus: 'FULFILLED',
       fulfillmentStatusDerived: 'FULFILLED',
       shippingStatusDerived: 'DELIVERED',
+    })
+  })
+
+  it('caps list page size and queries orders with an explicit select profile', async () => {
+    mocks.prisma.order.findMany.mockResolvedValue([
+      buildOrder({ id: 'ord_1004', fulfillments: [] }),
+    ])
+
+    const result = await getOrders({ page: 0, pageSize: 999 })
+
+    expect(mocks.prisma.order.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skip: 0,
+        take: 100,
+        select: expect.objectContaining({
+          id: true,
+          orderNumber: true,
+          customer: expect.any(Object),
+          items: expect.any(Object),
+          addresses: expect.any(Object),
+          payments: expect.any(Object),
+          fulfillments: expect.any(Object),
+        }),
+      })
+    )
+    expect(result.pagination).toEqual({
+      page: 1,
+      pageSize: 100,
+      total: 3,
+      totalPages: 1,
+    })
+    expect(result.orders[0]).toMatchObject({
+      id: 'ord_1004',
+      orderNumber: 1004,
+      customer: null,
+      items: expect.any(Array),
+      addresses: expect.any(Array),
+      payments: expect.any(Array),
+      fulfillments: expect.any(Array),
+      returns: expect.any(Array),
     })
   })
 })

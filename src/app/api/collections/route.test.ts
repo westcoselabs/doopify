@@ -23,7 +23,10 @@ describe('collections route', () => {
   })
 
   it('passes the optional search query through to collection summaries', async () => {
-    mocks.getCollectionSummaries.mockResolvedValue([])
+    mocks.getCollectionSummaries.mockResolvedValue({
+      collections: [],
+      pagination: { page: 1, pageSize: 25, total: 0, totalPages: 0 },
+    })
 
     const response = await GET(new Request('http://localhost/api/collections?search=drop'))
     const body = await response.json()
@@ -31,10 +34,30 @@ describe('collections route', () => {
     expect(response.status).toBe(200)
     expect(body).toEqual({
       success: true,
-      data: [],
+      data: {
+        collections: [],
+        pagination: { page: 1, pageSize: 25, total: 0, totalPages: 0 },
+      },
     })
     expect(mocks.getCollectionSummaries).toHaveBeenCalledWith({
       search: 'drop',
+      page: 1,
+      pageSize: 25,
+    })
+  })
+
+  it('forwards explicit pagination query values to the collection summary service', async () => {
+    mocks.getCollectionSummaries.mockResolvedValue({
+      collections: [],
+      pagination: { page: 1, pageSize: 100, total: 0, totalPages: 0 },
+    })
+
+    await GET(new Request('http://localhost/api/collections?page=0&pageSize=999'))
+
+    expect(mocks.getCollectionSummaries).toHaveBeenCalledWith({
+      search: undefined,
+      page: 0,
+      pageSize: 999,
     })
   })
 

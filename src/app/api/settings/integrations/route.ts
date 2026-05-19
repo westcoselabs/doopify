@@ -5,6 +5,8 @@ import { encrypt } from '@/server/utils/crypto'
 import { z } from 'zod'
 
 export const runtime = 'nodejs'
+const DEFAULT_INTEGRATION_LIST_PAGE_SIZE = 25
+const MAX_INTEGRATION_LIST_PAGE_SIZE = 100
 
 const createSchema = z.object({
   name: z.string().min(1),
@@ -34,21 +36,69 @@ function sanitizeSecrets(secrets: Array<{ key: string; value?: string }> | undef
     })
 }
 
+function clampPage(value: number) {
+  return Math.max(1, Math.floor(Number(value || 1)))
+}
+
+function clampPageSize(value: number) {
+  return Math.max(
+    1,
+    Math.min(MAX_INTEGRATION_LIST_PAGE_SIZE, Math.floor(Number(value || DEFAULT_INTEGRATION_LIST_PAGE_SIZE)))
+  )
+}
+
 export async function GET(req: Request) {
   const auth = await requireAdmin(req)
   if (!auth.ok) return auth.response
 
   try {
-    const integrations = await prisma.integration.findMany({
-      include: {
-        events: true,
-        secrets: {
-          select: { id: true, key: true }
-        }
+    const { searchParams } = new URL(req.url)
+    const page = clampPage(Number(searchParams.get('page') || 1))
+    const pageSize = clampPageSize(Number(searchParams.get('pageSize') || DEFAULT_INTEGRATION_LIST_PAGE_SIZE))
+
+    const [rows, total] = await Promise.all([
+      prisma.integration.findMany({
+        select: {
+          id: true,
+          name: true,
+          type: true,
+          webhookUrl: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+          _count: {
+            select: {
+              events: true,
+              secrets: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.integration.count(),
+    ])
+
+    return ok({
+      integrations: rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        type: row.type,
+        webhookUrl: row.webhookUrl,
+        status: row.status,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        eventCount: row._count.events,
+        secretCount: row._count.secrets,
+      })),
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize),
       },
-      orderBy: { createdAt: 'desc' },
     })
-    return ok(integrations)
   } catch (error: any) {
     console.error('Failed to get integrations', error)
     return err(error.message, 500)

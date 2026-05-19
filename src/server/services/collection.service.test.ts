@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
       findMany: vi.fn(),
       findFirst: vi.fn(),
       findUnique: vi.fn(),
+      count: vi.fn(),
     },
     collectionProduct: {
       groupBy: vi.fn(),
@@ -43,19 +44,48 @@ describe('collection service', () => {
         },
       },
     ])
+    mocks.prisma.collection.count.mockResolvedValue(1)
 
-    await expect(getCollectionSummaries()).resolves.toEqual([
-      {
-        id: 'col_1',
-        title: 'Private Drop',
-        handle: 'private-drop',
-        description: 'Not public yet',
-        sortOrder: 'MANUAL',
-        isPublished: false,
-        updatedAt: new Date('2026-04-26T00:00:00.000Z'),
-        productCount: 2,
+    await expect(getCollectionSummaries()).resolves.toEqual({
+      collections: [
+        {
+          id: 'col_1',
+          title: 'Private Drop',
+          handle: 'private-drop',
+          description: 'Not public yet',
+          sortOrder: 'MANUAL',
+          isPublished: false,
+          updatedAt: new Date('2026-04-26T00:00:00.000Z'),
+          productCount: 2,
+        },
+      ],
+      pagination: {
+        page: 1,
+        pageSize: 25,
+        total: 1,
+        totalPages: 1,
       },
-    ])
+    })
+  })
+
+  it('caps admin collection list page size and keeps pagination metadata', async () => {
+    mocks.prisma.collection.findMany.mockResolvedValue([])
+    mocks.prisma.collection.count.mockResolvedValue(0)
+
+    const result = await getCollectionSummaries({ page: 0, pageSize: 999 })
+
+    expect(mocks.prisma.collection.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        skip: 0,
+        take: 100,
+      })
+    )
+    expect(result.pagination).toEqual({
+      page: 1,
+      pageSize: 100,
+      total: 0,
+      totalPages: 0,
+    })
   })
 
   it('filters storefront collection summaries to published collections with visible products', async () => {

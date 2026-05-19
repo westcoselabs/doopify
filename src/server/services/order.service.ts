@@ -6,6 +6,95 @@ import type { CheckoutAppliedDiscount } from '@/server/checkout/pricing'
 import { emitInternalEvent } from '@/server/events/dispatcher'
 import { resolveOrderFulfillmentSnapshot } from '@/server/services/fulfillment-status.service'
 
+const DEFAULT_ORDER_LIST_PAGE_SIZE = 20
+const MAX_ORDER_LIST_PAGE_SIZE = 100
+
+const orderListSelect = {
+  id: true,
+  orderNumber: true,
+  status: true,
+  paymentStatus: true,
+  channel: true,
+  email: true,
+  currency: true,
+  totalCents: true,
+  subtotalCents: true,
+  shippingAmountCents: true,
+  taxAmountCents: true,
+  discountAmountCents: true,
+  note: true,
+  tags: true,
+  createdAt: true,
+  customer: {
+    select: {
+      firstName: true,
+      lastName: true,
+      email: true,
+    },
+  },
+  items: {
+    select: {
+      id: true,
+      quantity: true,
+      title: true,
+      variantTitle: true,
+      priceCents: true,
+    },
+  },
+  addresses: {
+    select: {
+      id: true,
+      type: true,
+      address1: true,
+      city: true,
+      province: true,
+    },
+  },
+  payments: {
+    select: {
+      id: true,
+      provider: true,
+      status: true,
+      amountCents: true,
+      currency: true,
+      stripePaymentIntentId: true,
+      stripeChargeId: true,
+      createdAt: true,
+    },
+  },
+  fulfillments: {
+    select: {
+      status: true,
+      deliveredAt: true,
+      trackingNumber: true,
+      carrier: true,
+      items: {
+        select: {
+          orderItemId: true,
+          quantity: true,
+        },
+      },
+    },
+  },
+  returns: {
+    select: {
+      status: true,
+    },
+    orderBy: {
+      createdAt: 'desc' as const,
+    },
+    take: 1,
+  },
+} satisfies Prisma.OrderSelect
+
+function clampPage(value?: number) {
+  return Math.max(1, Math.floor(Number(value || 1)))
+}
+
+function clampOrderListPageSize(value?: number) {
+  return Math.max(1, Math.min(MAX_ORDER_LIST_PAGE_SIZE, Math.floor(Number(value || DEFAULT_ORDER_LIST_PAGE_SIZE))))
+}
+
 function parseOrderNumberSearch(search?: string) {
   const query = search?.trim()
   if (!query || !/^\d+$/.test(query)) {
@@ -96,7 +185,9 @@ export async function getOrders(params: {
   page?: number
   pageSize?: number
 }) {
-  const { status, paymentStatus, fulfillmentStatus, search, page = 1, pageSize = 20 } = params
+  const { status, paymentStatus, fulfillmentStatus, search } = params
+  const page = clampPage(params.page)
+  const pageSize = clampOrderListPageSize(params.pageSize)
   const orderNumber = parseOrderNumberSearch(search)
   const trimmedSearch = search?.trim()
 
@@ -117,26 +208,7 @@ export async function getOrders(params: {
   const [orders, total] = await Promise.all([
     prisma.order.findMany({
       where,
-      include: {
-        customer: true,
-        items: true,
-        addresses: true,
-        payments: true,
-        fulfillments: {
-          select: {
-            status: true,
-            deliveredAt: true,
-            trackingNumber: true,
-            carrier: true,
-            items: {
-              select: {
-                orderItemId: true,
-                quantity: true,
-              },
-            },
-          },
-        },
-      },
+      select: orderListSelect,
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * pageSize,
       take: pageSize,
