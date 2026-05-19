@@ -77,6 +77,31 @@ function normalizeOptionalText(value?: string | null) {
   return normalized || null
 }
 
+function resolveOptionalStoreField(store: any, field: string) {
+  const value = store?.[field]
+  return typeof value === 'string' ? value : null
+}
+
+function resolveShipFromEmail(store: any) {
+  const defaultLocation = (store.shippingLocations || []).find((location: any) => location.isDefault) || null
+  return (
+    normalizeOptionalText(defaultLocation?.email) ||
+    normalizeOptionalText(store.supportEmail) ||
+    normalizeOptionalText(store.email) ||
+    normalizeOptionalText(resolveOptionalStoreField(store, 'shippingOriginEmail'))
+  )
+}
+
+function resolveShipFromPhone(store: any) {
+  const defaultLocation = (store.shippingLocations || []).find((location: any) => location.isDefault) || null
+  return (
+    normalizeOptionalText(defaultLocation?.phone) ||
+    normalizeOptionalText(resolveOptionalStoreField(store, 'supportPhone')) ||
+    normalizeOptionalText(store.phone) ||
+    normalizeOptionalText(store.shippingOriginPhone)
+  )
+}
+
 function hasOriginAddress(store: any) {
   const defaultLocation = (store.shippingLocations || []).find((location: any) => location.isDefault) || null
   if (defaultLocation) {
@@ -148,6 +173,8 @@ export async function buildShippingSetupStatus(store: any) {
   const activeRateProvider = resolveActiveRateProvider(store)
   const labelProvider = resolveLabelProvider(store)
   const hasProvider = Boolean(activeRateProvider)
+  const shipFromEmail = resolveShipFromEmail(store)
+  const shipFromPhone = resolveShipFromPhone(store)
 
   let liveProviderConnected = false
   if (activeRateProvider) {
@@ -177,7 +204,9 @@ export async function buildShippingSetupStatus(store: any) {
     liveProviderConnected &&
     originReady &&
     packageReady
-  const canBuyLabels = originReady && packageReady && Boolean(labelProvider) && labelProviderConnected
+  const shippoLabelContactReady = labelProvider !== 'SHIPPO' || (Boolean(shipFromEmail) && Boolean(shipFromPhone))
+  const canBuyLabels =
+    originReady && packageReady && Boolean(labelProvider) && labelProviderConnected && shippoLabelContactReady
 
   const warnings: string[] = []
   const nextSteps: string[] = []
@@ -206,6 +235,14 @@ export async function buildShippingSetupStatus(store: any) {
   if (mode === 'HYBRID' && store.shippingFallbackEnabled && !manualReady) {
     warnings.push('Hybrid mode requires manual fallback rates.')
     nextSteps.push('Configure manual fallback rates before finishing hybrid setup.')
+  }
+  if (labelProvider === 'SHIPPO' && !shipFromEmail) {
+    warnings.push('Shippo/USPS labels require a ship-from email address.')
+    nextSteps.push('Add a ship-from email to your default shipping location or store profile.')
+  }
+  if (labelProvider === 'SHIPPO' && !shipFromPhone) {
+    warnings.push('Shippo/USPS labels require a ship-from phone number.')
+    nextSteps.push('Add a ship-from phone number to your default shipping location or store profile.')
   }
 
   if (warnings.length === 0) {

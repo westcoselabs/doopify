@@ -36,7 +36,12 @@ function serializeShippingSettings(
     shippingOriginPostalCode: store.shippingOriginPostalCode,
     shippingOriginCountry: store.shippingOriginCountry,
     email: store.email,
+    phone: store.phone,
     supportEmail: store.supportEmail,
+    supportPhone:
+      typeof (store as Record<string, unknown>).supportPhone === 'string'
+        ? ((store as Record<string, unknown>).supportPhone as string)
+        : null,
     defaultPackageWeightOz: store.defaultPackageWeightOz,
     defaultPackageLengthIn: store.defaultPackageLengthIn,
     defaultPackageWidthIn: store.defaultPackageWidthIn,

@@ -637,6 +637,44 @@ describe('buyOrderShippingLabel', () => {
     )
   })
 
+  it('Shippo rate request falls back to store profile phone when location phone is missing', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
+    mocks.getShippingProviderConnectionStatus.mockImplementation(async (provider: string) => ({
+      provider,
+      connected: provider === 'SHIPPO',
+    }))
+    mocks.getShippingProviderApiKey.mockResolvedValue('shippo_test_key')
+    mocks.getStoreSettings.mockResolvedValue({
+      ...baseStore,
+      phone: '555-222-3333',
+      shippingOriginPhone: null,
+      shippingLocations: [
+        {
+          ...baseStore.shippingLocations[0],
+          phone: null,
+        },
+      ],
+    })
+
+    await getOrderShippingRatesForLabel({
+      orderNumber: 1001,
+      provider: 'SHIPPO',
+      items: [{ orderItemId: 'oi_1', quantity: 1 }],
+      parcel: { weightOz: 12, lengthIn: 10, widthIn: 8, heightIn: 4 },
+    })
+
+    expect(mocks.getShippingProviderLiveRates).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'SHIPPO',
+        request: expect.objectContaining({
+          originAddress: expect.objectContaining({
+            phone: '555-222-3333',
+          }),
+        }),
+      })
+    )
+  })
+
   it('blocks Shippo label flow before provider call when ship-from email is missing everywhere', async () => {
     mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
     mocks.getShippingProviderConnectionStatus.mockImplementation(async (provider: string) => ({
@@ -664,9 +702,332 @@ describe('buyOrderShippingLabel', () => {
         parcel: { weightOz: 12, lengthIn: 10, widthIn: 8, heightIn: 4 },
       })
     ).rejects.toThrow(
-      'Ship-from email is required before buying a Shippo label. Add an email to your shipping location or store profile.'
+      'Shippo requires a ship-from email before buying USPS labels. Add an email to your shipping location or store profile.'
     )
 
     expect(mocks.getShippingProviderLiveRates).not.toHaveBeenCalled()
+  })
+
+  it('blocks Shippo rate lookup before provider call when ship-from phone is missing everywhere', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
+    mocks.getShippingProviderConnectionStatus.mockImplementation(async (provider: string) => ({
+      provider,
+      connected: provider === 'SHIPPO',
+    }))
+    mocks.getShippingProviderApiKey.mockResolvedValue('shippo_test_key')
+    mocks.getStoreSettings.mockResolvedValue({
+      ...baseStore,
+      phone: null,
+      shippingOriginPhone: null,
+      shippingLocations: [
+        {
+          ...baseStore.shippingLocations[0],
+          phone: null,
+          email: 'warehouse@example.com',
+        },
+      ],
+    })
+
+    await expect(
+      getOrderShippingRatesForLabel({
+        orderNumber: 1001,
+        provider: 'SHIPPO',
+        items: [{ orderItemId: 'oi_1', quantity: 1 }],
+        parcel: { weightOz: 12, lengthIn: 10, widthIn: 8, heightIn: 4 },
+      })
+    ).rejects.toThrow(
+      'Shippo requires a ship-from phone number before buying USPS labels. Add a phone number to your shipping location or store profile.'
+    )
+
+    expect(mocks.getShippingProviderLiveRates).not.toHaveBeenCalled()
+  })
+
+  it('Shippo label purchase falls back to store profile phone when location phone is missing', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
+    mocks.getShippingProviderConnectionStatus.mockImplementation(async (provider: string) => ({
+      provider,
+      connected: provider === 'SHIPPO',
+    }))
+    mocks.getShippingProviderApiKey.mockResolvedValue('shippo_test_key')
+    mocks.getStoreSettings.mockResolvedValue({
+      ...baseStore,
+      phone: '555-888-9999',
+      shippingOriginPhone: null,
+      shippingLocations: [
+        {
+          ...baseStore.shippingLocations[0],
+          phone: null,
+        },
+      ],
+    })
+    mocks.purchaseShippingProviderLabel.mockResolvedValue({
+      providerRateId: 'rate_1',
+      carrier: 'USPS',
+      service: 'Priority',
+      status: 'PURCHASED',
+      labelUrl: 'https://labels.example.com/shippo_label.pdf',
+      trackingNumber: 'SHIPPO123',
+      trackingUrl: 'https://track.example.com/SHIPPO123',
+      labelAmountCents: 799,
+      currency: 'USD',
+      rawResponse: {},
+    })
+
+    await buyOrderShippingLabel({
+      orderNumber: 1001,
+      provider: 'SHIPPO',
+      items: [{ orderItemId: 'oi_1', quantity: 1 }],
+      parcel: { weightOz: 12, lengthIn: 10, widthIn: 8, heightIn: 4 },
+      providerRateId: 'rate_1',
+    })
+
+    expect(mocks.purchaseShippingProviderLabel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'SHIPPO',
+        request: expect.objectContaining({
+          request: expect.objectContaining({
+            originAddress: expect.objectContaining({
+              phone: '555-888-9999',
+            }),
+          }),
+        }),
+      })
+    )
+  })
+
+  it('blocks Shippo label purchase before provider call when ship-from phone is missing everywhere', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
+    mocks.getShippingProviderConnectionStatus.mockImplementation(async (provider: string) => ({
+      provider,
+      connected: provider === 'SHIPPO',
+    }))
+    mocks.getShippingProviderApiKey.mockResolvedValue('shippo_test_key')
+    mocks.getStoreSettings.mockResolvedValue({
+      ...baseStore,
+      phone: null,
+      shippingOriginPhone: null,
+      shippingLocations: [
+        {
+          ...baseStore.shippingLocations[0],
+          phone: null,
+          email: 'warehouse@example.com',
+        },
+      ],
+    })
+
+    await expect(
+      buyOrderShippingLabel({
+        orderNumber: 1001,
+        provider: 'SHIPPO',
+        items: [{ orderItemId: 'oi_1', quantity: 1 }],
+        parcel: { weightOz: 12, lengthIn: 10, widthIn: 8, heightIn: 4 },
+        providerRateId: 'rate_1',
+      })
+    ).rejects.toThrow(
+      'Shippo requires a ship-from phone number before buying USPS labels. Add a phone number to your shipping location or store profile.'
+    )
+
+    expect(mocks.purchaseShippingProviderLabel).not.toHaveBeenCalled()
+  })
+
+  it('blocks Shippo label purchase before provider call when ship-from email is missing everywhere', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
+    mocks.getShippingProviderConnectionStatus.mockImplementation(async (provider: string) => ({
+      provider,
+      connected: provider === 'SHIPPO',
+    }))
+    mocks.getShippingProviderApiKey.mockResolvedValue('shippo_test_key')
+    mocks.getStoreSettings.mockResolvedValue({
+      ...baseStore,
+      supportEmail: null,
+      email: null,
+      shippingLocations: [
+        {
+          ...baseStore.shippingLocations[0],
+          email: null,
+        },
+      ],
+    })
+
+    await expect(
+      buyOrderShippingLabel({
+        orderNumber: 1001,
+        provider: 'SHIPPO',
+        items: [{ orderItemId: 'oi_1', quantity: 1 }],
+        parcel: { weightOz: 12, lengthIn: 10, widthIn: 8, heightIn: 4 },
+        providerRateId: 'rate_1',
+      })
+    ).rejects.toThrow(
+      'Shippo requires a ship-from email before buying USPS labels. Add an email to your shipping location or store profile.'
+    )
+
+    expect(mocks.purchaseShippingProviderLabel).not.toHaveBeenCalled()
+  })
+
+  it('allows label-rate lookup for paid orders that used manual/flat checkout shipping', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValue({
+      ...baseOrder,
+      shippingRateType: 'FLAT',
+      shippingProvider: null,
+      shippingProviderRateId: null,
+      shippingMethodName: 'Manual standard',
+    })
+
+    const result = await getOrderShippingRatesForLabel({
+      orderNumber: 1001,
+      items: [{ orderItemId: 'oi_1', quantity: 1 }],
+      parcel: { weightOz: 12, lengthIn: 10, widthIn: 8, heightIn: 4 },
+    })
+
+    expect(result.provider).toBe('EASYPOST')
+    expect(mocks.getShippingProviderLiveRates).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows label-rate lookup for paid orders that used free checkout shipping', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValue({
+      ...baseOrder,
+      shippingRateType: 'FREE',
+      shippingProvider: null,
+      shippingProviderRateId: null,
+      shippingMethodName: 'Free shipping',
+      shippingAmountCents: 0,
+    })
+
+    const result = await getOrderShippingRatesForLabel({
+      orderNumber: 1001,
+      items: [{ orderItemId: 'oi_1', quantity: 1 }],
+      parcel: { weightOz: 12, lengthIn: 10, widthIn: 8, heightIn: 4 },
+    })
+
+    expect(result.provider).toBe('EASYPOST')
+    expect(mocks.getShippingProviderLiveRates).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows label-rate lookup with manual parcel input even when no default package is configured', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
+    mocks.getStoreSettings.mockResolvedValue({
+      ...baseStore,
+      shippingPackages: [],
+    })
+
+    const result = await getOrderShippingRatesForLabel({
+      orderNumber: 1001,
+      items: [{ orderItemId: 'oi_1', quantity: 1 }],
+      parcel: { weightOz: 12, lengthIn: 10, widthIn: 8, heightIn: 4 },
+    })
+
+    expect(result.provider).toBe('EASYPOST')
+    expect(mocks.getShippingProviderLiveRates).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails before provider call when destination postal code is missing', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValue({
+      ...baseOrder,
+      addresses: [
+        {
+          ...baseOrder.addresses[0],
+          postalCode: null,
+        },
+      ],
+    })
+
+    await expect(
+      getOrderShippingRatesForLabel({
+        orderNumber: 1001,
+        items: [{ orderItemId: 'oi_1', quantity: 1 }],
+        parcel: { weightOz: 12, lengthIn: 10, widthIn: 8, heightIn: 4 },
+      })
+    ).rejects.toThrow(
+      'Order shipping address is missing a ZIP/postal code. Correct the shipping address before buying a label.'
+    )
+
+    expect(mocks.getShippingProviderLiveRates).not.toHaveBeenCalled()
+  })
+
+  it('fails before provider call when US destination state/province is missing', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValue({
+      ...baseOrder,
+      addresses: [
+        {
+          ...baseOrder.addresses[0],
+          country: 'US',
+          province: null,
+        },
+      ],
+    })
+
+    await expect(
+      getOrderShippingRatesForLabel({
+        orderNumber: 1001,
+        items: [{ orderItemId: 'oi_1', quantity: 1 }],
+        parcel: { weightOz: 12, lengthIn: 10, widthIn: 8, heightIn: 4 },
+      })
+    ).rejects.toThrow(
+      'Order shipping address is missing a state/province. Correct the shipping address before buying a label.'
+    )
+
+    expect(mocks.getShippingProviderLiveRates).not.toHaveBeenCalled()
+  })
+
+  it('returns actionable safe error when provider returns zero label rates', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
+    mocks.getShippingProviderLiveRates.mockResolvedValue([])
+
+    await expect(
+      getOrderShippingRatesForLabel({
+        orderNumber: 1001,
+        items: [{ orderItemId: 'oi_1', quantity: 1 }],
+        parcel: { weightOz: 12, lengthIn: 10, widthIn: 8, heightIn: 4 },
+      })
+    ).rejects.toThrow(
+      'No label rates returned from EasyPost. Check destination ZIP/postal code, ship-from address, package dimensions, and enabled carriers in your provider account.'
+    )
+  })
+
+  it('uses labelProvider by default, with explicit override taking precedence', async () => {
+    mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
+    mocks.getStoreSettings.mockResolvedValue({
+      ...baseStore,
+      activeRateProvider: 'EASYPOST',
+      labelProvider: 'SHIPPO',
+    })
+    mocks.getShippingProviderConnectionStatus.mockImplementation(async (provider: string) => ({
+      provider,
+      connected: provider === 'SHIPPO' || provider === 'EASYPOST',
+    }))
+    mocks.getShippingProviderApiKey.mockImplementation(async (provider: string) =>
+      provider === 'SHIPPO' ? 'shippo_test_key' : 'ep_test_key'
+    )
+
+    await getOrderShippingRatesForLabel({
+      orderNumber: 1001,
+      items: [{ orderItemId: 'oi_1', quantity: 1 }],
+      parcel: { weightOz: 12, lengthIn: 10, widthIn: 8, heightIn: 4 },
+    })
+
+    expect(mocks.getShippingProviderLiveRates).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        provider: 'SHIPPO',
+        request: expect.objectContaining({
+          apiKey: 'shippo_test_key',
+        }),
+      })
+    )
+
+    await getOrderShippingRatesForLabel({
+      orderNumber: 1001,
+      provider: 'EASYPOST',
+      items: [{ orderItemId: 'oi_1', quantity: 1 }],
+      parcel: { weightOz: 12, lengthIn: 10, widthIn: 8, heightIn: 4 },
+    })
+
+    expect(mocks.getShippingProviderLiveRates).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        provider: 'EASYPOST',
+        request: expect.objectContaining({
+          apiKey: 'ep_test_key',
+        }),
+      })
+    )
   })
 })

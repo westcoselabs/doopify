@@ -171,6 +171,7 @@ describe('OrderDetailView', () => {
     )
 
     expect(html).toContain('Buy shipping label with Shippo')
+    expect(html).toContain('This can be used even when the customer selected manual, flat, or free shipping at checkout.')
     expect(html).toContain('Get label rates')
     expect(html).not.toContain('Get Shippo label rates')
     expect(html).toContain('Email tracking to customer')

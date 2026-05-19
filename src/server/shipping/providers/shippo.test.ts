@@ -151,4 +151,33 @@ describe('shippoProviderAdapter.purchaseLabel', () => {
     expect(String(thrown)).not.toContain('shippo_test_key')
     expect(String(thrown)).not.toContain('address_from.email')
   })
+
+  it('maps sender_info_missing to a ship-from contact setup message', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        createResponse({
+          status: 'ERROR',
+          shipment: 'shipment_1',
+          messages: [
+            {
+              code: 'sender_info_missing',
+              text: 'Seller info missing email or phone. Seller email and phone number required for USPS.',
+            },
+          ],
+        })
+      )
+    )
+
+    await expect(
+      shippoProviderAdapter.purchaseLabel({
+        apiKey: 'shippo_test_key',
+        rateId: 'rate_1',
+        shipmentId: 'shipment_1',
+        request: {} as never,
+      })
+    ).rejects.toThrow(
+      'Shippo label purchase failed: Shippo requires a ship-from email and phone number for USPS labels. Add them to your shipping location or store profile.'
+    )
+  })
 })

@@ -249,6 +249,7 @@ describe('settings shipping route', () => {
     mocks.getShippingSettingsStore.mockResolvedValue(
       storeFixture({
         email: 'store@example.com',
+        phone: '555-1212',
         supportEmail: 'support@example.com',
         shippingLocations: [
           {
@@ -280,6 +281,7 @@ describe('settings shipping route', () => {
       success: true,
       data: {
         email: 'store@example.com',
+        phone: '555-1212',
         supportEmail: 'support@example.com',
         shippingLocations: [{ id: 'loc_1', email: 'shipping@example.com' }],
       },

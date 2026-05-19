@@ -125,6 +125,30 @@ describe('shipping settings UX copy and validation', () => {
     expect(source).toContain('Live rates only: checkout live rates only, no label purchase.')
   })
 
+  it('explains that saved provider keys stay hidden after save', () => {
+    const source = read(WORKSPACE)
+    expect(source).toContain('Saved keys are hidden after saving. Enter a new key only to replace the current one.')
+  })
+
+  it('shows clear connected/not connected status copy in provider drawer', () => {
+    const source = read(WORKSPACE)
+    expect(source).toContain('Connection status')
+    expect(source).toContain('label: "Connected"')
+    expect(source).toContain('label: "Not connected"')
+  })
+
+  it('explains Shippo USPS ship-from email + phone requirement', () => {
+    const source = read(WORKSPACE)
+    expect(source).toContain('Shippo/USPS labels require a ship-from email and phone number.')
+    expect(source).toContain('Ship-from phone is required for Shippo/USPS labels.')
+  })
+
+  it('keeps provider token field empty after loading and saving settings', () => {
+    const source = read(WORKSPACE)
+    expect(source).toContain('token: ""')
+    expect(source).toContain('setProviderForm((current) => ({ ...current, token: "" }))')
+  })
+
   it('uses non-fatal address pre-validation guidance in the location drawer', () => {
     const source = read(WORKSPACE)
     expect(source).toContain('Address pre-validation is not available yet.')

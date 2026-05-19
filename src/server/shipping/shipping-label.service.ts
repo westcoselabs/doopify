@@ -45,6 +45,47 @@ function normalizeEmail(value?: string | null) {
   return normalized || null
 }
 
+function normalizePhone(value?: string | null) {
+  const normalized = String(value ?? '').trim()
+  return normalized || null
+}
+
+function resolveOptionalStoreField(
+  store: NonNullable<Awaited<ReturnType<typeof getStoreSettings>>>,
+  field: string
+) {
+  const dynamicStore = store as Record<string, unknown>
+  const value = dynamicStore[field]
+  return typeof value === 'string' ? value : null
+}
+
+function providerDisplayName(provider: ShippingLiveProvider) {
+  return provider === 'EASYPOST' ? 'EasyPost' : 'Shippo'
+}
+
+function isUnitedStatesCountry(value?: string | null) {
+  return normalizeCountry(value) === 'US'
+}
+
+function validateShippoOriginContact(input: {
+  provider: ShippingLiveProvider
+  request: ShippingRateRequest
+}) {
+  if (input.provider !== 'SHIPPO') return
+
+  if (!input.request.originAddress.email) {
+    throw new Error(
+      'Shippo requires a ship-from email before buying USPS labels. Add an email to your shipping location or store profile.'
+    )
+  }
+
+  if (!input.request.originAddress.phone) {
+    throw new Error(
+      'Shippo requires a ship-from phone number before buying USPS labels. Add a phone number to your shipping location or store profile.'
+    )
+  }
+}
+
 function validateParcel(input: OrderLabelParcelInput) {
   if (!Number.isFinite(input.weightOz) || input.weightOz <= 0) {
     throw new Error('Package weight must be greater than 0 ounces')
@@ -190,31 +231,47 @@ function buildShippingRateRequest(input: {
     throw new Error('Default ship-from location is incomplete. Complete shipping setup before buying labels.')
   }
 
-  const shippingPackages = input.store.shippingPackages || []
-  const defaultPackage =
-    shippingPackages.find((entry) => entry.isDefault && entry.isActive) ||
-    shippingPackages.find((entry) => entry.isActive) ||
-    null
-
-  if (!defaultPackage) {
-    throw new Error('A default active package is required before buying labels.')
+  if (!shippingAddress.address1) {
+    throw new Error(
+      'Order shipping address is missing address line 1. Correct the shipping address before buying a label.'
+    )
   }
-
-  if (!shippingAddress.address1 || !shippingAddress.city || !shippingAddress.postalCode || !shippingAddress.country) {
-    throw new Error('Order shipping address is incomplete for label rates')
+  if (!shippingAddress.city) {
+    throw new Error('Order shipping address is missing a city. Correct the shipping address before buying a label.')
+  }
+  if (!shippingAddress.postalCode) {
+    throw new Error(
+      'Order shipping address is missing a ZIP/postal code. Correct the shipping address before buying a label.'
+    )
+  }
+  if (!shippingAddress.country) {
+    throw new Error(
+      'Order shipping address is missing a country. Correct the shipping address before buying a label.'
+    )
+  }
+  if (isUnitedStatesCountry(shippingAddress.country) && !shippingAddress.province) {
+    throw new Error(
+      'Order shipping address is missing a state/province. Correct the shipping address before buying a label.'
+    )
   }
 
   const resolvedShipFromEmail =
     normalizeEmail(defaultLocation.email) ||
     normalizeEmail(input.store.supportEmail) ||
-    normalizeEmail(input.store.email)
+    normalizeEmail(input.store.email) ||
+    normalizeEmail(resolveOptionalStoreField(input.store, 'shippingOriginEmail'))
+  const resolvedShipFromPhone =
+    normalizePhone(defaultLocation.phone) ||
+    normalizePhone(resolveOptionalStoreField(input.store, 'supportPhone')) ||
+    normalizePhone(input.store.phone) ||
+    normalizePhone(input.store.shippingOriginPhone)
 
   return {
     apiKey: '',
     currency: (input.store.currency || 'USD').toUpperCase(),
     originAddress: {
       name: defaultLocation.contactName || defaultLocation.name || input.store.shippingOriginName,
-      phone: defaultLocation.phone || input.store.shippingOriginPhone,
+      phone: resolvedShipFromPhone,
       email: resolvedShipFromEmail,
       address1: defaultLocation.address1,
       address2: defaultLocation.address2,
@@ -362,6 +419,9 @@ export async function getOrderShippingRatesForLabel(input: {
     orderNumber: input.orderNumber,
     items: input.items,
   })
+  if (!['PAID', 'PARTIALLY_REFUNDED'].includes(order.paymentStatus)) {
+    throw new Error('Labels can only be purchased for paid orders')
+  }
   const { provider, apiKey, store } = await resolveLiveProviderForLabelsWithOverride({
     requestedProvider: input.provider,
   })
@@ -371,11 +431,7 @@ export async function getOrderShippingRatesForLabel(input: {
     parcel: input.parcel,
   })
 
-  if (provider === 'SHIPPO' && !request.originAddress.email) {
-    throw new Error(
-      'Ship-from email is required before buying a Shippo label. Add an email to your shipping location or store profile.'
-    )
-  }
+  validateShippoOriginContact({ provider, request })
 
   const quotes = await getShippingProviderLiveRates({
     provider,
@@ -386,7 +442,18 @@ export async function getOrderShippingRatesForLabel(input: {
   })
 
   if (!quotes.length) {
-    throw new Error('No shipping label rates are available for this shipment')
+    console.warn('[shipping-label] provider returned zero rates', {
+      provider,
+      destinationHasPostalCode: Boolean(request.destinationAddress.postalCode),
+      destinationHasStateProvince: Boolean(request.destinationAddress.province),
+      originHasPostalCode: Boolean(request.originAddress.postalCode),
+      originHasStateProvince: Boolean(request.originAddress.province),
+      parcel: request.parcel,
+    })
+
+    throw new Error(
+      `No label rates returned from ${providerDisplayName(provider)}. Check destination ZIP/postal code, ship-from address, package dimensions, and enabled carriers in your provider account.`
+    )
   }
 
   return {
@@ -443,11 +510,7 @@ export async function buyOrderShippingLabel(input: {
   // Build the rate request for the provider call and for persisting shipment context.
   // This validates the ship-from location and destination address are present.
   const request = buildShippingRateRequest({ store, order, parcel: input.parcel })
-  if (provider === 'SHIPPO' && !request.originAddress.email) {
-    throw new Error(
-      'Ship-from email is required before buying a Shippo label. Add an email to your shipping location or store profile.'
-    )
-  }
+  validateShippoOriginContact({ provider, request })
 
   const safeProviderRateId = input.providerRateId.trim()
   const safeShipmentId = input.shipmentId?.trim()

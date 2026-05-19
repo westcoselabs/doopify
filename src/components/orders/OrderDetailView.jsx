@@ -255,6 +255,7 @@ export default function OrderDetailView({
   const [buyingLabel, setBuyingLabel] = useState(false);
   const [creatingManual, setCreatingManual] = useState(false);
   const [rateQuotes, setRateQuotes] = useState([]);
+  const [labelRatesError, setLabelRatesError] = useState("");
   const [rateProvider, setRateProvider] = useState("");
   const [selectedRateId, setSelectedRateId] = useState("");
   // EasyPost requires the original shipment id to avoid creating a duplicate shipment on purchase.
@@ -444,6 +445,7 @@ export default function OrderDetailView({
     setSelectedRateId("");
     setSelectedShipmentId("");
     setRatesLoadAttempted(false);
+    setLabelRatesError("");
   }
 
   useEffect(() => {
@@ -511,6 +513,7 @@ export default function OrderDetailView({
     if (!currentOrder?.orderNumberValue) return;
     setPageError("");
     setRatesLoading(true);
+    setLabelRatesError("");
     try {
       if (!selectedProviderForLabel) {
         throw new Error("Select a connected label provider before loading label rates.");
@@ -537,13 +540,21 @@ export default function OrderDetailView({
       );
       setRatesLoadAttempted(true);
       if (!quotes.length) {
-        showToast(`${providerLabel(selectedProviderForLabel)} returned no label rates for this package.`, "info");
+        const message = `No label rates returned from ${providerLabel(selectedProviderForLabel)}. Check destination ZIP/postal code, ship-from address, package dimensions, and enabled carriers in your provider account.`;
+        setLabelRatesError(message);
+        showToast(message, "info");
       } else {
+        setLabelRatesError("");
         showToast(`${providerLabel(selectedProviderForLabel)} label rates loaded.`, "success");
       }
     } catch (error) {
-      clearQuoteSelection();
-      showToast(error instanceof Error ? error.message : "Failed to load label rates.", "error");
+      const message = error instanceof Error ? error.message : "Failed to load label rates.";
+      setRateQuotes([]);
+      setSelectedRateId("");
+      setSelectedShipmentId("");
+      setRatesLoadAttempted(true);
+      setLabelRatesError(message);
+      showToast(message, "error");
     } finally {
       setRatesLoading(false);
     }
@@ -970,6 +981,9 @@ export default function OrderDetailView({
             {fulfillmentMethod === "BUY_LABEL" ? (
               <>
                 <SectionDivider label="Buy shipping label" />
+                <p className={styles.helperNote}>
+                  Buy postage using your connected provider. This can be used even when the customer selected manual, flat, or free shipping at checkout.
+                </p>
                 {!hasAnyConnectedProvider ? (
                   <div className={styles.noProviderNotice}>
                     <span>
@@ -1101,7 +1115,10 @@ export default function OrderDetailView({
                     {ratesLoading ? <p className={styles.metaText}>Loading label rates…</p> : null}
                     {!ratesLoading && ratesLoadAttempted && !rateQuotes.length ? (
                       <AdminEmptyState
-                        description="No rates were returned for this package. Adjust parcel details or try another provider."
+                        description={
+                          labelRatesError ||
+                          "No rates were returned for this package. Adjust parcel details or try another provider."
+                        }
                         title="No label rates available"
                       />
                     ) : null}

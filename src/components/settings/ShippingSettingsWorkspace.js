@@ -229,6 +229,12 @@ function renderRateSummary(rate, currency) {
   return formatMoney(rate.amount, currency);
 }
 
+function formatShippingProviderName(provider) {
+  if (provider === "SHIPPO") return "Shippo";
+  if (provider === "EASYPOST") return "EasyPost";
+  return "Provider";
+}
+
 export default function ShippingSettingsWorkspace({
   embedded = false,
   onModeSaveStateChange,
@@ -320,8 +326,15 @@ export default function ShippingSettingsWorkspace({
   const resolvedShipFromEmail =
     normalizeOptional(defaultLocationEntry?.email) ||
     normalizeOptional(settings?.supportEmail) ||
-    normalizeOptional(settings?.email);
+    normalizeOptional(settings?.email) ||
+    normalizeOptional(settings?.shippingOriginEmail);
+  const resolvedShipFromPhone =
+    normalizeOptional(defaultLocationEntry?.phone) ||
+    normalizeOptional(settings?.supportPhone) ||
+    normalizeOptional(settings?.phone) ||
+    normalizeOptional(settings?.shippingOriginPhone);
   const missingShipFromEmailForShippo = shippoInUse && !resolvedShipFromEmail;
+  const missingShipFromPhoneForShippo = shippoInUse && !resolvedShipFromPhone;
   const checkoutMethodDraft = useMemo(
     () => buildCheckoutMethodDraft(mode, activeRateProvider, labelProvider, fallbackBehavior),
     [mode, activeRateProvider, labelProvider, fallbackBehavior]
@@ -330,6 +343,42 @@ export default function ShippingSettingsWorkspace({
     () => !isCheckoutMethodEqual(checkoutMethodDraft, savedCheckoutMethod),
     [checkoutMethodDraft, savedCheckoutMethod]
   );
+  const drawerProviderConnectionState = useMemo(() => {
+    if (providerForm.provider === "NONE") {
+      return {
+        tone: "neutral",
+        label: "Not connected",
+        detail: "Select Shippo or EasyPost to connect credentials.",
+      };
+    }
+
+    const matchesActiveProvider = providerForm.provider === activeRateProvider;
+    const matchesLabelProvider = providerForm.provider === labelProvider;
+    const connected =
+      (matchesActiveProvider && hasProviderConnection) ||
+      (matchesLabelProvider && hasLabelProviderConnection);
+    const providerName = formatShippingProviderName(providerForm.provider);
+
+    if (connected) {
+      return {
+        tone: "success",
+        label: "Connected",
+        detail: `${providerName} is connected and available with your current shipping settings.`,
+      };
+    }
+
+    return {
+      tone: "warning",
+      label: "Not connected",
+      detail: `${providerName} is not connected. Save credentials and verify connection to use this provider.`,
+    };
+  }, [
+    providerForm.provider,
+    activeRateProvider,
+    labelProvider,
+    hasProviderConnection,
+    hasLabelProviderConnection,
+  ]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -1212,6 +1261,26 @@ export default function ShippingSettingsWorkspace({
                 </div>
                 <div className={styles.requirementRow}>
                   <div className={styles.requirementMain}>
+                    <p className={styles.compactRowTitle}>Ship-from phone</p>
+                    <p className={styles.compactRowDescription}>
+                      Required by Shippo/USPS when buying labels.
+                    </p>
+                  </div>
+                  <div className={styles.shippingProviderActions}>
+                    <AdminStatusChip tone={missingShipFromPhoneForShippo ? "warning" : "success"}>
+                      {missingShipFromPhoneForShippo ? "Missing" : "Ready"}
+                    </AdminStatusChip>
+                    <AdminButton
+                      onClick={() => openLocationDrawer(defaultLocationEntry)}
+                      size="sm"
+                      variant="secondary"
+                    >
+                      {defaultLocationEntry ? "Edit" : "Set location"}
+                    </AdminButton>
+                  </div>
+                </div>
+                <div className={styles.requirementRow}>
+                  <div className={styles.requirementMain}>
                     <p className={styles.compactRowTitle}>Fallback shipping rate</p>
                     <p className={styles.compactRowDescription}>Shown only if Shippo/EasyPost cannot return rates.</p>
                   </div>
@@ -1231,6 +1300,16 @@ export default function ShippingSettingsWorkspace({
               {missingShipFromEmailForShippo ? (
                 <p className={styles.statusText}>
                   Ship-from email is required before buying Shippo labels. Add it to your shipping location or store profile.
+                </p>
+              ) : null}
+              {missingShipFromPhoneForShippo ? (
+                <p className={styles.statusText}>
+                  Ship-from phone is required before buying Shippo labels. Add it to your shipping location or store profile.
+                </p>
+              ) : null}
+              {shippoInUse ? (
+                <p className={styles.statusText}>
+                  Shippo/USPS labels require a ship-from email and phone number.
                 </p>
               ) : null}
               {!missingLiveRateRequirements && !hasLabelProviderConnection ? (
@@ -1435,7 +1514,17 @@ export default function ShippingSettingsWorkspace({
                   placeholder="Paste token to save or update"
                 />
               </AdminField>
+              <div className={styles.actionRow}>
+                <span className={styles.metaText}>Connection status</span>
+                <AdminStatusChip tone={drawerProviderConnectionState.tone}>
+                  {drawerProviderConnectionState.label}
+                </AdminStatusChip>
+              </div>
+              <p className={styles.compactMeta}>{drawerProviderConnectionState.detail}</p>
             </div>
+            <p className={styles.compactMeta}>
+              Saved keys are hidden after saving. Enter a new key only to replace the current one.
+            </p>
             <p className={styles.compactMeta}>Saved credentials stay encrypted and are never rendered in raw form.</p>
             <div className={styles.compactActionRow}>
               <AdminButton disabled={saving} size="sm" variant="secondary" onClick={saveProviderSettings}>
@@ -1529,6 +1618,11 @@ export default function ShippingSettingsWorkspace({
         {shippoInUse && !resolvedShipFromEmail ? (
           <p className={styles.statusText} style={{ color: "var(--warning, #f59e0b)" }}>
             Ship-from email is required for Shippo/USPS labels. Add an email here or in your store profile.
+          </p>
+        ) : null}
+        {shippoInUse && !resolvedShipFromPhone ? (
+          <p className={styles.statusText} style={{ color: "var(--warning, #f59e0b)" }}>
+            Ship-from phone is required for Shippo/USPS labels. Add a phone number here or in your store profile.
           </p>
         ) : null}
         {locationDrawerError ? (

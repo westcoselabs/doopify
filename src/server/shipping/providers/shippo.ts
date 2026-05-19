@@ -77,6 +77,9 @@ function classifyShippoTransactionFailure(messages: string[]) {
   if (!combined) {
     return 'Provider transaction failed. Try refreshing rates and retrying the label purchase.'
   }
+  if (/(sender_info_missing|seller info|seller email|phone number required|email or phone)/.test(combined)) {
+    return 'Shippo requires a ship-from email and phone number for USPS labels. Add them to your shipping location or store profile.'
+  }
   if (/(address_from\.email|from\.email|ship-from email|attribute\s*\"address_from\.email\")/.test(combined)) {
     return 'Ship-from email is missing. Add an email to your shipping location or store profile.'
   }

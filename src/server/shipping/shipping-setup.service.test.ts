@@ -20,6 +20,9 @@ import { buildShippingSetupStatus } from './shipping-setup.service'
 function storeFixture(overrides: Record<string, unknown> = {}) {
   return {
     id: 'store_1',
+    email: 'store@example.com',
+    supportEmail: 'support@example.com',
+    phone: '555-000-0000',
     shippingMode: 'MANUAL',
     shippingLiveProvider: null,
     shippingProviderUsage: 'LIVE_AND_LABELS',
@@ -45,6 +48,8 @@ function storeFixture(overrides: Record<string, unknown> = {}) {
         stateProvince: 'TX',
         postalCode: '78701',
         country: 'US',
+        email: null,
+        phone: null,
         isDefault: true,
         isActive: true,
       },
@@ -197,6 +202,76 @@ describe('buildShippingSetupStatus', () => {
     expect(status.labelProviderConnected).toBe(true)
     expect(status.canUseLiveRates).toBe(false)
     expect(status.canBuyLabels).toBe(true)
+  })
+
+  it('treats Shippo seller phone as present when store phone fallback exists', async () => {
+    const store = storeFixture({
+      shippingMode: 'MANUAL',
+      activeRateProvider: 'NONE',
+      labelProvider: 'SHIPPO',
+      shippingLocations: [
+        {
+          id: 'loc_1',
+          name: 'HQ',
+          address1: '10 Origin St',
+          city: 'Austin',
+          stateProvince: 'TX',
+          postalCode: '78701',
+          country: 'US',
+          email: null,
+          phone: null,
+          isDefault: true,
+          isActive: true,
+        },
+      ],
+      supportEmail: null,
+      email: 'store@example.com',
+      phone: '555-777-9999',
+      shippingOriginPhone: null,
+    })
+    mocks.getShippingProviderConnectionStatus.mockResolvedValue({
+      provider: 'SHIPPO',
+      connected: true,
+    })
+
+    const status = await buildShippingSetupStatus(store)
+    expect(status.canBuyLabels).toBe(true)
+    expect(status.warnings.some((warning) => /phone number/i.test(warning))).toBe(false)
+  })
+
+  it('warns when Shippo seller phone is missing across location and store fallbacks', async () => {
+    const store = storeFixture({
+      shippingMode: 'MANUAL',
+      activeRateProvider: 'NONE',
+      labelProvider: 'SHIPPO',
+      shippingLocations: [
+        {
+          id: 'loc_1',
+          name: 'HQ',
+          address1: '10 Origin St',
+          city: 'Austin',
+          stateProvince: 'TX',
+          postalCode: '78701',
+          country: 'US',
+          email: 'shipping@example.com',
+          phone: null,
+          isDefault: true,
+          isActive: true,
+        },
+      ],
+      phone: null,
+      shippingOriginPhone: null,
+    })
+    mocks.getShippingProviderConnectionStatus.mockResolvedValue({
+      provider: 'SHIPPO',
+      connected: true,
+    })
+
+    const status = await buildShippingSetupStatus(store)
+    expect(status.canBuyLabels).toBe(false)
+    expect(
+      status.warnings.some((warning) => /shippo\/usps labels require a ship-from phone number/i.test(warning))
+    ).toBe(true)
   })
 
   it('reports correct nextSteps when provider is selected but not connected', async () => {
