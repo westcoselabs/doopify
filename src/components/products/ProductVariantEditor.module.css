@@ -46,7 +46,16 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 1rem;
   background: rgba(255, 255, 255, 0.035);
+}
+
+.optionPanel,
+.basicInventoryCard {
   overflow: hidden;
+}
+
+.matrixWrap {
+  overflow-x: auto;
+  overflow-y: hidden;
 }
 
 .optionCard {
@@ -106,9 +115,12 @@
 }
 
 .fieldErrorText {
-  margin: 0.28rem 0 0;
+  margin: 0;
   font-size: 0.72rem;
   color: var(--error);
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .optionError,
@@ -279,6 +291,7 @@
   grid-template-columns: 2rem minmax(0, 1.6fr) minmax(130px, 0.9fr) minmax(130px, 0.8fr) minmax(90px, 0.5fr) minmax(130px, 0.6fr);
   gap: 0.75rem;
   align-items: center;
+  min-width: 980px;
 }
 
 .matrixHeader {
@@ -375,6 +388,20 @@
 }
 
 .variantSkuCell {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.variantPriceCell,
+.variantInventoryCell,
+.weightCell {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.3rem;
   min-width: 0;
 }
 
@@ -417,10 +444,6 @@
 .inventoryInput {
   max-width: 6rem;
   font-weight: 700;
-}
-
-.weightCell {
-  min-width: 0;
 }
 
 .weightInputWrap {

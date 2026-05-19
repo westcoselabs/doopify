@@ -85,8 +85,8 @@ function transformApiProduct(product) {
     price: String(v.price ?? '0.00'),
     compareAtPrice: v.compareAtPrice != null ? String(v.compareAtPrice) : '',
     inventoryQty: v.inventory ?? 0,
-    weight: v.weight || null,
-    weightUnit: v.weightUnit || 'kg',
+    weight: v.weight ?? null,
+    weightUnit: v.weightUnit ?? 'kg',
     position: v.position ?? 0,
     optionValues: options.reduce((values, option, index) => {
       const parts = String(v.title || '')

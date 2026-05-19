@@ -33,9 +33,12 @@ describe('product variant weight UI contract', () => {
     const css = fs.readFileSync(cssPath, 'utf8')
 
     expect(css).toContain('overflow: visible;')
+    expect(css).toContain('overflow-x: auto;')
     expect(css).toContain('width: 5rem;')
     expect(css).toContain('min-width: 5rem;')
     expect(css).toContain('grid-template-columns: minmax(0, 1fr);')
+    expect(css).toContain('.variantSkuCell {')
+    expect(css).toContain('flex-direction: column;')
   })
 
   it('renders polished default-variant copy and grouped inventory/shipping labels', () => {
@@ -47,5 +50,13 @@ describe('product variant weight UI contract', () => {
     expect(source).toContain('Used for shipping rates and label calculations.')
     expect(source).toContain('Inventory tracking enabled')
     expect(source).toContain('Add option')
+  })
+
+  it('keeps product save payload wiring for variant weight and unit fields', () => {
+    const contextPath = path.resolve(process.cwd(), 'src/context/ProductContext.js')
+    const contextSource = fs.readFileSync(contextPath, 'utf8')
+
+    expect(contextSource).toContain('weight: v.weight != null ? Number(v.weight) : undefined')
+    expect(contextSource).toContain('weightUnit: v.weightUnit || undefined')
   })
 })

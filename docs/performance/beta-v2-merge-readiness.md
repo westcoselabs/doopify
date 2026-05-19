@@ -279,3 +279,17 @@ No merge blocker was found in this review pass. Merge should wait for the manual
   - Summary response still returns a single lightweight thumbnail item when available, else empty/fallback.
 - Validation:
   - Re-run `npm run lint`, `npm run test`, and `npm run build` after these fixes before merge.
+
+## Second Smoke Test Fixes
+
+- Variant weight persistence fix:
+  - Preserved variant `weight` and `weightUnit` through `prepareProductForSave` even when option-based variant generation runs.
+  - Added safe normalization for invalid/negative weight values (normalized to `null`) and fallback unit (`kg`).
+  - Fixed product-detail hydrate mapping to keep legitimate `0` weight values on editor reopen (`??` instead of `||`).
+- Variant table and SKU layout fix:
+  - Enabled horizontal overflow on the matrix container for wide variant tables.
+  - Added deterministic minimum row width for matrix header/rows.
+  - Converted SKU/price/inventory/weight cells to vertical stacks so helper errors render below inputs without overlap.
+  - Improved error text wrapping and spacing for long SKU validation messages.
+- Validation:
+  - Re-run `npm run lint`, `npm run test`, and `npm run build` after this second smoke fix pass.

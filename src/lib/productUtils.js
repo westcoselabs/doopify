@@ -143,6 +143,27 @@ function parseIntegerInput(value) {
   };
 }
 
+function normalizeVariantWeight(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return null;
+  }
+
+  if (numeric < 0) {
+    return null;
+  }
+
+  return Number(numeric.toFixed(4));
+}
+
+function normalizeVariantWeightUnit(value) {
+  const normalized = trimString(value).toLowerCase();
+  if (['g', 'kg', 'oz', 'lb'].includes(normalized)) {
+    return normalized;
+  }
+  return 'kg';
+}
+
 function normalizeTagList(tags = []) {
   return [...new Set(tags.map(trimString).filter(Boolean))];
 }
@@ -266,6 +287,8 @@ function createDefaultVariant(product) {
     price: normalizeMoney(product.basePrice),
     compareAtPrice: normalizeMoney(product.compareAtPrice),
     inventoryQty: normalizeInventory(product.inventorySummary?.totalAvailable),
+    weight: null,
+    weightUnit: 'kg',
     imageId: product.featuredImageId || null,
     isDefault: true,
     isActive: true,
@@ -317,6 +340,8 @@ function buildVariantFromTemplate(templateVariant, combo, optionNames, product, 
     price: normalizeMoney(templateVariant?.price ?? product.basePrice),
     compareAtPrice: normalizeMoney(templateVariant?.compareAtPrice ?? product.compareAtPrice),
     inventoryQty: normalizeInventory(templateVariant?.inventoryQty),
+    weight: normalizeVariantWeight(templateVariant?.weight),
+    weightUnit: normalizeVariantWeightUnit(templateVariant?.weightUnit),
     imageId: templateVariant?.imageId || product.featuredImageId || null,
     isDefault: false,
     isActive: templateVariant?.isActive ?? true,
@@ -955,6 +980,8 @@ export function prepareProductForSave(product) {
     price: normalizeMoney(variant.price ?? baseProduct.basePrice),
     compareAtPrice: normalizeMoney(variant.compareAtPrice ?? baseProduct.compareAtPrice),
     inventoryQty: normalizeInventory(variant.inventoryQty),
+    weight: normalizeVariantWeight(variant.weight),
+    weightUnit: normalizeVariantWeightUnit(variant.weightUnit),
     imageId: mediaState.images.find(image => image.id === variant.imageId)?.id || mediaState.featuredImageId,
     isDefault: !options.length,
     isActive: variant.isActive ?? true,
