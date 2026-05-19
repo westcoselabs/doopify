@@ -133,6 +133,24 @@ function providerLabel(provider) {
 
 export const STORE_DEFAULT_LABEL_PROVIDER_OPTION = "STORE_DEFAULT";
 
+function hasPrefetchedTimelineData(order) {
+  if (!order) return false;
+  if (order.timelineLoaded === false) return false;
+  if (Array.isArray(order.timeline) || Array.isArray(order.events) || Array.isArray(order.customerVisibleNotes)) {
+    return true;
+  }
+  return false;
+}
+
+function hasPrefetchedFulfillmentData(order) {
+  if (!order) return false;
+  if (order.fulfillmentLoaded === false) return false;
+  if (Array.isArray(order.fulfillments) || Array.isArray(order.shippingLabels) || Array.isArray(order.shipments)) {
+    return true;
+  }
+  return false;
+}
+
 function normalizeConnectedProviders(input) {
   const values = Array.isArray(input) ? input : [];
   const orderedProviders = ["EASYPOST", "SHIPPO"];
@@ -291,10 +309,24 @@ export default function OrderDetailView({
   const [savingInternalNote, setSavingInternalNote] = useState(false);
   const [savingCustomerNote, setSavingCustomerNote] = useState(false);
   const [statusActionLoading, setStatusActionLoading] = useState("");
+  const [timelineLoaded, setTimelineLoaded] = useState(() => hasPrefetchedTimelineData(order));
+  const [timelineLoading, setTimelineLoading] = useState(() => Boolean(order) && !hasPrefetchedTimelineData(order));
+  const [fulfillmentLoaded, setFulfillmentLoaded] = useState(() => hasPrefetchedFulfillmentData(order));
+  const [fulfillmentLoading, setFulfillmentLoading] = useState(
+    () => Boolean(order) && !hasPrefetchedFulfillmentData(order)
+  );
+  const [secondaryReloadKey, setSecondaryReloadKey] = useState(0);
 
   useEffect(() => {
 // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional effect-driven state sync for existing async/load flow
     setLiveOrder(order);
+    const timelinePrefetched = hasPrefetchedTimelineData(order);
+    const fulfillmentPrefetched = hasPrefetchedFulfillmentData(order);
+    setTimelineLoaded(timelinePrefetched);
+    setTimelineLoading(Boolean(order) && !timelinePrefetched);
+    setFulfillmentLoaded(fulfillmentPrefetched);
+    setFulfillmentLoading(Boolean(order) && !fulfillmentPrefetched);
+    setSecondaryReloadKey((current) => current + 1);
   }, [order]);
 
   const currentOrder = liveOrder || order;
@@ -330,6 +362,8 @@ export default function OrderDetailView({
     currentOrder?.emailCapabilities?.hasCustomerEmail ??
     Boolean(currentOrder?.email || currentOrder?.customer?.email);
   const emailProviderConfigured = Boolean(currentOrder?.emailCapabilities?.providerConfigured);
+  const fulfillmentPanelReady = fulfillmentLoaded && !fulfillmentLoading;
+  const timelinePanelReady = timelineLoaded && !timelineLoading;
   const shipmentCards = useMemo(
     () => normalizeShipmentCards({ fulfillments, shippingLabels, currency }),
     [fulfillments, shippingLabels, currency]
@@ -419,7 +453,6 @@ export default function OrderDetailView({
   }
 
   function showToast(message, tone = "success", options = {}) {
-// eslint-disable-next-line react-hooks/purity -- intentional runtime value preserves existing scheduling/toast behavior
     const toastId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     const toast = {
       id: toastId,
@@ -452,6 +485,79 @@ export default function OrderDetailView({
 // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional effect-driven state sync for existing async/load flow
     clearQuoteSelection();
   }, [selectedLabelProviderChoice]);
+
+  useEffect(() => {
+    if (!currentOrder?.orderNumberValue) return;
+
+    const normalizedOrderNumber = normalizeOrderNumber(currentOrder.orderNumber);
+    let cancelled = false;
+
+    const mergeSecondaryPayload = (payload) => {
+      setLiveOrder((previous) => {
+        if (!previous) return previous;
+        return {
+          ...previous,
+          ...payload,
+          availableActions: {
+            ...(previous.availableActions || {}),
+            ...(payload.availableActions || {}),
+          },
+        };
+      });
+    };
+
+    async function loadTimelinePanel() {
+      setTimelineLoading(true);
+      try {
+        const response = await fetch(`/api/orders/${normalizedOrderNumber}/detail/timeline`, { cache: "no-store" });
+        const json = await response.json();
+        if (!response.ok || !json?.success) {
+          throw new Error(parseErrorMessage(json, "Failed to load timeline details."));
+        }
+        if (!cancelled) {
+          mergeSecondaryPayload(json.data || {});
+        }
+      } catch {
+        if (!cancelled) {
+          showToast("Timeline could not be loaded right now.", "error");
+        }
+      } finally {
+        if (!cancelled) {
+          setTimelineLoaded(true);
+          setTimelineLoading(false);
+        }
+      }
+    }
+
+    async function loadFulfillmentPanel() {
+      setFulfillmentLoading(true);
+      try {
+        const response = await fetch(`/api/orders/${normalizedOrderNumber}/detail/fulfillment`, { cache: "no-store" });
+        const json = await response.json();
+        if (!response.ok || !json?.success) {
+          throw new Error(parseErrorMessage(json, "Failed to load fulfillment details."));
+        }
+        if (!cancelled) {
+          mergeSecondaryPayload(json.data || {});
+        }
+      } catch {
+        if (!cancelled) {
+          showToast("Fulfillment details could not be loaded right now.", "error");
+        }
+      } finally {
+        if (!cancelled) {
+          setFulfillmentLoaded(true);
+          setFulfillmentLoading(false);
+        }
+      }
+    }
+
+    void Promise.all([loadTimelinePanel(), loadFulfillmentPanel()]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentOrder?.orderNumberValue, secondaryReloadKey]);
 
   function normalizeItemsPayload() {
     const payload = [];
@@ -496,6 +602,11 @@ export default function OrderDetailView({
       const json = await response.json();
       if (json?.success) {
         setLiveOrder(json.data);
+        setTimelineLoaded(false);
+        setTimelineLoading(true);
+        setFulfillmentLoaded(false);
+        setFulfillmentLoading(true);
+        setSecondaryReloadKey((current) => current + 1);
         if (typeof onOrderRefreshed === "function") {
           await onOrderRefreshed();
         }
@@ -868,7 +979,9 @@ export default function OrderDetailView({
           {/* â”€â”€ Fulfillment history â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <AdminCard className={styles.card} variant="panel">
             <h3 className={styles.cardTitle}>Fulfillment</h3>
-            {fulfillments.length ? (
+            {!fulfillmentPanelReady ? (
+              <p className={styles.metaText}>Loading fulfillment details...</p>
+            ) : fulfillments.length ? (
               <div className={styles.fulfillmentList}>
                 {fulfillments.map((entry) => (
                   <div className={styles.fulfillmentRow} key={entry.id}>
@@ -903,7 +1016,7 @@ export default function OrderDetailView({
               />
             )}
 
-            {shippingLabels.length ? (
+            {fulfillmentPanelReady && shippingLabels.length ? (
               <>
                 <SectionDivider label="Shipping labels" />
                 <div className={styles.labelList}>
@@ -932,7 +1045,9 @@ export default function OrderDetailView({
             <h3 className={styles.cardTitle}>Create fulfillment</h3>
             <p className={styles.cardSubtitle}>Choose how you want to fulfill this order.</p>
 
-            {fulfillableItems.length ? (
+            {!fulfillmentPanelReady ? (
+              <p className={styles.metaText}>Loading fulfillment state...</p>
+            ) : fulfillableItems.length ? (
               <div className={styles.selectorList}>
                 {fulfillableItems.map((item) => (
                   <label className={styles.selectorRow} key={item.id}>
@@ -962,6 +1077,7 @@ export default function OrderDetailView({
             <div className={styles.methodCards}>
               <button
                 className={`${styles.methodCard} ${fulfillmentMethod === "BUY_LABEL" ? styles.methodCardActive : ""}`}
+                disabled={!fulfillmentPanelReady}
                 onClick={() => setFulfillmentMethod("BUY_LABEL")}
                 type="button"
               >
@@ -970,6 +1086,7 @@ export default function OrderDetailView({
               </button>
               <button
                 className={`${styles.methodCard} ${fulfillmentMethod === "MANUAL_TRACKING" ? styles.methodCardActive : ""}`}
+                disabled={!fulfillmentPanelReady}
                 onClick={() => setFulfillmentMethod("MANUAL_TRACKING")}
                 type="button"
               >
@@ -1102,7 +1219,7 @@ export default function OrderDetailView({
                     </label>
                     <div className={styles.actionRow}>
                       <AdminButton
-                        disabled={labelProviderSelection.selectedProviderDisconnected}
+                        disabled={!fulfillmentPanelReady || labelProviderSelection.selectedProviderDisconnected}
                         loading={ratesLoading}
                         onClick={loadShippingRates}
                         size="sm"
@@ -1159,7 +1276,7 @@ export default function OrderDetailView({
                           })}
                           <div className={styles.actionRow}>
                             <AdminButton
-                              disabled={!canBuyShippingLabel || !selectedRateQuote}
+                              disabled={!fulfillmentPanelReady || !canBuyShippingLabel || !selectedRateQuote}
                               loading={buyingLabel}
                               onClick={buyShippingLabel}
                               size="sm"
@@ -1232,7 +1349,12 @@ export default function OrderDetailView({
                 ) : null}
 
                 <div className={styles.actionRow}>
-                  <AdminButton loading={creatingManual} onClick={createManualTrackingFulfillment} size="sm">
+                  <AdminButton
+                    disabled={!fulfillmentPanelReady}
+                    loading={creatingManual}
+                    onClick={createManualTrackingFulfillment}
+                    size="sm"
+                  >
                     {manualSendTrackingEmail
                       ? "Save tracking, mark shipped, and email customer"
                       : "Save tracking and mark shipped"}
@@ -1367,7 +1489,9 @@ export default function OrderDetailView({
           {/* â”€â”€ Timeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <AdminCard className={styles.card} variant="panel">
             <h3 className={styles.cardTitle}>Timeline</h3>
-            {timeline.length ? (
+            {!timelinePanelReady ? (
+              <p className={styles.metaText}>Loading timeline...</p>
+            ) : timeline.length ? (
               <div className={styles.timelineList}>
                 {timeline.map((entry) => (
                   <div className={styles.timelineRow} key={entry.id}>
@@ -1392,7 +1516,9 @@ export default function OrderDetailView({
 
           <AdminCard className={styles.sideCard} variant="panel">
             <h3 className={styles.cardTitle}>Shipment</h3>
-            {shipmentCards.length ? (
+            {!fulfillmentPanelReady ? (
+              <p className={styles.metaText}>Loading shipment details...</p>
+            ) : shipmentCards.length ? (
               <div className={styles.shipmentCardList}>
                 {shipmentCards.map((shipment) => (
                   <div className={styles.shipmentCard} key={shipment.id}>
@@ -1488,7 +1614,12 @@ export default function OrderDetailView({
               </div>
             </div>
 
-            {customerVisibleNotes.length ? (
+            {!timelinePanelReady ? (
+              <>
+                <SectionDivider label="Note history" />
+                <p className={styles.metaText}>Loading note history...</p>
+              </>
+            ) : customerVisibleNotes.length ? (
               <>
                 <SectionDivider label="Note history" />
                 <div className={styles.noteHistoryList}>

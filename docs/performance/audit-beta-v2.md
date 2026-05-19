@@ -335,3 +335,44 @@ A tiny reusable dev-only server timing helper is recommended next, but was not a
 - Stripe webhook processing remains synchronous and correctness-first; no side-effect offloading done in this phase.
 - Delivery logs runner-status still loads on page entry because the panel is visible by default.
 - Additional DTO tightening remains for some read-heavy endpoints beyond Phase B/C scope.
+
+## Phase D1 Implementation Notes (Admin Order Detail Lazy Secondary Panels)
+
+### Goal
+
+- Speed up `/admin/orders/[orderNumber]` first load by returning a focused core DTO from `GET /api/orders/[orderNumber]/detail`.
+- Move heavier secondary data to on-demand read endpoints without changing mutations or payment truth behavior.
+
+### What Changed
+
+- Added a **core detail** service path:
+  - `getAdminOrderCoreByOrderNumber(orderNumber)`
+  - Used by `GET /api/orders/[orderNumber]/detail`.
+- Added lazy secondary read endpoints:
+  - `GET /api/orders/[orderNumber]/detail/timeline`
+  - `GET /api/orders/[orderNumber]/detail/fulfillment`
+- Added service helpers consumed by these endpoints:
+  - `getAdminOrderDetailTimelineByOrderNumber(orderNumber)`
+  - `getAdminOrderDetailFulfillmentByOrderNumber(orderNumber)`
+- Updated `OrderDetailView` to:
+  - load core order first
+  - fetch timeline and fulfillment/provider secondary sections asynchronously
+  - merge secondary payloads into in-memory detail state
+  - keep all existing actions and routes for notes, labels, manual fulfillment, status changes, refunds/returns untouched
+
+### Safety Boundaries Preserved
+
+- No changes to order creation flow.
+- No changes to payment status mutation logic.
+- No changes to fulfillment/refund/return mutation handlers.
+- No changes to Stripe webhook verification/finalization path.
+- No changes to inventory behavior.
+- No schema changes.
+
+### Test Coverage Added/Updated
+
+- Updated `GET /api/orders/[orderNumber]/detail` route test to mock new core service call.
+- Added route tests for:
+  - `GET /api/orders/[orderNumber]/detail/timeline`
+  - `GET /api/orders/[orderNumber]/detail/fulfillment`
+- Coverage includes auth gating, safe invalid identifier behavior, 404 behavior on missing order, and success payload shape checks.

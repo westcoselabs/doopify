@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   requireAdmin: vi.fn(),
   resolveOrderIdentifier: vi.fn(),
-  getAdminOrderCoreByOrderNumber: vi.fn(),
+  getAdminOrderDetailTimelineByOrderNumber: vi.fn(),
 }))
 
 vi.mock('@/server/auth/require-auth', () => ({
@@ -21,13 +21,13 @@ vi.mock('@/server/services/order-identifier.service', async () => {
 })
 
 vi.mock('@/server/services/admin-order-detail.service', () => ({
-  getAdminOrderCoreByOrderNumber: mocks.getAdminOrderCoreByOrderNumber,
+  getAdminOrderDetailTimelineByOrderNumber: mocks.getAdminOrderDetailTimelineByOrderNumber,
 }))
 
 import { GET } from './route'
 import { OrderIdentifierResolutionError } from '@/server/services/order-identifier.service'
 
-describe('GET /api/orders/[orderNumber]/detail', () => {
+describe('GET /api/orders/[orderNumber]/detail/timeline', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -41,7 +41,7 @@ describe('GET /api/orders/[orderNumber]/detail', () => {
       }),
     })
 
-    const response = await GET(new Request('http://localhost/api/orders/1001/detail'), {
+    const response = await GET(new Request('http://localhost/api/orders/1001/detail/timeline'), {
       params: Promise.resolve({ orderNumber: '1001' }),
     })
 
@@ -49,16 +49,16 @@ describe('GET /api/orders/[orderNumber]/detail', () => {
     expect(mocks.resolveOrderIdentifier).not.toHaveBeenCalled()
   })
 
-  it('returns normalized detail payload', async () => {
+  it('returns timeline payload', async () => {
     mocks.requireAdmin.mockResolvedValue({ ok: true, user: { id: 'admin_1', role: 'OWNER' } })
     mocks.resolveOrderIdentifier.mockResolvedValue({ orderId: 'ord_1', orderNumber: 1001 })
-    mocks.getAdminOrderCoreByOrderNumber.mockResolvedValue({
-      id: 'ord_1',
-      orderNumber: '#1001',
-      paymentStatus: 'paid',
+    mocks.getAdminOrderDetailTimelineByOrderNumber.mockResolvedValue({
+      timeline: [{ id: 'evt_1', event: 'Order placed' }],
+      events: [{ id: 'evt_1', event: 'Order placed' }],
+      customerVisibleNotes: [],
     })
 
-    const response = await GET(new Request('http://localhost/api/orders/1001/detail'), {
+    const response = await GET(new Request('http://localhost/api/orders/1001/detail/timeline'), {
       params: Promise.resolve({ orderNumber: '1001' }),
     })
 
@@ -66,12 +66,11 @@ describe('GET /api/orders/[orderNumber]/detail', () => {
     expect(await response.json()).toEqual({
       success: true,
       data: {
-        id: 'ord_1',
-        orderNumber: '#1001',
-        paymentStatus: 'paid',
+        timeline: [{ id: 'evt_1', event: 'Order placed' }],
+        events: [{ id: 'evt_1', event: 'Order placed' }],
+        customerVisibleNotes: [],
       },
     })
-    expect(mocks.getAdminOrderCoreByOrderNumber).toHaveBeenCalledWith(1001)
   })
 
   it('returns safe invalid identifier message', async () => {
@@ -80,7 +79,7 @@ describe('GET /api/orders/[orderNumber]/detail', () => {
       new OrderIdentifierResolutionError('INVALID_IDENTIFIER', 'Invalid order identifier')
     )
 
-    const response = await GET(new Request('http://localhost/api/orders/not-an-order/detail'), {
+    const response = await GET(new Request('http://localhost/api/orders/not-an-order/detail/timeline'), {
       params: Promise.resolve({ orderNumber: 'not-an-order' }),
     })
 
@@ -91,12 +90,12 @@ describe('GET /api/orders/[orderNumber]/detail', () => {
     })
   })
 
-  it('returns 404 only when order identifier resolves but detail lookup is missing', async () => {
+  it('returns 404 when order identifier resolves but timeline lookup is missing', async () => {
     mocks.requireAdmin.mockResolvedValue({ ok: true, user: { id: 'admin_1', role: 'OWNER' } })
     mocks.resolveOrderIdentifier.mockResolvedValue({ orderId: 'ord_1', orderNumber: 1001 })
-    mocks.getAdminOrderCoreByOrderNumber.mockResolvedValue(null)
+    mocks.getAdminOrderDetailTimelineByOrderNumber.mockResolvedValue(null)
 
-    const response = await GET(new Request('http://localhost/api/orders/1001/detail'), {
+    const response = await GET(new Request('http://localhost/api/orders/1001/detail/timeline'), {
       params: Promise.resolve({ orderNumber: '1001' }),
     })
 
@@ -107,3 +106,4 @@ describe('GET /api/orders/[orderNumber]/detail', () => {
     })
   })
 })
+
