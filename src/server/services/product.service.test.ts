@@ -340,6 +340,69 @@ describe('product storefront visibility', () => {
       })
     )
   })
+
+  it('returns structured variant optionValues for storefront detail DTO', async () => {
+    mocks.prisma.product.findFirst.mockResolvedValue({
+      id: 'prod-option-values',
+      handle: 'prod-option-values',
+      title: 'Structured Variant Product',
+      description: 'desc',
+      vendor: null,
+      productType: null,
+      publishedAt: new Date('2024-01-01'),
+      status: 'ACTIVE',
+      salesMode: 'STANDARD',
+      presaleStartsAt: null,
+      presaleEndsAt: null,
+      availableForPurchaseAt: null,
+      availabilityMessage: null,
+      expectedDeliveryText: null,
+      storefrontBadgeText: null,
+      fulfillmentType: 'PHYSICAL',
+      media: [],
+      options: [
+        {
+          id: 'opt-size',
+          name: 'Size',
+          position: 0,
+          values: [
+            { id: 'val-size-sm', value: 'S/M', position: 0 },
+            { id: 'val-size-l', value: 'L', position: 1 },
+          ],
+        },
+        {
+          id: 'opt-color',
+          name: 'Color',
+          position: 1,
+          values: [
+            { id: 'val-color-red', value: 'Red', position: 0 },
+            { id: 'val-color-blue', value: 'Blue', position: 1 },
+          ],
+        },
+      ],
+      variants: [
+        {
+          id: 'var-1',
+          title: 'S/M / Blue',
+          priceCents: 3299,
+          compareAtPriceCents: null,
+          sku: 'SKU-BLUE',
+          inventory: 5,
+          continueSellingWhenOutOfStock: false,
+          weight: 8,
+          weightUnit: 'oz',
+          position: 0,
+        },
+      ],
+    })
+
+    const product = await getStorefrontProductByHandle('prod-option-values')
+
+    expect(product?.variants[0]?.optionValues).toEqual({
+      Size: 'S/M',
+      Color: 'Blue',
+    })
+  })
 })
 
 describe('updateProduct â€” variant weight sync', () => {

@@ -2,6 +2,7 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 import { ok, err, parseBody } from '@/lib/api'
 import { dollarsToCents } from '@/lib/money'
+import { variantWeightSchema, variantWeightUnitSchema } from '@/app/api/products/variant-validation'
 import { requireAdmin } from '@/server/auth/require-auth'
 import { getProduct, updateProduct, archiveProduct, upsertOptions } from '@/server/services/product.service'
 
@@ -28,8 +29,8 @@ const variantSchema = z.object({
   compareAtPrice: z.number().optional(),
   inventory: z.number().int().min(0).optional(),
   continueSellingWhenOutOfStock: z.boolean().optional(),
-  weight: z.number().optional(),
-  weightUnit: z.string().optional(),
+  weight: variantWeightSchema,
+  weightUnit: variantWeightUnitSchema,
   position: z.number().int().optional(),
 })
 

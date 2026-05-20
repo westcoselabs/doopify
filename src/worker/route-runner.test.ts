@@ -2,17 +2,23 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { buildRouteTargets, buildWorkerConfig, runWorkerPass, type WorkerLogEntry } from './route-runner'
 
+function makeWorkerEnv(overrides: Partial<NodeJS.ProcessEnv> = {}): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    NODE_ENV: process.env.NODE_ENV ?? 'test',
+    DOOPIFY_WORKER_BASE_URL: 'https://shop.example.com',
+    WEBHOOK_RETRY_SECRET: 'retry-secret-123456',
+    JOB_RUNNER_SECRET: 'jobs-secret-123456',
+    ABANDONED_CHECKOUT_SECRET: 'abandoned-secret-123456',
+    ...overrides,
+  }
+}
+
 describe('worker route runner', () => {
   it('builds expected endpoint URLs for all runner routes', () => {
-    const config = buildWorkerConfig(
-      {
-        DOOPIFY_WORKER_BASE_URL: 'https://shop.example.com/',
-        WEBHOOK_RETRY_SECRET: 'retry-secret-123456',
-        JOB_RUNNER_SECRET: 'jobs-secret-123456',
-        ABANDONED_CHECKOUT_SECRET: 'abandoned-secret-123456',
-      } as NodeJS.ProcessEnv,
-      ['--once']
-    )
+    const config = buildWorkerConfig(makeWorkerEnv({
+      DOOPIFY_WORKER_BASE_URL: 'https://shop.example.com/',
+    }), ['--once'])
 
     const targets = buildRouteTargets(config)
     expect(targets.map((target) => target.path)).toEqual([
@@ -23,15 +29,7 @@ describe('worker route runner', () => {
   })
 
   it('sends bearer auth headers matching existing runner route auth expectations', async () => {
-    const config = buildWorkerConfig(
-      {
-        DOOPIFY_WORKER_BASE_URL: 'https://shop.example.com',
-        WEBHOOK_RETRY_SECRET: 'retry-secret-123456',
-        JOB_RUNNER_SECRET: 'jobs-secret-123456',
-        ABANDONED_CHECKOUT_SECRET: 'abandoned-secret-123456',
-      } as NodeJS.ProcessEnv,
-      ['--once']
-    )
+    const config = buildWorkerConfig(makeWorkerEnv(), ['--once'])
 
     const fetchMock = vi
       .fn()
@@ -63,15 +61,7 @@ describe('worker route runner', () => {
   })
 
   it('continues calling remaining routes when one route fails', async () => {
-    const config = buildWorkerConfig(
-      {
-        DOOPIFY_WORKER_BASE_URL: 'https://shop.example.com',
-        WEBHOOK_RETRY_SECRET: 'retry-secret-123456',
-        JOB_RUNNER_SECRET: 'jobs-secret-123456',
-        ABANDONED_CHECKOUT_SECRET: 'abandoned-secret-123456',
-      } as NodeJS.ProcessEnv,
-      ['--once']
-    )
+    const config = buildWorkerConfig(makeWorkerEnv(), ['--once'])
 
     const fetchMock = vi
       .fn()
@@ -92,15 +82,11 @@ describe('worker route runner', () => {
     const secretA = 'jobs-secret-123456'
     const secretB = 'retry-secret-123456'
     const secretC = 'abandoned-secret-123456'
-    const config = buildWorkerConfig(
-      {
-        DOOPIFY_WORKER_BASE_URL: 'https://shop.example.com',
-        WEBHOOK_RETRY_SECRET: secretB,
-        JOB_RUNNER_SECRET: secretA,
-        ABANDONED_CHECKOUT_SECRET: secretC,
-      } as NodeJS.ProcessEnv,
-      ['--once']
-    )
+    const config = buildWorkerConfig(makeWorkerEnv({
+      WEBHOOK_RETRY_SECRET: secretB,
+      JOB_RUNNER_SECRET: secretA,
+      ABANDONED_CHECKOUT_SECRET: secretC,
+    }), ['--once'])
 
     const logs: WorkerLogEntry[] = []
     const fetchMock = vi

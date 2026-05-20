@@ -49,6 +49,7 @@ const originalEnv = { ...process.env }
 describe('Stripe webhook route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.unstubAllEnvs()
     process.env = { ...originalEnv }
     mocks.verifyStripeWebhookSignature.mockImplementation(() => undefined)
     mocks.processStripeWebhookEvent.mockResolvedValue(undefined)
@@ -304,9 +305,9 @@ describe('Stripe webhook route', () => {
   })
 
   it('keeps webhook route timing instrumentation active when enabled', async () => {
-    process.env.DOOPIFY_ROUTE_TIMING = '1'
-    process.env.NODE_ENV = 'test'
-    process.env.VERCEL_ENV = 'preview'
+    vi.stubEnv('DOOPIFY_ROUTE_TIMING', '1')
+    vi.stubEnv('NODE_ENV', 'test')
+    vi.stubEnv('VERCEL_ENV', 'preview')
     const logSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
 
     const response = await POST(

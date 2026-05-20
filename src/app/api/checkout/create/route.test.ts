@@ -28,6 +28,7 @@ const validPayload = {
 describe('POST /api/checkout/create', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.unstubAllEnvs()
     process.env = { ...originalEnv }
   })
 
@@ -177,9 +178,9 @@ describe('POST /api/checkout/create', () => {
   })
 
   it('keeps route timing instrumentation active when enabled', async () => {
-    process.env.DOOPIFY_ROUTE_TIMING = '1'
-    process.env.NODE_ENV = 'test'
-    process.env.VERCEL_ENV = 'preview'
+    vi.stubEnv('DOOPIFY_ROUTE_TIMING', '1')
+    vi.stubEnv('NODE_ENV', 'test')
+    vi.stubEnv('VERCEL_ENV', 'preview')
     const logSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
 
     mocks.runCreateCheckoutWorkflow.mockResolvedValue({

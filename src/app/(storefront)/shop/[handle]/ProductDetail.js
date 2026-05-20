@@ -10,6 +10,10 @@ import {
   isComingSoonProduct,
   isVariantPurchasable,
 } from '@/lib/storefrontAvailability';
+import {
+  findVariantBySelectedOptions,
+  isVariantValueSelectable,
+} from '@/lib/storefront-variant-matching';
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500&display=swap');
@@ -479,13 +483,13 @@ export default function ProductDetail({ product }) {
   const selectedVariant = useMemo(() => {
     if (!variants.length) return null;
     if (!options.length) return variants[0];
-
-    return variants.find(v => {
-      const parts = (v.title || '').split(' / ');
-      return options.every((opt, i) => {
-        return parts[i] === selected[opt.name];
-      });
-    }) || variants[0];
+    return (
+      findVariantBySelectedOptions({
+        variants,
+        options,
+        selectedOptions: selected,
+      }) || variants[0]
+    );
   }, [selected, variants, options]);
 
   // Price display
@@ -507,10 +511,12 @@ export default function ProductDetail({ product }) {
 
   // Check which option values produce a valid variant
   function isValueAvailable(optName, val) {
-    const testSelected = { ...selected, [optName]: val };
-    return variants.some(v => {
-      const parts = (v.title || '').split(' / ');
-      return options.every((opt, i) => parts[i] === testSelected[opt.name]);
+    return isVariantValueSelectable({
+      variants,
+      options,
+      selectedOptions: selected,
+      optionName: optName,
+      optionValue: val,
     });
   }
 

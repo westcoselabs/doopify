@@ -6,27 +6,28 @@ const originalEnv = { ...process.env }
 
 describe('route timing helper', () => {
   afterEach(() => {
+    vi.unstubAllEnvs()
     process.env = { ...originalEnv }
     vi.restoreAllMocks()
   })
 
   it('is disabled by default', () => {
-    delete process.env.DOOPIFY_ROUTE_TIMING
-    process.env.NODE_ENV = 'development'
+    vi.stubEnv('DOOPIFY_ROUTE_TIMING', undefined)
+    vi.stubEnv('NODE_ENV', 'development')
     expect(isRouteTimingEnabled()).toBe(false)
   })
 
   it('stays disabled in production-like environments even when enabled', () => {
-    process.env.DOOPIFY_ROUTE_TIMING = '1'
-    process.env.NODE_ENV = 'production'
-    process.env.VERCEL_ENV = 'production'
+    vi.stubEnv('DOOPIFY_ROUTE_TIMING', '1')
+    vi.stubEnv('NODE_ENV', 'production')
+    vi.stubEnv('VERCEL_ENV', 'production')
     expect(isRouteTimingEnabled()).toBe(false)
   })
 
   it('logs route timing when enabled outside production', async () => {
-    process.env.DOOPIFY_ROUTE_TIMING = '1'
-    process.env.NODE_ENV = 'test'
-    process.env.VERCEL_ENV = 'preview'
+    vi.stubEnv('DOOPIFY_ROUTE_TIMING', '1')
+    vi.stubEnv('NODE_ENV', 'test')
+    vi.stubEnv('VERCEL_ENV', 'preview')
     const logSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
 
     const request = new Request('https://example.com/api/orders', {

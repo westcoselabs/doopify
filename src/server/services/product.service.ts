@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 
 import { centsToDollars } from '@/lib/money'
 import { prisma } from '@/lib/prisma'
+import { getVariantOptionValues } from '@/lib/storefront-variant-matching'
 import { emitInternalEvent } from '@/server/events/dispatcher'
 import {
   getAvailabilityMessage,
@@ -90,7 +91,7 @@ type ProductVariantPayload = {
   compareAtPriceCents?: number
   inventory?: number
   continueSellingWhenOutOfStock?: boolean
-  weight?: number
+  weight?: number | null
   weightUnit?: string
   position?: number
 }
@@ -152,6 +153,16 @@ function mapStorefrontAvailability(product: any) {
 
 export function toStorefrontProduct(product: any) {
   const availability = mapStorefrontAvailability(product)
+  const storefrontOptions = (product.options || []).map((option: any) => ({
+    id: option.id,
+    name: option.name,
+    position: option.position,
+    values: (option.values || []).map((value: any) => ({
+      id: value.id,
+      value: value.value,
+      position: value.position,
+    })),
+  }))
 
   return {
     id: product.id,
@@ -171,19 +182,11 @@ export function toStorefrontProduct(product: any) {
       width: media.asset?.width || null,
       height: media.asset?.height || null,
     })),
-    options: (product.options || []).map((option: any) => ({
-      id: option.id,
-      name: option.name,
-      position: option.position,
-      values: (option.values || []).map((value: any) => ({
-        id: value.id,
-        value: value.value,
-        position: value.position,
-      })),
-    })),
+    options: storefrontOptions,
     variants: (product.variants || []).map((variant: any) => ({
       id: variant.id,
       title: variant.title,
+      optionValues: getVariantOptionValues(variant, storefrontOptions),
       price: centsToDollars(variant.priceCents),
       compareAtPrice:
         variant.compareAtPriceCents == null ? null : centsToDollars(variant.compareAtPriceCents),
@@ -539,7 +542,7 @@ export async function createProduct(data: {
     compareAtPriceCents?: number
     inventory?: number
     continueSellingWhenOutOfStock?: boolean
-    weight?: number
+    weight?: number | null
     weightUnit?: string
     position?: number
   }>
@@ -813,7 +816,7 @@ export async function updateVariant(
     compareAtPriceCents: number
     inventory: number
     continueSellingWhenOutOfStock: boolean
-    weight: number
+    weight: number | null
     weightUnit: string
   }>
 ) {
@@ -829,7 +832,7 @@ export async function createVariant(
     compareAtPriceCents?: number
     inventory?: number
     continueSellingWhenOutOfStock?: boolean
-    weight?: number
+    weight?: number | null
     weightUnit?: string
   }
 ) {

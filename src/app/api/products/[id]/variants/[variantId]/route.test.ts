@@ -101,10 +101,45 @@ describe('PATCH /api/products/[id]/variants/[variantId]', () => {
     )
 
     expect(response.status).toBe(200)
-    // weightUnit not sent — should not be in the call
     expect(mocks.updateVariant).toHaveBeenCalledWith(
       'var_1',
       expect.not.objectContaining({ weightUnit: expect.anything() })
+    )
+  })
+
+  it('accepts zero weight values', async () => {
+    mocks.updateVariant.mockResolvedValue({ id: 'var_1', weight: 0, weightUnit: 'oz' })
+
+    const response = await PATCH(
+      new Request('http://localhost/api/products/prod_1/variants/var_1', {
+        method: 'PATCH',
+        body: JSON.stringify({ weight: 0, weightUnit: 'oz' }),
+      }),
+      { params: Promise.resolve({ id: 'prod_1', variantId: 'var_1' }) }
+    )
+
+    expect(response.status).toBe(200)
+    expect(mocks.updateVariant).toHaveBeenCalledWith(
+      'var_1',
+      expect.objectContaining({ weight: 0, weightUnit: 'oz' })
+    )
+  })
+
+  it('allows clearing weight with null', async () => {
+    mocks.updateVariant.mockResolvedValue({ id: 'var_1', weight: null })
+
+    const response = await PATCH(
+      new Request('http://localhost/api/products/prod_1/variants/var_1', {
+        method: 'PATCH',
+        body: JSON.stringify({ weight: null }),
+      }),
+      { params: Promise.resolve({ id: 'prod_1', variantId: 'var_1' }) }
+    )
+
+    expect(response.status).toBe(200)
+    expect(mocks.updateVariant).toHaveBeenCalledWith(
+      'var_1',
+      expect.objectContaining({ weight: null })
     )
   })
 
@@ -117,10 +152,46 @@ describe('PATCH /api/products/[id]/variants/[variantId]', () => {
       { params: Promise.resolve({ id: 'prod_1', variantId: 'var_1' }) }
     )
 
-    // zod: z.number().optional() does not reject negative — weight saves through
-    // the meaningful constraint is that weight=0 means no weight for rate matching.
-    // This test documents the current schema behavior.
-    expect(mocks.updateVariant).toHaveBeenCalled()
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      error: 'Weight must be 0 or greater',
+    })
+    expect(mocks.updateVariant).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid weight units', async () => {
+    const response = await PATCH(
+      new Request('http://localhost/api/products/prod_1/variants/var_1', {
+        method: 'PATCH',
+        body: JSON.stringify({ weight: 5, weightUnit: 'stone' }),
+      }),
+      { params: Promise.resolve({ id: 'prod_1', variantId: 'var_1' }) }
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      error: expect.stringContaining('Invalid enum value'),
+    })
+    expect(mocks.updateVariant).not.toHaveBeenCalled()
+  })
+
+  it('rejects infinite weight values', async () => {
+    const response = await PATCH(
+      new Request('http://localhost/api/products/prod_1/variants/var_1', {
+        method: 'PATCH',
+        body: '{"weight":1e309}',
+      }),
+      { params: Promise.resolve({ id: 'prod_1', variantId: 'var_1' }) }
+    )
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toMatchObject({
+      success: false,
+      error: 'Weight must be a finite number',
+    })
+    expect(mocks.updateVariant).not.toHaveBeenCalled()
   })
 
   it('updates inventory without touching weight', async () => {
