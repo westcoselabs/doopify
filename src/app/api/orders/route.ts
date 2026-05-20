@@ -12,6 +12,8 @@ export async function GET(req: Request) {
 
     try {
       const { searchParams } = new URL(req.url)
+      const viewParam = searchParams.get('view')
+      const view = viewParam === 'payments_activity' ? 'payments_activity' : undefined
       const result = await getOrders({
         status: (searchParams.get('status') as OrderStatus) || undefined,
         paymentStatus: (searchParams.get('paymentStatus') as PaymentStatus) || undefined,
@@ -19,6 +21,7 @@ export async function GET(req: Request) {
         search: searchParams.get('search') || undefined,
         page: Number(searchParams.get('page') || 1),
         pageSize: Number(searchParams.get('pageSize') || 20),
+        view,
       })
       step('query')
       return ok(result)

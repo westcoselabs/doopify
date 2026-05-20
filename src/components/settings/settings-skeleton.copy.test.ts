@@ -12,6 +12,7 @@ describe('settings skeleton integration', () => {
 
     expect(source).toContain("import SettingsPageSkeleton")
     expect(source).toContain("from './SettingsSkeletons'")
+    expect(source).toContain('SettingsProviderRowsSkeleton')
     expect(source).toContain('isSettingsTabLoadingState')
     expect(source).toContain('activeTabLoading')
     expect(source).toContain('<SettingsPageSkeleton section={activeSection} />')
@@ -24,7 +25,10 @@ describe('settings skeleton integration', () => {
 
   it('replaces shipping loading text with a shipping skeleton', () => {
     const source = read('src/components/settings/ShippingSettingsWorkspace.js')
-    expect(source).toContain('<SettingsPageSkeleton section="shipping" />')
+    expect(source).toContain('function ShippingWorkspaceSkeleton()')
+    expect(source).toContain('<ShippingWorkspaceSkeleton />')
+    expect(source).toContain('data-testid="shipping-settings-skeleton"')
+    expect(source).toContain('SettingsProviderRowsSkeleton rows={3}')
     expect(source).not.toContain('Loading shipping settings...')
   })
 
@@ -34,12 +38,23 @@ describe('settings skeleton integration', () => {
     expect(source).not.toContain('Loading team')
   })
 
-  it('uses an initial payments skeleton while provider runtime status hydrates', () => {
+  it('uses row-level payments provider skeletons while status hydrates', () => {
     const source = read('src/components/settings/SettingsWorkspace.js')
-    expect(source).toContain('showPaymentsInitialProviderSkeleton')
-    expect(source).toContain('<SettingsCardSkeleton actions={1} chips={3} rows={3} />')
+    expect(source).toContain('showPaymentsProviderRowsSkeleton')
+    expect(source).toContain('<SettingsProviderRowsSkeleton rows={3} />')
+    expect(source).toContain('showStripeRuntimeChecking')
+    expect(source).toContain('Checking Stripe runtime status...')
+    expect(source).toContain('Checking Stripe runtime, webhook, and account status...')
     expect(source).toContain('Refreshing provider statuses...')
-    expect(source).not.toContain('Loading provider statuses...')
+    expect(source).not.toContain('SettingsCardSkeleton actions={1} chips={3} rows={3}')
+  })
+
+  it('renders payments cards without waiting for runtime-status completion', () => {
+    const source = read('src/components/settings/SettingsWorkspace.js')
+    expect(source).toContain("activeSection === 'payments' ? (")
+    expect(source).toContain('<AdminCard as="section" className={`${styles.paymentSectionCard} ${styles.compactSettingsCard}`} variant="card">')
+    expect(source).toContain('showStripeRuntimeChecking')
+    expect(source).not.toContain('showPaymentsInitialProviderSkeleton')
   })
 
   it('uses webhooks skeleton in integrations panel loading states', () => {
@@ -47,5 +62,37 @@ describe('settings skeleton integration', () => {
     expect(source).toContain('<SettingsPageSkeleton section="webhooks" />')
     expect(source).not.toContain('Loading endpoints...')
     expect(source).not.toContain('Checking retries and failures...')
+  })
+
+  it('keeps shipping shell visible while provider readiness checks finish', () => {
+    const source = read('src/components/settings/ShippingSettingsWorkspace.js')
+    expect(source).toContain('setSetupStatusLoading(true)')
+    expect(source).toContain('Checking shipping provider readiness...')
+    expect(source).toContain('hasProviderConnection == null ? "Checking"')
+  })
+
+  it('defines provider-row skeleton structure that matches payments row layout', () => {
+    const skeletons = read('src/components/settings/SettingsSkeletons.js')
+    const css = read('src/components/settings/SettingsWorkspace.module.css')
+
+    expect(skeletons).toContain('export function SettingsProviderRowsSkeleton')
+    expect(skeletons).toContain('settingsSkeletonProviderIcon')
+    expect(skeletons).toContain('settingsSkeletonProviderName')
+    expect(skeletons).toContain('settingsSkeletonProviderStatus')
+    expect(skeletons).toContain('settingsSkeletonProviderAction')
+
+    expect(css).toContain('.settingsSkeletonProviderRow')
+    expect(css).toContain('.settingsSkeletonProviderIcon')
+    expect(css).toContain('.settingsSkeletonProviderStatus')
+    expect(css).toContain('.settingsSkeletonProviderAction')
+  })
+
+  it('keeps drawer-only credential writes action-driven and out of initial tab effects', () => {
+    const source = read('src/components/settings/SettingsWorkspace.js')
+
+    const credentialsCallCount = (source.match(/\/api\/settings\/providers\/\$\{provider\}\/credentials/g) || []).length
+    expect(credentialsCallCount).toBe(1)
+    expect(source).toContain("method: 'POST'")
+    expect(source).not.toContain("fetch(`/api/settings/providers/${provider}/credentials`, { cache: 'no-store' })")
   })
 })

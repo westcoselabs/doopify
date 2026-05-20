@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import ProductMediaManager from "./ProductMediaManager";
+import ProductSellingPanel from "./ProductSellingPanel";
 import ProductStatusControl from "./ProductStatusControl";
 import ProductVariantEditor from "./ProductVariantEditor";
 import { useProductStore } from "../../context/ProductContext";
@@ -186,6 +187,15 @@ export default function ProductEditorDrawer() {
           <SectionCard eyebrow="Media" title="Product gallery">
             <ProductMediaManager />
           </SectionCard>
+        </div>
+      ),
+    },
+    {
+      id: "selling",
+      label: "Selling",
+      content: (
+        <div className={styles.drawerBody}>
+          <ProductSellingPanel onManageInVariants={() => setActiveTabId("variants")} />
         </div>
       ),
     },

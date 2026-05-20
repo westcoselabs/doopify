@@ -3,6 +3,7 @@ import { Component as EtheralShadow } from '@/components/ui/etheral-shadow';
 import { getStorefrontProducts } from '@/server/services/product.service';
 import { getStorefrontCollectionSummaries } from '@/server/services/collection.service';
 import FeaturedCollectionsGrid from '@/components/storefront/FeaturedCollectionsGrid';
+import { getStorefrontBadgeText } from '@/lib/storefrontAvailability';
 
 export const metadata = {
   title: 'Doopify - Commerce, Refined',
@@ -557,6 +558,7 @@ export default async function LandingPage() {
             {featured.map(product => {
               const image = product.media?.[0]?.url;
               const price = product.variants?.[0]?.price;
+              const badgeLabel = getStorefrontBadgeText(product);
 
               return (
                 <Link className="product-card" href={`/shop/${product.handle}`} key={product.id}>
@@ -579,7 +581,7 @@ export default async function LandingPage() {
                       {price != null ? (
                         <p className="card-price">${Number(price).toFixed(2)}</p>
                       ) : <span />}
-                      <span className="card-chip">View Product</span>
+                      <span className="card-chip">{badgeLabel || 'View Product'}</span>
                     </div>
                   </div>
                 </Link>

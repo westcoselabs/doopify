@@ -20,11 +20,11 @@ export async function GET(req: Request) {
   if (!auth.ok) return auth.response
 
   try {
-    const [stripeRuntime, webhookSecretSelection, stripeProviderStatus] = await Promise.all([
+    const [stripeRuntime, stripeProviderStatus] = await Promise.all([
       getStripeRuntimeConnection(),
-      getStripeWebhookSecretSelection(),
       getStripeProviderStatus(),
     ])
+    const webhookSecretSelection = await getStripeWebhookSecretSelection(stripeRuntime)
     const requestOrigin = (() => {
       try {
         return new URL(req.url).origin

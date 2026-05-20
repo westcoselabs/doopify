@@ -4,6 +4,11 @@ import Link from 'next/link';
 import { useEffect, useState, useMemo } from 'react';
 import { useCart } from '@/context/CartContext';
 import CartDrawer from '@/components/storefront/CartDrawer';
+import {
+  getProductPrimaryVariant,
+  getStorefrontBadgeText,
+  isVariantPurchasable,
+} from '@/lib/storefrontAvailability';
 
 export default function ShopPage() {
   const [products, setProducts] = useState([]);
@@ -37,8 +42,8 @@ export default function ShopPage() {
 
   const handleAddToCart = (e, product) => {
     e.preventDefault();
-    const variant = product.variants?.[0];
-    if (!variant) return;
+    const variant = getProductPrimaryVariant(product);
+    if (!variant || !isVariantPurchasable(product, variant, 1)) return;
     const variantTitle =
       variant.title && !['Default', 'Default Title'].includes(variant.title) ? variant.title : undefined;
     addItem({
@@ -89,10 +94,12 @@ export default function ShopPage() {
         .p-img-inner { width:100%;height:100%;transition:transform 0.5s cubic-bezier(0.25,0.46,0.45,0.94); }
         .p-img img { width:100%;height:100%;object-fit:cover; }
         .p-placeholder { width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-family:var(--font-headline),sans-serif;font-size:48px;font-weight:700;color:rgba(255,255,255,0.16); }
+        .p-badge { position:absolute;top:10px;left:10px;padding:6px 10px;border-radius:999px;border:1px solid rgba(255,255,255,0.16);background:rgba(8,10,14,0.82);backdrop-filter:blur(10px);font-size:10px;letter-spacing:0.1em;text-transform:uppercase;color:#f2ede4;z-index:2; }
         .p-actions { position:absolute;left:12px;right:12px;bottom:12px;padding:0;opacity:1;transform:none;transition:transform 0.25s,opacity 0.25s; }
         .add-btn { width:100%;min-height:44px;padding:0 16px;background:linear-gradient(180deg,rgba(255,255,255,0.12),rgba(255,255,255,0.04)),rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.16);border-radius:999px;color:#ffffff;font-size:11px;font-weight:500;letter-spacing:0.15em;text-transform:uppercase;cursor:pointer;transition:background 0.2s,border-color 0.2s,transform 0.2s;backdrop-filter:blur(18px) saturate(120%);-webkit-backdrop-filter:blur(18px) saturate(120%);box-shadow:0 16px 30px rgba(0,0,0,0.2); }
         .add-btn:hover { transform:translateY(-1px);border-color:rgba(255,255,255,0.22);background:linear-gradient(180deg,rgba(255,255,255,0.16),rgba(255,255,255,0.05)),rgba(255,255,255,0.08); }
         .add-btn.added { border-color:rgba(255,255,255,0.28);background:linear-gradient(180deg,rgba(255,255,255,0.2),rgba(255,255,255,0.06)),rgba(255,255,255,0.1);color:#ffffff; }
+        .add-btn.disabled { opacity:0.72;cursor:not-allowed;transform:none;border-color:rgba(255,255,255,0.12);background:rgba(255,255,255,0.05);color:rgba(255,255,255,0.58); }
         .p-body { position:relative;z-index:1;padding:18px 8px 8px; }
         .p-vendor { font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:rgba(255,255,255,0.38);margin-bottom:10px; }
         .p-title { font-family:var(--font-headline),sans-serif;font-size:19px;font-weight:700;letter-spacing:-0.03em;color:#f8f8f8;margin-bottom:14px;line-height:1.2; }
@@ -185,7 +192,9 @@ export default function ShopPage() {
         ) : (
           <div className="shop-grid">
             {visible.map(product => {
-              const variant = product.variants?.[0];
+              const variant = getProductPrimaryVariant(product);
+              const isPurchasable = isVariantPurchasable(product, variant, 1);
+              const badgeLabel = getStorefrontBadgeText(product);
               const image = product.media?.[0]?.url;
               const isAdded = added[product.id];
               return (
@@ -197,13 +206,15 @@ export default function ShopPage() {
                         : <div className="p-placeholder">✦</div>
                       }
                     </div>
+                    {badgeLabel ? <span className="p-badge">{badgeLabel}</span> : null}
                     <div className="p-actions">
                       <button
-                        className={`add-btn${isAdded ? ' added' : ''}`}
+                        className={`add-btn${isAdded ? ' added' : ''}${!isPurchasable ? ' disabled' : ''}`}
+                        disabled={!isPurchasable}
                         onClick={e => handleAddToCart(e, product)}
                         type="button"
                       >
-                        {isAdded ? '✓ Added' : 'Add to Bag'}
+                        {isAdded ? 'Added' : isPurchasable ? 'Add to Bag' : 'Unavailable'}
                       </button>
                     </div>
                   </div>
@@ -228,3 +239,4 @@ export default function ShopPage() {
     </>
   );
 }
+

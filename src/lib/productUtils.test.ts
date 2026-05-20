@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  createEmptyProductDraft,
   getComputedProductState,
   getComputedProductStateMeta,
   isFuturePublishDate,
@@ -95,8 +96,8 @@ describe('prepareProductForSave variant weight persistence', () => {
 
   it('keeps variant weight and weight unit values for multi-variant products', () => {
     const result = prepareProductForSave(baseProduct)
-    const variantS = result.variants.find((variant) => variant.id === 'var-s')
-    const variantM = result.variants.find((variant) => variant.id === 'var-m')
+    const variantS = result.variants.find((variant: any) => variant.id === 'var-s')
+    const variantM = result.variants.find((variant: any) => variant.id === 'var-m')
 
     expect(variantS?.weight).toBe(0.75)
     expect(variantS?.weightUnit).toBe('kg')
@@ -123,5 +124,18 @@ describe('prepareProductForSave variant weight persistence', () => {
     expect(result.variants[0]?.weight).toBeNull()
     expect(result.variants[0]?.weightUnit).toBe('kg')
     expect(result.variants[0]?.sku).toBe('WEIGHT-BASE')
+  })
+})
+
+describe('product selling defaults', () => {
+  it('creates new product drafts with safe selling and fulfillment defaults', () => {
+    const draft = createEmptyProductDraft()
+
+    expect(draft.salesMode).toBe('standard')
+    expect(draft.fulfillmentType).toBe('physical')
+    expect(draft.presaleStartsAt).toBeNull()
+    expect(draft.presaleEndsAt).toBeNull()
+    expect(draft.availableForPurchaseAt).toBeNull()
+    expect(draft.variants[0]?.continueSellingWhenOutOfStock).toBe(false)
   })
 })

@@ -26,6 +26,7 @@ const variantSchema = z.object({
   price: z.number().min(0),
   compareAtPrice: z.number().optional(),
   inventory: z.number().int().min(0).optional(),
+  continueSellingWhenOutOfStock: z.boolean().optional(),
   weight: z.number().optional(),
   weightUnit: z.string().optional(),
   position: z.number().int().optional(),
@@ -42,6 +43,14 @@ const createSchema = z.object({
   handle: z.string().optional(),
   status: z.enum(['ACTIVE', 'DRAFT', 'ARCHIVED']).optional(),
   publishedAt: z.string().datetime().nullable().optional(),
+  salesMode: z.enum(['STANDARD', 'COMING_SOON', 'PRESALE']).optional(),
+  presaleStartsAt: z.string().datetime().nullable().optional(),
+  presaleEndsAt: z.string().datetime().nullable().optional(),
+  availableForPurchaseAt: z.string().datetime().nullable().optional(),
+  expectedDeliveryText: z.string().optional(),
+  availabilityMessage: z.string().optional(),
+  storefrontBadgeText: z.string().optional(),
+  fulfillmentType: z.enum(['PHYSICAL', 'DIGITAL']).optional(),
   description: z.string().optional(),
   vendor: z.string().optional(),
   productType: z.string().optional(),
@@ -96,6 +105,16 @@ export async function POST(req: Request) {
     const { product: coreProduct, mediaSyncError } = await createProduct({
       ...productFields,
       publishedAt: productFields.publishedAt ? new Date(productFields.publishedAt) : null,
+      salesMode: productFields.salesMode,
+      presaleStartsAt: productFields.presaleStartsAt ? new Date(productFields.presaleStartsAt) : null,
+      presaleEndsAt: productFields.presaleEndsAt ? new Date(productFields.presaleEndsAt) : null,
+      availableForPurchaseAt: productFields.availableForPurchaseAt
+        ? new Date(productFields.availableForPurchaseAt)
+        : null,
+      expectedDeliveryText: productFields.expectedDeliveryText,
+      availabilityMessage: productFields.availabilityMessage,
+      storefrontBadgeText: productFields.storefrontBadgeText,
+      fulfillmentType: productFields.fulfillmentType,
       variants: variants?.map((variant) => ({
         title: variant.title,
         sku: variant.sku,
@@ -103,6 +122,7 @@ export async function POST(req: Request) {
         compareAtPriceCents:
           variant.compareAtPrice === undefined ? undefined : dollarsToCents(variant.compareAtPrice),
         inventory: variant.inventory,
+        continueSellingWhenOutOfStock: variant.continueSellingWhenOutOfStock,
         weight: variant.weight,
         weightUnit: variant.weightUnit,
         position: variant.position,

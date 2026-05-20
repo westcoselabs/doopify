@@ -19,6 +19,17 @@ enum ProductStatus {
   ARCHIVED
 }
 
+enum ProductSalesMode {
+  STANDARD
+  COMING_SOON
+  PRESALE
+}
+
+enum ProductFulfillmentType {
+  PHYSICAL
+  DIGITAL
+}
+
 enum OrderStatus {
   OPEN
   CLOSED
@@ -538,22 +549,30 @@ model RateLimitWindow {
 }
 
 model Product {
-  id          String        @id @default(cuid())
-  title       String
-  handle      String        @unique
-  status      ProductStatus @default(DRAFT)
-  publishedAt DateTime?
-  description String?       @db.Text
-  vendor      String?
-  productType String?
-  tags        String[]
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
-  variants    ProductVariant[]
-  options     ProductOption[]
-  media       ProductMedia[]
-  collections CollectionProduct[]
-  orderItems  OrderItem[]
+  id                    String                 @id @default(cuid())
+  title                 String
+  handle                String                 @unique
+  status                ProductStatus          @default(DRAFT)
+  publishedAt           DateTime?
+  salesMode             ProductSalesMode       @default(STANDARD)
+  presaleStartsAt       DateTime?
+  presaleEndsAt         DateTime?
+  availableForPurchaseAt DateTime?
+  expectedDeliveryText  String?
+  availabilityMessage   String?
+  storefrontBadgeText   String?
+  fulfillmentType       ProductFulfillmentType @default(PHYSICAL)
+  description           String?                @db.Text
+  vendor                String?
+  productType           String?
+  tags                  String[]
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  variants              ProductVariant[]
+  options               ProductOption[]
+  media                 ProductMedia[]
+  collections           CollectionProduct[]
+  orderItems            OrderItem[]
 
   @@index([handle])
   @@index([status])
@@ -561,21 +580,22 @@ model Product {
 }
 
 model ProductVariant {
-  id               String            @id @default(cuid())
-  productId        String
-  title            String
-  sku              String?           @unique
-  priceCents            Int
-  compareAtPriceCents   Int?
-  inventory        Int               @default(0)
-  weight           Float?
-  weightUnit       String?           @default("kg")
-  position         Int               @default(0)
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  product          Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
-  fulfillmentItems FulfillmentItem[]
-  orderItems       OrderItem[]
+  id                            String            @id @default(cuid())
+  productId                     String
+  title                         String
+  sku                           String?           @unique
+  priceCents                    Int
+  compareAtPriceCents           Int?
+  inventory                     Int               @default(0)
+  continueSellingWhenOutOfStock Boolean           @default(false)
+  weight                        Float?
+  weightUnit                    String?           @default("kg")
+  position                      Int               @default(0)
+  createdAt                     DateTime          @default(now())
+  updatedAt                     DateTime          @updatedAt
+  product                       Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  fulfillmentItems              FulfillmentItem[]
+  orderItems                    OrderItem[]
 
   @@index([productId])
   @@index([sku])

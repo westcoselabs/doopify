@@ -12,6 +12,7 @@ const schema = z.object({
   price: z.number().min(0).optional(),
   compareAtPrice: z.number().optional(),
   inventory: z.number().int().min(0).optional(),
+  continueSellingWhenOutOfStock: z.boolean().optional(),
   weight: z.number().optional(),
   weightUnit: z.string().optional(),
 })

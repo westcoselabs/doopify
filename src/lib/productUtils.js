@@ -7,6 +7,8 @@ const SAMPLE_IMAGE_LIBRARY = [
 ];
 
 const VALID_STATUSES = ['active', 'draft', 'archived'];
+const VALID_SALES_MODES = ['standard', 'coming_soon', 'presale'];
+const VALID_FULFILLMENT_TYPES = ['physical', 'digital'];
 export const LOW_STOCK_THRESHOLD = 5;
 const PRODUCT_STATE_META = {
   active: { label: 'Active', tone: 'success' },
@@ -164,6 +166,22 @@ function normalizeVariantWeightUnit(value) {
   return 'kg';
 }
 
+function normalizeSalesMode(value) {
+  const normalized = trimString(value).toLowerCase();
+  if (VALID_SALES_MODES.includes(normalized)) {
+    return normalized;
+  }
+  return 'standard';
+}
+
+function normalizeFulfillmentType(value) {
+  const normalized = trimString(value).toLowerCase();
+  if (VALID_FULFILLMENT_TYPES.includes(normalized)) {
+    return normalized;
+  }
+  return 'physical';
+}
+
 function normalizeTagList(tags = []) {
   return [...new Set(tags.map(trimString).filter(Boolean))];
 }
@@ -287,6 +305,7 @@ function createDefaultVariant(product) {
     price: normalizeMoney(product.basePrice),
     compareAtPrice: normalizeMoney(product.compareAtPrice),
     inventoryQty: normalizeInventory(product.inventorySummary?.totalAvailable),
+    continueSellingWhenOutOfStock: false,
     weight: null,
     weightUnit: 'kg',
     imageId: product.featuredImageId || null,
@@ -340,6 +359,7 @@ function buildVariantFromTemplate(templateVariant, combo, optionNames, product, 
     price: normalizeMoney(templateVariant?.price ?? product.basePrice),
     compareAtPrice: normalizeMoney(templateVariant?.compareAtPrice ?? product.compareAtPrice),
     inventoryQty: normalizeInventory(templateVariant?.inventoryQty),
+    continueSellingWhenOutOfStock: Boolean(templateVariant?.continueSellingWhenOutOfStock),
     weight: normalizeVariantWeight(templateVariant?.weight),
     weightUnit: normalizeVariantWeightUnit(templateVariant?.weightUnit),
     imageId: templateVariant?.imageId || product.featuredImageId || null,
@@ -543,11 +563,15 @@ export function deriveProduct(product) {
     price: normalizeMoney(variant.price),
     compareAtPrice: normalizeMoney(variant.compareAtPrice),
     inventoryQty: normalizeInventory(variant.inventoryQty),
+    continueSellingWhenOutOfStock: Boolean(variant.continueSellingWhenOutOfStock),
     title: trimString(variant.title) || buildVariantTitle(variant.optionValues, options.map(option => option.name)),
   }));
   const inventorySummary = deriveInventorySummary(variants);
   const status = VALID_STATUSES.includes(product.status) ? product.status : 'draft';
   const publishedAt = parseIsoDate(product.publishedAt)?.toISOString() || null;
+  const presaleStartsAt = parseIsoDate(product.presaleStartsAt)?.toISOString() || null;
+  const presaleEndsAt = parseIsoDate(product.presaleEndsAt)?.toISOString() || null;
+  const availableForPurchaseAt = parseIsoDate(product.availableForPurchaseAt)?.toISOString() || null;
 
   return {
     ...product,
@@ -557,6 +581,14 @@ export function deriveProduct(product) {
     category: trimString(product.category),
     status,
     publishedAt,
+    salesMode: normalizeSalesMode(product.salesMode),
+    presaleStartsAt,
+    presaleEndsAt,
+    availableForPurchaseAt,
+    expectedDeliveryText: String(product.expectedDeliveryText ?? ''),
+    availabilityMessage: String(product.availabilityMessage ?? ''),
+    storefrontBadgeText: String(product.storefrontBadgeText ?? ''),
+    fulfillmentType: normalizeFulfillmentType(product.fulfillmentType),
     tags: normalizeTagList(product.tags),
     sku: trimString(product.sku),
     basePrice: normalizeMoney(product.basePrice),
@@ -619,6 +651,7 @@ function createSeedProduct({
       price: variant.price,
       compareAtPrice: variant.compareAtPrice,
       inventoryQty: variant.inventoryQty,
+      continueSellingWhenOutOfStock: Boolean(variant.continueSellingWhenOutOfStock),
       imageId: images[variant.imageIndex ?? 0]?.id || null,
       isDefault: variant.isDefault ?? false,
       isActive: variant.isActive ?? true,
@@ -726,6 +759,14 @@ export function createEmptyProductDraft() {
     description: '',
     status: 'draft',
     publishedAt: null,
+    salesMode: 'standard',
+    presaleStartsAt: null,
+    presaleEndsAt: null,
+    availableForPurchaseAt: null,
+    expectedDeliveryText: '',
+    availabilityMessage: '',
+    storefrontBadgeText: '',
+    fulfillmentType: 'physical',
     category: '',
     tags: [],
     vendor: '',
@@ -980,6 +1021,7 @@ export function prepareProductForSave(product) {
     price: normalizeMoney(variant.price ?? baseProduct.basePrice),
     compareAtPrice: normalizeMoney(variant.compareAtPrice ?? baseProduct.compareAtPrice),
     inventoryQty: normalizeInventory(variant.inventoryQty),
+    continueSellingWhenOutOfStock: Boolean(variant.continueSellingWhenOutOfStock),
     weight: normalizeVariantWeight(variant.weight),
     weightUnit: normalizeVariantWeightUnit(variant.weightUnit),
     imageId: mediaState.images.find(image => image.id === variant.imageId)?.id || mediaState.featuredImageId,
@@ -994,6 +1036,7 @@ export function prepareProductForSave(product) {
           sku: trimString(baseProduct.sku) || trimString(variant.sku),
           price: normalizeMoney(baseProduct.basePrice),
           compareAtPrice: normalizeMoney(baseProduct.compareAtPrice),
+          continueSellingWhenOutOfStock: Boolean(variant.continueSellingWhenOutOfStock),
           imageId:
             mediaState.images.find(image => image.id === variant.imageId)?.id ||
             mediaState.featuredImageId,
@@ -1007,6 +1050,14 @@ export function prepareProductForSave(product) {
     description: String(baseProduct.description ?? ''),
     status: VALID_STATUSES.includes(baseProduct.status) ? baseProduct.status : 'draft',
     publishedAt: parseIsoDate(baseProduct.publishedAt)?.toISOString() || null,
+    salesMode: normalizeSalesMode(baseProduct.salesMode),
+    presaleStartsAt: parseIsoDate(baseProduct.presaleStartsAt)?.toISOString() || null,
+    presaleEndsAt: parseIsoDate(baseProduct.presaleEndsAt)?.toISOString() || null,
+    availableForPurchaseAt: parseIsoDate(baseProduct.availableForPurchaseAt)?.toISOString() || null,
+    expectedDeliveryText: String(baseProduct.expectedDeliveryText ?? ''),
+    availabilityMessage: String(baseProduct.availabilityMessage ?? ''),
+    storefrontBadgeText: String(baseProduct.storefrontBadgeText ?? ''),
+    fulfillmentType: normalizeFulfillmentType(baseProduct.fulfillmentType),
     category: trimString(baseProduct.category),
     tags: normalizeTagList(baseProduct.tags),
     vendor: trimString(baseProduct.vendor),
@@ -1045,6 +1096,7 @@ export function transformApiProductSummary(product) {
     price: String(v.price ?? '0.00'),
     compareAtPrice: v.compareAtPrice != null ? String(v.compareAtPrice) : '',
     inventoryQty: v.inventory ?? 0,
+    continueSellingWhenOutOfStock: Boolean(v.continueSellingWhenOutOfStock),
     weight: null,
     weightUnit: 'kg',
     position: i,
@@ -1063,6 +1115,14 @@ export function transformApiProductSummary(product) {
     handle: product.handle,
     status: (product.status || 'DRAFT').toLowerCase(),
     publishedAt: product.publishedAt || null,
+    salesMode: String(product.salesMode || 'STANDARD').toLowerCase(),
+    presaleStartsAt: product.presaleStartsAt || null,
+    presaleEndsAt: product.presaleEndsAt || null,
+    availableForPurchaseAt: product.availableForPurchaseAt || null,
+    expectedDeliveryText: product.expectedDeliveryText || '',
+    availabilityMessage: product.availabilityMessage || '',
+    storefrontBadgeText: product.storefrontBadgeText || '',
+    fulfillmentType: String(product.fulfillmentType || 'PHYSICAL').toLowerCase(),
     description: product.description || '',
     vendor: product.vendor || '',
     productType: product.productType || '',

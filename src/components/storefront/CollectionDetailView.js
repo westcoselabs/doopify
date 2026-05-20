@@ -5,6 +5,11 @@ import { useState } from 'react';
 
 import { useCart } from '@/context/CartContext';
 import CartDrawer from '@/components/storefront/CartDrawer';
+import {
+  getProductPrimaryVariant,
+  getStorefrontBadgeText,
+  isVariantPurchasable,
+} from '@/lib/storefrontAvailability';
 
 const styles = `
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -201,6 +206,21 @@ const styles = `
     position: relative;
   }
 
+  .product-badge {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(8, 10, 14, 0.82);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #f2ede4;
+    z-index: 2;
+  }
+
   .product-image img {
     width: 100%;
     height: 100%;
@@ -239,6 +259,11 @@ const styles = `
     letter-spacing: 0.15em;
     text-transform: uppercase;
     cursor: pointer;
+  }
+
+  .add-btn:disabled {
+    opacity: 0.72;
+    cursor: not-allowed;
   }
 
   .add-btn.added {
@@ -323,8 +348,8 @@ export default function CollectionDetailView({ collection, peerCollections = [] 
   function handleAddToCart(event, product) {
     event.preventDefault();
 
-    const variant = product.variants?.[0];
-    if (!variant) return;
+    const variant = getProductPrimaryVariant(product);
+    if (!variant || !isVariantPurchasable(product, variant, 1)) return;
 
     const variantTitle =
       variant.title && !['Default', 'Default Title'].includes(variant.title) ? variant.title : undefined;
@@ -387,7 +412,9 @@ export default function CollectionDetailView({ collection, peerCollections = [] 
         {collection.products.length ? (
           <div className="grid">
             {collection.products.map((product) => {
-              const variant = product.variants?.[0];
+              const variant = getProductPrimaryVariant(product);
+              const isPurchasable = isVariantPurchasable(product, variant, 1);
+              const badgeLabel = getStorefrontBadgeText(product);
               const image = product.media?.[0]?.url;
               const isAdded = added[product.id];
 
@@ -399,13 +426,15 @@ export default function CollectionDetailView({ collection, peerCollections = [] 
                     ) : (
                       <div className="placeholder">✦</div>
                     )}
+                    {badgeLabel ? <span className="product-badge">{badgeLabel}</span> : null}
                     <div className="card-actions">
                       <button
                         className={`add-btn${isAdded ? ' added' : ''}`}
+                        disabled={!isPurchasable}
                         onClick={(event) => handleAddToCart(event, product)}
                         type="button"
                       >
-                        {isAdded ? 'Added' : 'Add to Bag'}
+                        {isAdded ? 'Added' : isPurchasable ? 'Add to Bag' : 'Unavailable'}
                       </button>
                     </div>
                   </div>

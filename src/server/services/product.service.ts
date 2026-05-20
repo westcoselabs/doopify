@@ -3,7 +3,17 @@ import { randomUUID } from 'node:crypto'
 import { centsToDollars } from '@/lib/money'
 import { prisma } from '@/lib/prisma'
 import { emitInternalEvent } from '@/server/events/dispatcher'
-import type { ProductStatus, Prisma } from '@prisma/client'
+import {
+  getAvailabilityMessage,
+  getProductAvailabilityBadge,
+  resolveEffectiveSalesMode,
+} from '@/server/services/product-availability.service'
+import type {
+  ProductFulfillmentType,
+  ProductSalesMode,
+  ProductStatus,
+  Prisma,
+} from '@prisma/client'
 
 const productInclude = {
   variants: { orderBy: { position: 'asc' as const } },
@@ -23,6 +33,14 @@ const productSummarySelect = {
   title: true,
   handle: true,
   status: true,
+  salesMode: true,
+  presaleStartsAt: true,
+  presaleEndsAt: true,
+  availableForPurchaseAt: true,
+  expectedDeliveryText: true,
+  availabilityMessage: true,
+  storefrontBadgeText: true,
+  fulfillmentType: true,
   vendor: true,
   productType: true,
   tags: true,
@@ -36,6 +54,7 @@ const productSummarySelect = {
       compareAtPriceCents: true,
       sku: true,
       inventory: true,
+      continueSellingWhenOutOfStock: true,
     },
     orderBy: { position: 'asc' as const },
   },
@@ -59,7 +78,7 @@ const productSummarySelect = {
 } satisfies Prisma.ProductSelect
 
 const storefrontProductInclude = {
-  variants: { where: { inventory: { gt: 0 } }, orderBy: { position: 'asc' as const } },
+  variants: { orderBy: { position: 'asc' as const } },
   media: { include: { asset: true }, orderBy: { position: 'asc' as const }, take: 2 },
 } satisfies Prisma.ProductInclude
 
@@ -70,6 +89,7 @@ type ProductVariantPayload = {
   priceCents: number
   compareAtPriceCents?: number
   inventory?: number
+  continueSellingWhenOutOfStock?: boolean
   weight?: number
   weightUnit?: string
   position?: number
@@ -89,6 +109,7 @@ function attachMediaUrls(product: any) {
       price: centsToDollars(variant.priceCents),
       compareAtPrice:
         variant.compareAtPriceCents == null ? null : centsToDollars(variant.compareAtPriceCents),
+      continueSellingWhenOutOfStock: Boolean(variant.continueSellingWhenOutOfStock),
     })),
     media: (product.media || []).map((media: any) => ({
       ...media,
@@ -106,7 +127,32 @@ function attachMediaUrlsToList(products: any[] = []) {
   return products.map(attachMediaUrls)
 }
 
+function mapStorefrontAvailability(product: any) {
+  const variants = product.variants || []
+  const badge = getProductAvailabilityBadge({
+    product,
+    variants,
+  })
+  const message = getAvailabilityMessage({
+    product,
+    badge,
+  })
+  const effectiveSalesMode = resolveEffectiveSalesMode(product)
+
+  return {
+    salesMode: product.salesMode ?? 'STANDARD',
+    effectiveSalesMode,
+    availabilityMessage: message,
+    expectedDeliveryText: product.expectedDeliveryText ?? null,
+    storefrontBadgeText: product.storefrontBadgeText ?? null,
+    fulfillmentType: product.fulfillmentType ?? 'PHYSICAL',
+    badge,
+  }
+}
+
 export function toStorefrontProduct(product: any) {
+  const availability = mapStorefrontAvailability(product)
+
   return {
     id: product.id,
     handle: product.handle,
@@ -115,6 +161,7 @@ export function toStorefrontProduct(product: any) {
     vendor: product.vendor,
     productType: product.productType,
     publishedAt: product.publishedAt,
+    availability,
     media: (product.media || []).map((media: any) => ({
       id: media.id,
       position: media.position,
@@ -141,6 +188,7 @@ export function toStorefrontProduct(product: any) {
       compareAtPrice:
         variant.compareAtPriceCents == null ? null : centsToDollars(variant.compareAtPriceCents),
       inventory: variant.inventory,
+      continueSellingWhenOutOfStock: Boolean(variant.continueSellingWhenOutOfStock),
       weight: variant.weight,
       weightUnit: variant.weightUnit,
     })),
@@ -173,6 +221,7 @@ function createFallbackVariant(variant?: Partial<ProductVariantPayload>): Produc
     priceCents: variant?.priceCents ?? 0,
     compareAtPriceCents: variant?.compareAtPriceCents,
     inventory: variant?.inventory ?? 0,
+    continueSellingWhenOutOfStock: Boolean(variant?.continueSellingWhenOutOfStock),
     weight: variant?.weight,
     weightUnit: variant?.weightUnit ?? 'kg',
     position: variant?.position ?? 0,
@@ -229,6 +278,7 @@ async function syncProductVariants(
       priceCents: variant.priceCents,
       compareAtPriceCents: variant.compareAtPriceCents ?? null,
       inventory: variant.inventory ?? 0,
+      continueSellingWhenOutOfStock: Boolean(variant.continueSellingWhenOutOfStock),
       weight: variant.weight ?? null,
       weightUnit: variant.weightUnit ?? 'kg',
       position: variant.position ?? index,
@@ -356,6 +406,14 @@ function toProductSummaryResponse(product: any) {
     title: product.title,
     handle: product.handle,
     status: product.status,
+    salesMode: product.salesMode ?? 'STANDARD',
+    presaleStartsAt: product.presaleStartsAt ?? null,
+    presaleEndsAt: product.presaleEndsAt ?? null,
+    availableForPurchaseAt: product.availableForPurchaseAt ?? null,
+    expectedDeliveryText: product.expectedDeliveryText ?? null,
+    availabilityMessage: product.availabilityMessage ?? null,
+    storefrontBadgeText: product.storefrontBadgeText ?? null,
+    fulfillmentType: product.fulfillmentType ?? 'PHYSICAL',
     vendor: product.vendor ?? null,
     productType: product.productType ?? null,
     tags: product.tags ?? [],
@@ -368,6 +426,7 @@ function toProductSummaryResponse(product: any) {
       compareAtPrice: v.compareAtPriceCents == null ? null : centsToDollars(v.compareAtPriceCents),
       sku: v.sku ?? null,
       inventory: v.inventory ?? 0,
+      continueSellingWhenOutOfStock: Boolean(v.continueSellingWhenOutOfStock),
     })),
     media: featuredMedia
       ? [
@@ -461,6 +520,14 @@ export async function createProduct(data: {
   handle?: string
   status?: ProductStatus
   publishedAt?: Date | null
+  salesMode?: ProductSalesMode
+  presaleStartsAt?: Date | null
+  presaleEndsAt?: Date | null
+  availableForPurchaseAt?: Date | null
+  expectedDeliveryText?: string
+  availabilityMessage?: string
+  storefrontBadgeText?: string
+  fulfillmentType?: ProductFulfillmentType
   description?: string
   vendor?: string
   productType?: string
@@ -471,6 +538,7 @@ export async function createProduct(data: {
     priceCents: number
     compareAtPriceCents?: number
     inventory?: number
+    continueSellingWhenOutOfStock?: boolean
     weight?: number
     weightUnit?: string
     position?: number
@@ -490,6 +558,14 @@ export async function createProduct(data: {
         handle,
         status: data.status ?? 'DRAFT',
         publishedAt: data.publishedAt ?? null,
+        salesMode: data.salesMode ?? 'STANDARD',
+        presaleStartsAt: data.presaleStartsAt ?? null,
+        presaleEndsAt: data.presaleEndsAt ?? null,
+        availableForPurchaseAt: data.availableForPurchaseAt ?? null,
+        expectedDeliveryText: data.expectedDeliveryText?.trim() || null,
+        availabilityMessage: data.availabilityMessage?.trim() || null,
+        storefrontBadgeText: data.storefrontBadgeText?.trim() || null,
+        fulfillmentType: data.fulfillmentType ?? 'PHYSICAL',
         description: data.description,
         vendor: data.vendor,
         productType: data.productType,
@@ -501,6 +577,7 @@ export async function createProduct(data: {
             priceCents: variant.priceCents,
             compareAtPriceCents: variant.compareAtPriceCents,
             inventory: variant.inventory ?? 0,
+            continueSellingWhenOutOfStock: Boolean(variant.continueSellingWhenOutOfStock),
             weight: variant.weight,
             weightUnit: variant.weightUnit,
             position: variant.position ?? index,
@@ -562,6 +639,14 @@ export async function updateProduct(
     handle: string
     status: ProductStatus
     publishedAt: Date | null
+    salesMode: ProductSalesMode
+    presaleStartsAt: Date | null
+    presaleEndsAt: Date | null
+    availableForPurchaseAt: Date | null
+    expectedDeliveryText: string | null
+    availabilityMessage: string | null
+    storefrontBadgeText: string | null
+    fulfillmentType: ProductFulfillmentType
     description: string
     vendor: string
     productType: string
@@ -575,6 +660,18 @@ export async function updateProduct(
 
   if (typeof nextProductFields.handle === 'string') {
     nextProductFields.handle = await ensureUniqueHandle(slugify(nextProductFields.handle), id)
+  }
+
+  if (Object.prototype.hasOwnProperty.call(nextProductFields, 'expectedDeliveryText')) {
+    nextProductFields.expectedDeliveryText = nextProductFields.expectedDeliveryText?.trim() || null
+  }
+
+  if (Object.prototype.hasOwnProperty.call(nextProductFields, 'availabilityMessage')) {
+    nextProductFields.availabilityMessage = nextProductFields.availabilityMessage?.trim() || null
+  }
+
+  if (Object.prototype.hasOwnProperty.call(nextProductFields, 'storefrontBadgeText')) {
+    nextProductFields.storefrontBadgeText = nextProductFields.storefrontBadgeText?.trim() || null
   }
 
   const product = await prisma.$transaction(async (tx) => {
@@ -634,6 +731,14 @@ export async function duplicateProduct(id: string) {
         handle: duplicatedHandle,
         status: 'DRAFT',
         publishedAt: null,
+        salesMode: source.salesMode,
+        presaleStartsAt: source.presaleStartsAt,
+        presaleEndsAt: source.presaleEndsAt,
+        availableForPurchaseAt: source.availableForPurchaseAt,
+        expectedDeliveryText: source.expectedDeliveryText,
+        availabilityMessage: source.availabilityMessage,
+        storefrontBadgeText: source.storefrontBadgeText,
+        fulfillmentType: source.fulfillmentType,
         description: source.description,
         vendor: source.vendor,
         productType: source.productType,
@@ -645,6 +750,7 @@ export async function duplicateProduct(id: string) {
             priceCents: variant.priceCents,
             compareAtPriceCents: variant.compareAtPriceCents,
             inventory: variant.inventory,
+            continueSellingWhenOutOfStock: Boolean(variant.continueSellingWhenOutOfStock),
             weight: variant.weight,
             weightUnit: variant.weightUnit,
             position: variant.position ?? index,
@@ -706,6 +812,7 @@ export async function updateVariant(
     priceCents: number
     compareAtPriceCents: number
     inventory: number
+    continueSellingWhenOutOfStock: boolean
     weight: number
     weightUnit: string
   }>
@@ -721,6 +828,7 @@ export async function createVariant(
     priceCents: number
     compareAtPriceCents?: number
     inventory?: number
+    continueSellingWhenOutOfStock?: boolean
     weight?: number
     weightUnit?: string
   }
@@ -734,6 +842,7 @@ export async function createVariant(
       priceCents: data.priceCents,
       compareAtPriceCents: data.compareAtPriceCents,
       inventory: data.inventory ?? 0,
+      continueSellingWhenOutOfStock: Boolean(data.continueSellingWhenOutOfStock),
       weight: data.weight,
       weightUnit: data.weightUnit,
       position: count,
@@ -794,7 +903,10 @@ export async function upsertOptions(
 
 export async function decrementInventory(variantId: string, quantity: number) {
   const updated = await prisma.productVariant.updateMany({
-    where: { id: variantId, inventory: { gte: quantity } },
+    where: {
+      id: variantId,
+      OR: [{ continueSellingWhenOutOfStock: true }, { inventory: { gte: quantity } }],
+    },
     data: { inventory: { decrement: quantity } },
   })
 
@@ -841,7 +953,6 @@ export async function getStorefrontProducts(params: {
   const where: Prisma.ProductWhereInput = {
     status: 'ACTIVE',
     AND: [getStorefrontPublishWindowWhere(now), ...(searchFilter ? [searchFilter] : [])],
-    variants: { some: { inventory: { gt: 0 } } },
     ...(collectionHandle && {
       collections: {
         some: {

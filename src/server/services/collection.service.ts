@@ -2,17 +2,15 @@ import { randomUUID } from 'node:crypto'
 
 import { centsToDollars, dollarsToCents } from '@/lib/money'
 import { prisma } from '@/lib/prisma'
+import {
+  getAvailabilityMessage,
+  getProductAvailabilityBadge,
+  resolveEffectiveSalesMode,
+} from '@/server/services/product-availability.service'
 import type { Prisma } from '@prisma/client'
 
 const storefrontVisibleProductWhere: Prisma.ProductWhereInput = {
   status: 'ACTIVE',
-  variants: {
-    some: {
-      inventory: {
-        gt: 0,
-      },
-    },
-  },
 }
 
 const storefrontVisibleCollectionWhere: Prisma.CollectionWhereInput = {
@@ -123,6 +121,14 @@ const storefrontCollectionDetailInclude = {
           description: true,
           vendor: true,
           productType: true,
+          salesMode: true,
+          presaleStartsAt: true,
+          presaleEndsAt: true,
+          availableForPurchaseAt: true,
+          expectedDeliveryText: true,
+          availabilityMessage: true,
+          storefrontBadgeText: true,
+          fulfillmentType: true,
           createdAt: true,
           media: {
             include: {
@@ -134,11 +140,6 @@ const storefrontCollectionDetailInclude = {
             take: 2,
           },
           variants: {
-            where: {
-              inventory: {
-                gt: 0,
-              },
-            },
             orderBy: {
               position: 'asc' as const,
             },
@@ -148,6 +149,7 @@ const storefrontCollectionDetailInclude = {
               priceCents: true,
               compareAtPriceCents: true,
               inventory: true,
+              continueSellingWhenOutOfStock: true,
               weight: true,
               weightUnit: true,
             },
@@ -289,6 +291,11 @@ function toStorefrontCollectionSummary(collection: any, productCount: number) {
 }
 
 function toStorefrontProduct(product: any) {
+  const badge = getProductAvailabilityBadge({
+    product,
+    variants: product.variants || [],
+  })
+
   return {
     id: product.id,
     handle: product.handle,
@@ -296,6 +303,15 @@ function toStorefrontProduct(product: any) {
     description: product.description,
     vendor: product.vendor,
     productType: product.productType,
+    availability: {
+      salesMode: product.salesMode ?? 'STANDARD',
+      effectiveSalesMode: resolveEffectiveSalesMode(product),
+      availabilityMessage: getAvailabilityMessage({ product, badge }),
+      expectedDeliveryText: product.expectedDeliveryText ?? null,
+      storefrontBadgeText: product.storefrontBadgeText ?? null,
+      fulfillmentType: product.fulfillmentType ?? 'PHYSICAL',
+      badge,
+    },
     media: (product.media || []).map((media: any) => ({
       id: media.id,
       position: media.position,
@@ -318,6 +334,7 @@ function toStorefrontProduct(product: any) {
             : Number(variant.compareAtPrice)
           : centsToDollars(variant.compareAtPriceCents),
       inventory: variant.inventory,
+      continueSellingWhenOutOfStock: Boolean(variant.continueSellingWhenOutOfStock),
       weight: variant.weight,
       weightUnit: variant.weightUnit,
     })),

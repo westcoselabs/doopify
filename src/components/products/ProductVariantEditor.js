@@ -145,6 +145,7 @@ function GroupedVariantRows({ draftProduct, actions, formatMoney, variantRowErro
     <>
       {grouped.map(group => {
         const totalAvailable = group.variants.reduce((sum, variant) => sum + (Number.parseInt(variant.inventoryQty, 10) || 0), 0);
+        const continueSellingCount = group.variants.filter(variant => variant.continueSellingWhenOutOfStock).length;
         const groupPrice = group.variants[0]?.price || draftProduct.basePrice;
         const isExpanded = expandedGroupKey === group.key;
 
@@ -178,6 +179,16 @@ function GroupedVariantRows({ draftProduct, actions, formatMoney, variantRowErro
               </div>
               <div className={styles.variantInventoryCell}>
                 <input className={styles.inventoryInput} readOnly type="number" value={totalAvailable} />
+              </div>
+              <div className={styles.continueSellingCell}>
+                <span className={styles.mutedText}>
+                  {continueSellingCount > 0
+                    ? `${continueSellingCount} variant${continueSellingCount > 1 ? 's' : ''} on`
+                    : 'All off'}
+                </span>
+              </div>
+              <div className={styles.weightCell}>
+                <span className={styles.mutedText}>Mixed</span>
               </div>
             </div>
 
@@ -237,6 +248,23 @@ function GroupedVariantRows({ draftProduct, actions, formatMoney, variantRowErro
                       {rowErrors.inventoryQty ? <p className={styles.fieldErrorText}>{rowErrors.inventoryQty}</p> : null}
                     </div>
 
+                    <div className={styles.continueSellingCell}>
+                      <div className={styles.continueSellingInline}>
+                        <ContinueSellingToggle
+                          ariaLabel={`Continue selling when out of stock for ${variant.title || 'variant'}`}
+                          checked={Boolean(variant.continueSellingWhenOutOfStock)}
+                          onToggle={() =>
+                            actions.updateVariantField(
+                              variant.id,
+                              'continueSellingWhenOutOfStock',
+                              !variant.continueSellingWhenOutOfStock
+                            )
+                          }
+                        />
+                        <span>{variant.continueSellingWhenOutOfStock ? 'On' : 'Off'}</span>
+                      </div>
+                    </div>
+
                     <div className={styles.weightCell}>
                       <div className={styles.weightInputWrap}>
                         <input
@@ -273,6 +301,7 @@ function GroupedVariantRows({ draftProduct, actions, formatMoney, variantRowErro
 function BasicInventoryCard({ draftProduct, actions }) {
   const baseVariant = draftProduct.variants[0];
   const inventoryQty = baseVariant?.inventoryQty ?? 0;
+  const continueSelling = Boolean(baseVariant?.continueSellingWhenOutOfStock);
   const weight = baseVariant?.weight ?? '';
   const weightUnit = baseVariant?.weightUnit || 'kg';
   const quantityInputId = baseVariant?.id ? `default-variant-quantity-${baseVariant.id}` : 'default-variant-quantity';
@@ -298,6 +327,28 @@ function BasicInventoryCard({ draftProduct, actions }) {
             type="number"
             value={inventoryQty}
           />
+          <div className={styles.continueSellingBlock}>
+            <div className={styles.continueSellingCopy}>
+              <strong>Continue selling when out of stock</strong>
+              <span>Allows checkout after this variant reaches zero.</span>
+            </div>
+            <ContinueSellingToggle
+              ariaLabel="Continue selling when out of stock"
+              checked={continueSelling}
+              onToggle={() =>
+                actions.updateVariantField(
+                  baseVariant.id,
+                  'continueSellingWhenOutOfStock',
+                  !continueSelling
+                )
+              }
+            />
+          </div>
+          <p className={styles.basicFieldHelp}>
+            {continueSelling
+              ? 'Enabled. This variant can keep selling after quantity reaches zero.'
+              : 'Disabled. Checkout will stop when this variant reaches zero.'}
+          </p>
         </section>
 
         <section className={styles.basicInfoSection} aria-label="Shipping">
@@ -325,6 +376,20 @@ function BasicInventoryCard({ draftProduct, actions }) {
         </section>
       </div>
     </div>
+  );
+}
+
+function ContinueSellingToggle({ ariaLabel, checked, onToggle }) {
+  return (
+    <button
+      aria-label={ariaLabel}
+      aria-pressed={checked}
+      className={`${styles.continueToggle} ${checked ? styles.continueToggleOn : ''}`}
+      onClick={onToggle}
+      type="button"
+    >
+      <span className={styles.continueToggleHandle} />
+    </button>
   );
 }
 
@@ -423,6 +488,7 @@ export default function ProductVariantEditor() {
               <div className={styles.skuColumn}>SKU</div>
               <div className={styles.priceColumn}>Price</div>
               <div className={styles.inventoryColumn}>Available</div>
+              <div className={styles.continueSellingColumn}>Continue selling</div>
               <div className={styles.weightColumn}>Weight</div>
             </div>
 
@@ -488,6 +554,23 @@ export default function ProductVariantEditor() {
                         value={variant.inventoryQty}
                       />
                       {rowErrors.inventoryQty ? <p className={styles.fieldErrorText}>{rowErrors.inventoryQty}</p> : null}
+                    </div>
+
+                    <div className={styles.continueSellingCell}>
+                      <div className={styles.continueSellingInline}>
+                        <ContinueSellingToggle
+                          ariaLabel={`Continue selling when out of stock for ${variant.title || 'variant'}`}
+                          checked={Boolean(variant.continueSellingWhenOutOfStock)}
+                          onToggle={() =>
+                            actions.updateVariantField(
+                              variant.id,
+                              'continueSellingWhenOutOfStock',
+                              !variant.continueSellingWhenOutOfStock
+                            )
+                          }
+                        />
+                        <span>{variant.continueSellingWhenOutOfStock ? 'On' : 'Off'}</span>
+                      </div>
                     </div>
 
                     <div className={styles.weightCell}>

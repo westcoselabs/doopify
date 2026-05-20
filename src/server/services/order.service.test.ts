@@ -177,7 +177,10 @@ describe('createOrder inventory and payment side effects', () => {
 
     expect(mocks.tx.productVariant.updateMany).toHaveBeenCalledTimes(1)
     expect(mocks.tx.productVariant.updateMany).toHaveBeenCalledWith({
-      where: { id: 'var_1', inventory: { gte: 2 } },
+      where: {
+        id: 'var_1',
+        OR: [{ continueSellingWhenOutOfStock: true }, { inventory: { gte: 2 } }],
+      },
       data: { inventory: { decrement: 2 } },
     })
     expect(mocks.tx.order.create).toHaveBeenCalledWith(
@@ -273,4 +276,3 @@ describe('createOrder inventory and payment side effects', () => {
     expect(mocks.tx.productVariant.updateMany).not.toHaveBeenCalled()
   })
 })
-

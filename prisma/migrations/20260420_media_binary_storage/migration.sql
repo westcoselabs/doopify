@@ -6,7 +6,7 @@ ALTER TABLE "media_assets"
 -- Back-fill so NOT NULL can be applied
 UPDATE "media_assets" SET "data" = '\x' WHERE "data" IS NULL;
 ALTER TABLE "media_assets" ALTER COLUMN "data" SET NOT NULL;
-ALTER TABLE "media_assets" ALTER COLUMN "mime_type" SET DEFAULT 'application/octet-stream';
+ALTER TABLE "media_assets" ALTER COLUMN "mimeType" SET DEFAULT 'application/octet-stream';
 
 -- Drop Cloudinary-specific columns
 ALTER TABLE "media_assets" DROP COLUMN IF EXISTS "url";

@@ -87,6 +87,25 @@ const orderListSelect = {
   },
 } satisfies Prisma.OrderSelect
 
+const orderPaymentActivitySelect = {
+  id: true,
+  orderNumber: true,
+  currency: true,
+  createdAt: true,
+  payments: {
+    select: {
+      id: true,
+      provider: true,
+      status: true,
+      amountCents: true,
+      currency: true,
+      stripePaymentIntentId: true,
+      stripeChargeId: true,
+      createdAt: true,
+    },
+  },
+} satisfies Prisma.OrderSelect
+
 function clampPage(value?: number) {
   return Math.max(1, Math.floor(Number(value || 1)))
 }
@@ -184,10 +203,12 @@ export async function getOrders(params: {
   search?: string
   page?: number
   pageSize?: number
+  view?: 'payments_activity'
 }) {
   const { status, paymentStatus, fulfillmentStatus, search } = params
   const page = clampPage(params.page)
   const pageSize = clampOrderListPageSize(params.pageSize)
+  const view = params.view
   const orderNumber = parseOrderNumberSearch(search)
   const trimmedSearch = search?.trim()
 
@@ -203,6 +224,24 @@ export async function getOrders(params: {
         ...(orderNumber ? [{ orderNumber: { equals: orderNumber } }] : []),
       ],
     }),
+  }
+
+  if (view === 'payments_activity') {
+    const [orders, total] = await Promise.all([
+      prisma.order.findMany({
+        where,
+        select: orderPaymentActivitySelect,
+        orderBy: { createdAt: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.order.count({ where }),
+    ])
+
+    return {
+      orders,
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+    }
   }
 
   const [orders, total] = await Promise.all([
@@ -386,7 +425,10 @@ export async function createOrder(data: {
           if (!item.variantId) continue
 
           const updated = await tx.productVariant.updateMany({
-            where: { id: item.variantId, inventory: { gte: item.quantity } },
+            where: {
+              id: item.variantId,
+              OR: [{ continueSellingWhenOutOfStock: true }, { inventory: { gte: item.quantity } }],
+            },
             data: { inventory: { decrement: item.quantity } },
           })
 

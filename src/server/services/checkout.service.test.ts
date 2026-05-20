@@ -778,9 +778,16 @@ describe('checkout service', () => {
         sku: 'SKU-1',
         price: 25,
         inventory: 1,
+        continueSellingWhenOutOfStock: false,
         product: {
           id: 'product_1',
           title: 'Test Shirt',
+          salesMode: 'STANDARD',
+          presaleStartsAt: null,
+          presaleEndsAt: null,
+          availableForPurchaseAt: null,
+          availabilityMessage: null,
+          fulfillmentType: 'PHYSICAL',
         },
       },
     ])
@@ -791,10 +798,86 @@ describe('checkout service', () => {
         items: [{ variantId: 'variant_1', quantity: 2 }],
         shippingAddress: address,
       })
-    ).rejects.toThrow('Only 1 units left for Test Shirt')
+    ).rejects.toThrow('Only 1 units left for this variant.')
 
     expect(mocks.createStripePaymentIntent).not.toHaveBeenCalled()
     expect(mocks.prisma.checkoutSession.create).not.toHaveBeenCalled()
+  })
+
+  it('rejects coming-soon products before payment intent creation', async () => {
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_1',
+        productId: 'product_1',
+        title: 'Default',
+        sku: 'SKU-1',
+        price: 25,
+        inventory: 10,
+        continueSellingWhenOutOfStock: false,
+        product: {
+          id: 'product_1',
+          title: 'Test Shirt',
+          salesMode: 'COMING_SOON',
+          presaleStartsAt: null,
+          presaleEndsAt: null,
+          availableForPurchaseAt: null,
+          availabilityMessage: 'Launching soon',
+          fulfillmentType: 'PHYSICAL',
+        },
+      },
+    ])
+
+    await expect(
+      createCheckoutPaymentIntent({
+        email: 'ada@example.com',
+        items: [{ variantId: 'variant_1', quantity: 1 }],
+        shippingAddress: address,
+      })
+    ).rejects.toThrow('Launching soon')
+
+    expect(mocks.createStripePaymentIntent).not.toHaveBeenCalled()
+  })
+
+  it('allows presale checkout when variant permits continue selling at zero inventory', async () => {
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_1',
+        productId: 'product_1',
+        title: 'Default',
+        sku: 'SKU-1',
+        price: 25,
+        inventory: 0,
+        continueSellingWhenOutOfStock: true,
+        product: {
+          id: 'product_1',
+          title: 'Test Shirt',
+          salesMode: 'PRESALE',
+          presaleStartsAt: null,
+          presaleEndsAt: null,
+          availableForPurchaseAt: null,
+          availabilityMessage: null,
+          fulfillmentType: 'PHYSICAL',
+        },
+      },
+    ])
+    mocks.createStripePaymentIntent.mockResolvedValue({
+      id: 'pi_presale_continue',
+      client_secret: 'secret_presale_continue',
+      amount: 3499,
+      currency: 'usd',
+      status: 'requires_payment_method',
+    })
+    mocks.prisma.checkoutSession.create.mockResolvedValue({
+      id: 'checkout_presale_continue',
+    })
+
+    await createCheckoutPaymentIntent({
+      email: 'ada@example.com',
+      items: [{ variantId: 'variant_1', quantity: 1 }],
+      shippingAddress: address,
+    })
+
+    expect(mocks.createStripePaymentIntent).toHaveBeenCalled()
   })
 
   it('revalidates selected shipping quote before creating stripe amount', async () => {

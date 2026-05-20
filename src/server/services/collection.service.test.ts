@@ -186,6 +186,14 @@ describe('collection service', () => {
             vendor: 'Acme',
             productType: 'Shirt',
             status: 'ACTIVE',
+            salesMode: 'STANDARD',
+            presaleStartsAt: null,
+            presaleEndsAt: null,
+            availableForPurchaseAt: null,
+            expectedDeliveryText: null,
+            availabilityMessage: null,
+            storefrontBadgeText: null,
+            fulfillmentType: 'PHYSICAL',
             media: [
               {
                 id: 'media_1',
@@ -206,6 +214,7 @@ describe('collection service', () => {
                 price: 25,
                 compareAtPrice: null,
                 inventory: 7,
+                continueSellingWhenOutOfStock: false,
                 weight: null,
                 weightUnit: null,
               },
@@ -233,6 +242,15 @@ describe('collection service', () => {
           description: 'Alpha desc',
           vendor: 'Acme',
           productType: 'Shirt',
+          availability: {
+            salesMode: 'STANDARD',
+            effectiveSalesMode: 'STANDARD',
+            availabilityMessage: null,
+            expectedDeliveryText: null,
+            storefrontBadgeText: null,
+            fulfillmentType: 'PHYSICAL',
+            badge: null,
+          },
           media: [
             {
               id: 'media_1',
@@ -251,6 +269,7 @@ describe('collection service', () => {
               price: 25,
               compareAtPrice: null,
               inventory: 7,
+              continueSellingWhenOutOfStock: false,
               weight: null,
               weightUnit: null,
             },

@@ -16,7 +16,6 @@ import AdminCard from '../admin/ui/AdminCard';
 import AdminDropdown from '../admin/ui/AdminDropdown';
 import AdminEmptyState from '../admin/ui/AdminEmptyState';
 import AdminInput from '../admin/ui/AdminInput';
-import AdminSkeleton from '../admin/ui/AdminSkeleton';
 import AdminStatusChip from '../admin/ui/AdminStatusChip';
 import AdminTable from '../admin/ui/AdminTable';
 import { getCatalogViewState, PRODUCT_CATALOG_EMPTY_STATE } from './product-catalog-view.helpers';
@@ -30,6 +29,29 @@ const FILTERS = [
   { id: 'draft', label: 'Draft' },
   { id: 'active', label: 'Active' },
 ];
+
+function ProductCatalogTableSkeleton({ rows = 6 }) {
+  return (
+    <div className={styles.catalogSkeleton} data-testid="products-catalog-skeleton">
+      {Array.from({ length: rows }).map((_, index) => (
+        <div className={styles.catalogSkeletonRow} key={`catalog-skeleton-row-${index}`}>
+          <div className={styles.catalogSkeletonProductCell}>
+            <span className={styles.catalogSkeletonThumb} />
+            <div className={styles.catalogSkeletonTextStack}>
+              <span className={styles.catalogSkeletonLineTitle} />
+              <span className={styles.catalogSkeletonLineMeta} />
+            </div>
+          </div>
+          <span className={styles.catalogSkeletonChip} />
+          <span className={styles.catalogSkeletonChip} />
+          <span className={styles.catalogSkeletonLineSmall} />
+          <span className={styles.catalogSkeletonLineSmall} />
+          <span className={styles.catalogSkeletonAction} />
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function ProductCatalog() {
   const { products, selectedProductId, searchQuery, activeFilter, catalogLoaded, editor, formatMoney, actions } = useProductStore();
@@ -185,7 +207,7 @@ export default function ProductCatalog() {
       </div>
 
       <div className={`custom-scrollbar ${styles.listArea}`}>
-        {viewState === 'loading' ? <AdminSkeleton rows={6} variant="table" /> : null}
+        {viewState === 'loading' ? <ProductCatalogTableSkeleton rows={6} /> : null}
 
         {viewState === 'empty' ? (
           <AdminEmptyState

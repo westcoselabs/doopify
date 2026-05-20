@@ -18,7 +18,7 @@ import {
   isCheckoutMethodEqual,
   providerSelectionToLegacyUsage,
 } from "./shipping-checkout-method.helpers";
-import SettingsPageSkeleton from "./SettingsSkeletons";
+import { SettingsProviderRowsSkeleton } from "./SettingsSkeletons";
 import styles from "./SettingsWorkspace.module.css";
 
 const PROVIDER_OPTIONS = [
@@ -235,18 +235,62 @@ function formatShippingProviderName(provider) {
   return "Provider";
 }
 
+function ShippingWorkspaceSkeleton() {
+  return (
+    <div className={styles.configStack} data-testid="shipping-settings-skeleton">
+      <section className={styles.configSection}>
+        <div className={styles.sectionHeading}>
+          <div className={styles.loadingLine} style={{ width: "10rem" }} />
+        </div>
+        <div className={styles.statusBlock}>
+          <div className={styles.loadingLine} />
+          <div className={styles.loadingLine} style={{ width: "82%" }} />
+        </div>
+        <div className={styles.methodChipRow}>
+          <span className={styles.settingsSkeletonChip} />
+          <span className={styles.settingsSkeletonChip} />
+          <span className={styles.settingsSkeletonChip} />
+        </div>
+      </section>
+
+      <section className={styles.configSection}>
+        <div className={styles.sectionHeading}>
+          <div className={styles.loadingLine} style={{ width: "13rem" }} />
+        </div>
+        <SettingsProviderRowsSkeleton rows={3} />
+      </section>
+
+      <section className={styles.configSection}>
+        <div className={styles.sectionHeading}>
+          <div className={styles.loadingLine} style={{ width: "14rem" }} />
+        </div>
+        <SettingsProviderRowsSkeleton rows={3} />
+      </section>
+
+      <section className={styles.configSection}>
+        <div className={styles.sectionHeading}>
+          <div className={styles.loadingLine} style={{ width: "12rem" }} />
+        </div>
+        <SettingsProviderRowsSkeleton rows={4} />
+      </section>
+    </div>
+  );
+}
+
 export default function ShippingSettingsWorkspace({
   embedded = false,
   onModeSaveStateChange,
   onRegisterSaveAction,
 } = {}) {
   const [loading, setLoading] = useState(true);
+  const [setupStatusLoading, setSetupStatusLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [modeSaveState, setModeSaveState] = useState("saved");
   const [modeSaveError, setModeSaveError] = useState("");
   const saveCheckoutMethodRef = useRef(null);
+  const loadRequestIdRef = useRef(0);
 
   const [settings, setSettings] = useState(null);
   const [setupStatus, setSetupStatus] = useState(null);
@@ -307,12 +351,12 @@ export default function ShippingSettingsWorkspace({
     () => packages.find((entry) => entry.isDefault && entry.isActive) || packages[0] || null,
     [packages]
   );
-  const hasProviderConnection = Boolean(
-    setupStatus?.liveProviderConnected ?? setupStatus?.providerConnected
-  );
-  const hasLabelProviderConnection = Boolean(
-    setupStatus?.labelProviderConnected ?? setupStatus?.providerConnected
-  );
+  const hasProviderConnection = setupStatusLoading
+    ? null
+    : Boolean(setupStatus?.liveProviderConnected ?? setupStatus?.providerConnected);
+  const hasLabelProviderConnection = setupStatusLoading
+    ? null
+    : Boolean(setupStatus?.labelProviderConnected ?? setupStatus?.providerConnected);
   const hasFallbackRate = useMemo(() => fallbackRates.some((entry) => entry.isActive), [fallbackRates]);
   const shippoInUse = activeRateProvider === "SHIPPO" || labelProvider === "SHIPPO";
   const easypostInUse = activeRateProvider === "EASYPOST" || labelProvider === "EASYPOST";
@@ -321,6 +365,7 @@ export default function ShippingSettingsWorkspace({
       (manualFulfillmentForm.manualTrackingBehavior || "").trim()
   );
   const missingLiveRateRequirements =
+    !setupStatusLoading &&
     (mode === "LIVE_RATES" || mode === "HYBRID") &&
     (!hasDefaultLocation || !hasDefaultPackage || !hasProviderConnection);
   const resolvedShipFromEmail =
@@ -355,9 +400,17 @@ export default function ShippingSettingsWorkspace({
     const matchesActiveProvider = providerForm.provider === activeRateProvider;
     const matchesLabelProvider = providerForm.provider === labelProvider;
     const connected =
-      (matchesActiveProvider && hasProviderConnection) ||
-      (matchesLabelProvider && hasLabelProviderConnection);
+      (matchesActiveProvider && Boolean(hasProviderConnection)) ||
+      (matchesLabelProvider && Boolean(hasLabelProviderConnection));
     const providerName = formatShippingProviderName(providerForm.provider);
+
+    if (setupStatusLoading) {
+      return {
+        tone: "neutral",
+        label: "Checking",
+        detail: `${providerName} connection status is still loading.`,
+      };
+    }
 
     if (connected) {
       return {
@@ -378,22 +431,19 @@ export default function ShippingSettingsWorkspace({
     labelProvider,
     hasProviderConnection,
     hasLabelProviderConnection,
+    setupStatusLoading,
   ]);
 
   const load = useCallback(async () => {
+    const requestId = ++loadRequestIdRef.current;
     setLoading(true);
     setError("");
+    setSetupStatusLoading(true);
     try {
       const shipping = await fetch("/api/settings/shipping", { cache: "no-store" }).then(parseApiJson);
-      let setup = null;
-      try {
-        setup = await fetch("/api/settings/shipping/setup-status", { cache: "no-store" }).then(parseApiJson);
-      } catch {
-        setup = null;
-      }
+      if (requestId !== loadRequestIdRef.current) return;
 
       setSettings(shipping);
-      setSetupStatus(setup);
       setMode(shipping.shippingMode || "MANUAL");
       setActiveRateProvider(shipping.activeRateProvider || "NONE");
       setLabelProvider(shipping.labelProvider || "NONE");
@@ -445,10 +495,26 @@ export default function ShippingSettingsWorkspace({
         packingSlipShowProductImages: Boolean(shipping.packingSlipShowProductImages),
         packingSlipFooterNote: shipping.packingSlipFooterNote || "",
       });
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load shipping settings");
-    } finally {
       setLoading(false);
+
+      void (async () => {
+        try {
+          const setup = await fetch("/api/settings/shipping/setup-status", { cache: "no-store" }).then(parseApiJson);
+          if (requestId !== loadRequestIdRef.current) return;
+          setSetupStatus(setup);
+        } catch {
+          if (requestId !== loadRequestIdRef.current) return;
+          setSetupStatus(null);
+        } finally {
+          if (requestId !== loadRequestIdRef.current) return;
+          setSetupStatusLoading(false);
+        }
+      })();
+    } catch (loadError) {
+      if (requestId !== loadRequestIdRef.current) return;
+      setError(loadError instanceof Error ? loadError.message : "Failed to load shipping settings");
+      setLoading(false);
+      setSetupStatusLoading(false);
     }
   }, []);
 
@@ -1043,10 +1109,15 @@ export default function ShippingSettingsWorkspace({
           </AdminButton>
         </div>
 
-        {loading ? <SettingsPageSkeleton section="shipping" /> : null}
+        {loading ? <ShippingWorkspaceSkeleton /> : null}
         {error ? (
           <div className={styles.statusBlock}>
             <p className={styles.statusText}>{error}</p>
+          </div>
+        ) : null}
+        {!loading && setupStatusLoading ? (
+          <div className={styles.statusBlock}>
+            <p className={styles.statusText}>Checking shipping provider readiness...</p>
           </div>
         ) : null}
         {notice ? (
@@ -1219,8 +1290,10 @@ export default function ShippingSettingsWorkspace({
                     </p>
                   </div>
                   <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={hasProviderConnection ? "success" : "warning"}>
-                      {hasProviderConnection ? "Ready" : "Missing"}
+                    <AdminStatusChip
+                      tone={hasProviderConnection == null ? "neutral" : hasProviderConnection ? "success" : "warning"}
+                    >
+                      {hasProviderConnection == null ? "Checking" : hasProviderConnection ? "Ready" : "Missing"}
                     </AdminStatusChip>
                     <AdminButton
                       size="sm"
@@ -1312,7 +1385,7 @@ export default function ShippingSettingsWorkspace({
                   Shippo/USPS labels require a ship-from email and phone number.
                 </p>
               ) : null}
-              {!missingLiveRateRequirements && !hasLabelProviderConnection ? (
+              {!missingLiveRateRequirements && hasLabelProviderConnection === false ? (
                 <p className={styles.statusText}>Label purchase remains unavailable until a label provider is connected.</p>
               ) : null}
             </section>

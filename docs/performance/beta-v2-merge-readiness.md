@@ -293,3 +293,49 @@ No merge blocker was found in this review pass. Merge should wait for the manual
   - Improved error text wrapping and spacing for long SKU validation messages.
 - Validation:
   - Re-run `npm run lint`, `npm run test`, and `npm run build` after this second smoke fix pass.
+
+## Third Smoke Test Fixes (Settings -> Payments load + skeleton UX)
+
+- Payments load root cause and waterfall:
+  - Payments tab previously used `showPaymentsInitialProviderSkeleton`, which blocked the entire payments content until provider status loading completed.
+  - Provider status loading waited on both `/api/settings/providers` and `/api/settings/payments/stripe/runtime-status` before releasing UI, so a slow runtime-status request stalled first paint.
+  - Payments activity loaded via `/api/orders?page=1&pageSize=25` using the full order list select (items/addresses/fulfillment/returns), which is heavier than needed for payment-activity rows.
+  - Stripe drawer open path always triggered `refreshProviderStatuses()`, causing avoidable status refetch churn after first load.
+
+- Fixes shipped:
+  - Payments shell/cards now render immediately; full-tab blocking skeleton was removed for Payments.
+  - Added row-accurate provider skeletons (`SettingsProviderRowsSkeleton`) that match provider row structure (icon/name/status/action placeholders) and avoid giant generic blocks.
+  - Split provider and runtime hydration in `SettingsWorkspace`:
+    - `/api/settings/providers` now hydrates provider row data first.
+    - `/api/settings/payments/stripe/runtime-status` now resolves progressively and updates Stripe row state later.
+  - Stripe row now surfaces progressive copy during slow runtime checks (`Checking status...` / `Checking Stripe runtime status...`) instead of freezing the full tab.
+  - Stripe drawer open no longer forces refresh when provider status is already loaded.
+  - Payment activity fetch now requests a lightweight orders view:
+    - client call: `/api/orders?view=payments_activity&page=1&pageSize=12`
+    - server path: `getOrders({ view: 'payments_activity' })` uses payments-only select fields.
+  - Runtime-status route/service no longer duplicates Stripe runtime resolution when deriving webhook-secret source:
+    - `getStripeWebhookSecretSelection(runtimeOverride?)` now reuses the already-fetched runtime object.
+
+- Tests added/updated:
+  - `src/app/api/orders/route.test.ts` (new):
+    - verifies admin auth requirement
+    - verifies `view=payments_activity` is passed through
+  - `src/components/settings/settings-skeleton.copy.test.ts`:
+    - validates row-level payments skeleton wiring (`SettingsProviderRowsSkeleton`)
+    - validates progressive Stripe runtime messaging
+    - validates payments cards are not gated by old full-page payments skeleton
+    - validates drawer-only credentials call remains action-driven POST behavior
+    - validates provider-row skeleton markup/class structure
+
+- Known limitation after this pass:
+  - Payments activity is still sourced from `/api/orders` (now slimmed via view mode) rather than a dedicated payment-activity endpoint.
+
+- Shipping tab follow-up:
+  - Replaced the old full shipping-page loading skeleton with layout-matched shipping section skeletons and provider-row placeholders.
+  - Shipping now loads settings first and renders the tab shell promptly; `/api/settings/shipping/setup-status` hydration runs progressively in the background.
+  - While setup-status is still hydrating, provider readiness chips and copy show a neutral "Checking" state instead of blocking the whole tab.
+
+- Validation results (2026-05-19):
+  - `npm run lint` -> pass (existing repo warnings only, no new errors)
+  - `npm run test` -> pass (`1091 passed`, `1 skipped`)
+  - `npm run build` -> pass (Next.js production build + TypeScript check successful)

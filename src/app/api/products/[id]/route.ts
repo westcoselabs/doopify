@@ -27,6 +27,7 @@ const variantSchema = z.object({
   price: z.number().min(0),
   compareAtPrice: z.number().optional(),
   inventory: z.number().int().min(0).optional(),
+  continueSellingWhenOutOfStock: z.boolean().optional(),
   weight: z.number().optional(),
   weightUnit: z.string().optional(),
   position: z.number().int().optional(),
@@ -43,6 +44,14 @@ const updateSchema = z.object({
   handle: z.string().optional(),
   status: z.enum(['ACTIVE', 'DRAFT', 'ARCHIVED']).optional(),
   publishedAt: z.string().datetime().nullable().optional(),
+  salesMode: z.enum(['STANDARD', 'COMING_SOON', 'PRESALE']).optional(),
+  presaleStartsAt: z.string().datetime().nullable().optional(),
+  presaleEndsAt: z.string().datetime().nullable().optional(),
+  availableForPurchaseAt: z.string().datetime().nullable().optional(),
+  expectedDeliveryText: z.string().nullable().optional(),
+  availabilityMessage: z.string().nullable().optional(),
+  storefrontBadgeText: z.string().nullable().optional(),
+  fulfillmentType: z.enum(['PHYSICAL', 'DIGITAL']).optional(),
   description: z.string().optional(),
   vendor: z.string().optional(),
   productType: z.string().optional(),
@@ -96,6 +105,24 @@ export async function PATCH(req: Request, { params }: Params) {
           : productFields.publishedAt
             ? new Date(productFields.publishedAt)
             : null,
+      presaleStartsAt:
+        productFields.presaleStartsAt === undefined
+          ? undefined
+          : productFields.presaleStartsAt
+            ? new Date(productFields.presaleStartsAt)
+            : null,
+      presaleEndsAt:
+        productFields.presaleEndsAt === undefined
+          ? undefined
+          : productFields.presaleEndsAt
+            ? new Date(productFields.presaleEndsAt)
+            : null,
+      availableForPurchaseAt:
+        productFields.availableForPurchaseAt === undefined
+          ? undefined
+          : productFields.availableForPurchaseAt
+            ? new Date(productFields.availableForPurchaseAt)
+            : null,
       variants: variants?.map((variant) => ({
         id: variant.id,
         title: variant.title,
@@ -104,6 +131,7 @@ export async function PATCH(req: Request, { params }: Params) {
         compareAtPriceCents:
           variant.compareAtPrice === undefined ? undefined : dollarsToCents(variant.compareAtPrice),
         inventory: variant.inventory,
+        continueSellingWhenOutOfStock: variant.continueSellingWhenOutOfStock,
         weight: variant.weight,
         weightUnit: variant.weightUnit,
         position: variant.position,

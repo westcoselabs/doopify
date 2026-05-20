@@ -5,6 +5,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCart } from '@/context/CartContext';
 import CartDrawer from '@/components/storefront/CartDrawer';
+import {
+  getStorefrontBadgeText,
+  isComingSoonProduct,
+  isVariantPurchasable,
+} from '@/lib/storefrontAvailability';
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300;1,400&family=DM+Sans:wght@300;400;500&display=swap');
@@ -336,6 +341,11 @@ const styles = `
     transition: border-color 0.2s, color 0.2s;
   }
   .pd-buy-btn:hover { border-color: #6a6058; }
+  .pd-buy-btn:disabled {
+    color: #4a4540;
+    border-color: #23211d;
+    cursor: not-allowed;
+  }
 
   /* ── Stock ── */
   .pd-stock {
@@ -482,10 +492,14 @@ export default function ProductDetail({ product }) {
   const price = selectedVariant?.price ?? product.price ?? 0;
   const comparePrice = selectedVariant?.compareAtPrice ?? product.compareAtPrice;
 
-  // Stock
+  // Stock + availability
   const inventory = selectedVariant?.inventory ?? 0;
   const inStock = inventory > 0;
+  const continueSelling = Boolean(selectedVariant?.continueSellingWhenOutOfStock);
   const lowStock = inventory > 0 && inventory <= 5;
+  const comingSoon = isComingSoonProduct(product);
+  const canPurchase = isVariantPurchasable(product, selectedVariant, qty);
+  const badgeLabel = getStorefrontBadgeText(product);
 
   function selectOption(optName, val) {
     setSelected(prev => ({ ...prev, [optName]: val }));
@@ -506,7 +520,7 @@ export default function ProductDetail({ product }) {
   }
 
   function handleAddToCart() {
-    if (!inStock) return;
+    if (!canPurchase) return;
 
     const variantTitle =
       selectedVariant?.title && !['Default', 'Default Title'].includes(selectedVariant.title)
@@ -566,9 +580,11 @@ export default function ProductDetail({ product }) {
             ) : (
               <div className="pd-no-image">✦</div>
             )}
-            {comparePrice && comparePrice > price && (
+            {badgeLabel ? (
+              <div className="pd-image-badge">{badgeLabel}</div>
+            ) : comparePrice && comparePrice > price ? (
               <div className="pd-image-badge">Sale</div>
-            )}
+            ) : null}
           </div>
           {images.length > 1 && (
             <div className="pd-thumbs">
@@ -605,6 +621,11 @@ export default function ProductDetail({ product }) {
               <span className="pd-price-compare">${Number(comparePrice).toFixed(2)}</span>
             )}
           </div>
+          {product.availability?.availabilityMessage ? (
+            <p style={{ margin: '-14px 0 22px', color: '#9a9088', fontSize: 13, lineHeight: 1.5 }}>
+              {product.availability.availabilityMessage}
+            </p>
+          ) : null}
 
           <div className="pd-divider" />
 
@@ -638,7 +659,11 @@ export default function ProductDetail({ product }) {
               <div className="pd-qty-val">{qty}</div>
               <button
                 className="pd-qty-btn"
-                onClick={() => setQty(q => (q < inventory ? q + 1 : q))}
+                onClick={() =>
+                  setQty(q =>
+                    continueSelling ? Math.min(99, q + 1) : q < inventory ? q + 1 : q
+                  )
+                }
               >
                 +
               </button>
@@ -647,12 +672,16 @@ export default function ProductDetail({ product }) {
 
           {/* Stock indicator */}
           <div className="pd-stock">
-            <div className={`pd-stock-dot ${inStock ? (lowStock ? 'low' : 'in') : 'out'}`} />
-            {inStock
-              ? lowStock
-                ? `Only ${inventory} left`
-                : 'In stock'
-              : 'Out of stock'}
+            <div className={`pd-stock-dot ${comingSoon ? 'low' : inStock ? (lowStock ? 'low' : 'in') : continueSelling ? 'low' : 'out'}`} />
+            {comingSoon
+              ? 'Coming soon'
+              : inStock
+                ? lowStock
+                  ? `Only ${inventory} left`
+                  : 'In stock'
+                : continueSelling
+                  ? 'Available on backorder'
+                  : 'Out of stock'}
           </div>
 
           {/* CTAs */}
@@ -660,16 +689,20 @@ export default function ProductDetail({ product }) {
             <button
               className={`pd-add-btn${added ? ' added' : ''}`}
               onClick={handleAddToCart}
-              disabled={!inStock}
+              disabled={!canPurchase}
             >
-              {added ? '✓ Added to Bag' : inStock ? 'Add to Bag' : 'Out of Stock'}
+              {added ? 'Added to Bag' : comingSoon ? 'Coming Soon' : canPurchase ? 'Add to Bag' : 'Out of Stock'}
             </button>
             <button
               className="pd-buy-btn"
               onClick={() => {
+                if (!canPurchase) {
+                  return;
+                }
                 handleAddToCart();
                 router.push('/checkout');
               }}
+              disabled={!canPurchase}
             >
               Buy Now
             </button>
@@ -735,3 +768,4 @@ export default function ProductDetail({ product }) {
     </div>
   );
 }
+

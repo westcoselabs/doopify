@@ -24,6 +24,7 @@ import {
 import { convertVariantWeightToOz, totalCartWeightOz } from '@/server/shipping/weight-conversion'
 import type { ShippingRateQuote } from '@/server/shipping/shipping-rate.types'
 import { markCheckoutRecoveredByPaymentIntent } from '@/server/services/abandoned-checkout.service'
+import { canPurchaseVariant } from '@/server/services/product-availability.service'
 import { addCustomerAddress, createCustomer, getCustomerByEmail } from '@/server/services/customer.service'
 import { createOrder, getOrderByPaymentIntentId } from '@/server/services/order.service'
 import { getStoreSettings } from '@/server/services/settings.service'
@@ -237,17 +238,27 @@ function mapStoredQuoteToShippingRateQuote(input: {
 
 async function resolveLineItems(items: CheckoutItemInput[]) {
   const uniqueVariantIds = Array.from(new Set(items.map((item) => item.variantId)))
+  const now = new Date()
 
   const variants = await prisma.productVariant.findMany({
     where: {
       id: { in: uniqueVariantIds },
-      product: { status: 'ACTIVE' },
+      product: {
+        status: 'ACTIVE',
+        OR: [{ publishedAt: null }, { publishedAt: { lte: now } }],
+      },
     },
     include: {
       product: {
         select: {
           id: true,
           title: true,
+          salesMode: true,
+          presaleStartsAt: true,
+          presaleEndsAt: true,
+          availableForPurchaseAt: true,
+          availabilityMessage: true,
+          fulfillmentType: true,
         },
       },
     },
@@ -261,8 +272,25 @@ async function resolveLineItems(items: CheckoutItemInput[]) {
       throw new Error(`Variant ${item.variantId} could not be found`)
     }
 
-    if (variant.inventory < item.quantity) {
-      throw new Error(`Only ${variant.inventory} units left for ${variant.product.title}`)
+    const purchasable = canPurchaseVariant(
+      {
+        salesMode: variant.product.salesMode,
+        presaleStartsAt: variant.product.presaleStartsAt,
+        presaleEndsAt: variant.product.presaleEndsAt,
+        availableForPurchaseAt: variant.product.availableForPurchaseAt,
+        availabilityMessage: variant.product.availabilityMessage,
+        fulfillmentType: variant.product.fulfillmentType,
+      },
+      {
+        inventory: variant.inventory,
+        continueSellingWhenOutOfStock: variant.continueSellingWhenOutOfStock,
+      },
+      item.quantity,
+      now
+    )
+
+    if (!purchasable.ok) {
+      throw new Error(purchasable.reason || `${variant.product.title} is not available for purchase`)
     }
 
     return {

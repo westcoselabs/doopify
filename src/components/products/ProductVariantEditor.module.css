@@ -288,10 +288,17 @@
 .groupRow,
 .subVariantRow {
   display: grid;
-  grid-template-columns: 2rem minmax(0, 1.6fr) minmax(130px, 0.9fr) minmax(130px, 0.8fr) minmax(90px, 0.5fr) minmax(130px, 0.6fr);
+  grid-template-columns:
+    2rem
+    minmax(0, 1.5fr)
+    minmax(130px, 0.9fr)
+    minmax(130px, 0.8fr)
+    minmax(90px, 0.5fr)
+    minmax(150px, 0.9fr)
+    minmax(130px, 0.6fr);
   gap: 0.75rem;
   align-items: center;
-  min-width: 980px;
+  min-width: 1120px;
 }
 
 .matrixHeader {
@@ -397,12 +404,54 @@
 
 .variantPriceCell,
 .variantInventoryCell,
+.continueSellingCell,
 .weightCell {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: 0.3rem;
   min-width: 0;
+}
+
+.continueSellingInline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.2rem;
+  color: var(--slate-200);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.continueToggle {
+  width: 2.3rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.14);
+  padding: 0.1rem;
+  display: inline-flex;
+  align-items: center;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.continueToggleOn {
+  border-color: rgba(var(--accent-rgb), 0.5);
+  background: rgba(var(--accent-rgb), 0.45);
+}
+
+.continueToggleHandle {
+  width: 0.95rem;
+  height: 0.95rem;
+  border-radius: 999px;
+  background: #ffffff;
+  transform: translateX(0);
+  transition: transform 140ms ease, background 140ms ease;
+}
+
+.continueToggleOn .continueToggleHandle {
+  transform: translateX(0.9rem);
+  background: rgba(8, 10, 14, 0.95);
 }
 
 .skuInput {
@@ -471,6 +520,10 @@
 
 .weightInput::placeholder {
   color: var(--slate-400);
+}
+
+.continueSellingColumn {
+  white-space: nowrap;
 }
 
 .weightUnitSelect {
@@ -560,6 +613,34 @@
 
 .basicFieldHelp {
   margin: 0;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  color: var(--slate-400);
+}
+
+.continueSellingBlock {
+  margin-top: 0.65rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.025);
+  padding: 0.65rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.continueSellingCopy {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.continueSellingCopy strong {
+  font-size: 0.79rem;
+  color: var(--slate-100);
+}
+
+.continueSellingCopy span {
   font-size: 0.74rem;
   line-height: 1.35;
   color: var(--slate-400);

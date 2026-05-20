@@ -34,6 +34,32 @@ export function SettingsListItemSkeleton() {
   );
 }
 
+export function SettingsProviderRowSkeleton() {
+  return (
+    <div className={styles.settingsSkeletonProviderRow}>
+      <span className={styles.settingsSkeletonProviderIcon} />
+      <div className={styles.settingsSkeletonProviderMain}>
+        <div className={styles.settingsSkeletonProviderTitleRow}>
+          <span className={styles.settingsSkeletonProviderName} />
+          <span className={styles.settingsSkeletonProviderStatus} />
+        </div>
+        <span className={styles.settingsSkeletonProviderHelper} />
+      </div>
+      <span className={styles.settingsSkeletonProviderAction} />
+    </div>
+  );
+}
+
+export function SettingsProviderRowsSkeleton({ rows = 3 } = {}) {
+  return (
+    <div className={styles.settingsSkeletonProviderRows}>
+      {Array.from({ length: rows }).map((_, index) => (
+        <SettingsProviderRowSkeleton key={`provider-row-${index}`} />
+      ))}
+    </div>
+  );
+}
+
 export function SettingsCardSkeleton({
   fields = 0,
   rows = 0,

@@ -269,6 +269,76 @@
   opacity: 0.72;
 }
 
+.settingsSkeletonProviderRows {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.settingsSkeletonProviderRow {
+  border: 1px solid var(--glass-border);
+  border-radius: 0.8rem;
+  background: color-mix(in srgb, var(--surface-container-lowest) 74%, transparent);
+  padding: 0.64rem;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.56rem;
+  align-items: center;
+}
+
+.settingsSkeletonProviderIcon,
+.settingsSkeletonProviderName,
+.settingsSkeletonProviderHelper,
+.settingsSkeletonProviderStatus,
+.settingsSkeletonProviderAction {
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(148, 163, 184, 0.12),
+      rgba(148, 163, 184, 0.24),
+      rgba(148, 163, 184, 0.12)
+    );
+  background-size: 200% 100%;
+  animation: settingsPulse 1.25s ease-in-out infinite;
+}
+
+.settingsSkeletonProviderIcon {
+  width: 1.95rem;
+  height: 1.95rem;
+}
+
+.settingsSkeletonProviderMain {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.settingsSkeletonProviderTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 0.44rem;
+}
+
+.settingsSkeletonProviderName {
+  width: 8.4rem;
+  height: 0.84rem;
+}
+
+.settingsSkeletonProviderStatus {
+  width: 5.4rem;
+  height: 1.02rem;
+}
+
+.settingsSkeletonProviderHelper {
+  width: 65%;
+  height: 0.7rem;
+}
+
+.settingsSkeletonProviderAction {
+  width: 5rem;
+  height: 1.8rem;
+  border-radius: 0.72rem;
+}
+
 .brandKitLayout {
   display: flex;
   flex-direction: column;

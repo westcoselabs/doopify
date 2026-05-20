@@ -87,8 +87,10 @@ export async function getStripeRuntimeConnection(): Promise<StripeRuntimeConnect
   }
 }
 
-export async function getStripeWebhookSecretSelection(): Promise<StripeWebhookSecretSelection> {
-  const runtime = await getStripeRuntimeConnection()
+export async function getStripeWebhookSecretSelection(
+  runtimeOverride?: StripeRuntimeConnection
+): Promise<StripeWebhookSecretSelection> {
+  const runtime = runtimeOverride ?? (await getStripeRuntimeConnection())
   if (runtime.source === 'db' && runtime.verified && runtime.webhookSecret) {
     return {
       source: 'db',

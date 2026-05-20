@@ -19,7 +19,7 @@ import AdminStatusChip from '../admin/ui/AdminStatusChip';
 import AdminTable from '../admin/ui/AdminTable';
 import AdminTextarea from '../admin/ui/AdminTextarea';
 import AdminTooltip from '../admin/ui/AdminTooltip';
-import SettingsPageSkeleton, { SettingsCardSkeleton } from './SettingsSkeletons';
+import SettingsPageSkeleton, { SettingsProviderRowsSkeleton } from './SettingsSkeletons';
 import ShippingSettingsWorkspace from './ShippingSettingsWorkspace';
 import TeamSettingsPanel from './TeamSettingsPanel';
 import AccountSettingsPanel from './AccountSettingsPanel';
@@ -427,6 +427,23 @@ async function parseApiJson(response) {
   return payload.data;
 }
 
+function buildStripeRuntimeStatusFromProviderSnapshot(stripeProviderSnapshot) {
+  if (!stripeProviderSnapshot) return null;
+  return {
+    source: stripeProviderSnapshot.runtimeSource || stripeProviderSnapshot.source || 'none',
+    mode: stripeProviderSnapshot.mode || null,
+    hasPublishableKey: stripeProviderSnapshot.hasPublishableKey,
+    hasSecretKey: stripeProviderSnapshot.hasSecretKey,
+    hasWebhookSecret: stripeProviderSnapshot.hasWebhookSecret,
+    webhookSource: stripeProviderSnapshot.hasWebhookSecret ? stripeProviderSnapshot.source : 'none',
+    verified: stripeProviderSnapshot.verified,
+    accountId: stripeProviderSnapshot.accountId,
+    chargesEnabled: stripeProviderSnapshot.chargesEnabled,
+    payoutsEnabled: stripeProviderSnapshot.payoutsEnabled,
+    providerStatus: stripeProviderSnapshot,
+  };
+}
+
 function getHigherStatus(left, right) {
   if (!left) return right || 'PASS';
   if (!right) return left;
@@ -831,6 +848,7 @@ export default function SettingsWorkspace() {
   const [providerStatusError, setProviderStatusError] = useState('');
   const [providerNotice, setProviderNotice] = useState('');
   const [stripeRuntimeStatus, setStripeRuntimeStatus] = useState(null);
+  const [stripeRuntimeLoading, setStripeRuntimeLoading] = useState(false);
   const [activePaymentDrawer, setActivePaymentDrawer] = useState(null);
   const [activeEmailDrawer, setActiveEmailDrawer] = useState(null);
   const [activeBrandDrawer, setActiveBrandDrawer] = useState(null);
@@ -1198,57 +1216,45 @@ export default function SettingsWorkspace() {
 
     async function loadProviderStatuses() {
       setProviderStatusLoading(true);
+      setStripeRuntimeLoading(true);
       setProviderStatusError('');
+      const runtimeRequest = fetch('/api/settings/payments/stripe/runtime-status', { cache: 'no-store' })
+        .then(parseApiJson)
+        .then((runtimePayload) => {
+          if (cancelled) return;
+          setStripeRuntimeStatus(runtimePayload || null);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          setProviderStatusError('Stripe runtime status is still checking. Provider credential status is shown from DB.');
+        })
+        .finally(() => {
+          if (cancelled) return;
+          setStripeRuntimeLoading(false);
+        });
+
       try {
-        const [providerResult, runtimeResult] = await Promise.allSettled([
-          fetch('/api/settings/providers', { cache: 'no-store' }).then(parseApiJson),
-          fetch('/api/settings/payments/stripe/runtime-status', { cache: 'no-store' }).then(parseApiJson),
-        ]);
+        const providerPayload = await fetch('/api/settings/providers', { cache: 'no-store' }).then(parseApiJson);
         if (cancelled) return;
 
-        if (providerResult.status !== 'fulfilled') {
-          throw providerResult.reason || new Error('Failed to load provider statuses');
-        }
-
         const nextMap = {};
-        for (const entry of providerResult.value?.providers || []) {
+        for (const entry of providerPayload?.providers || []) {
           nextMap[entry.provider] = entry;
         }
-        const stripeProviderSnapshot = providerResult.value?.stripeProviderStatus || null;
-        if (runtimeResult.status === 'fulfilled') {
-          const runtimePayload = runtimeResult.value || null;
-          if (runtimePayload && stripeProviderSnapshot && !runtimePayload.providerStatus) {
-            runtimePayload.providerStatus = stripeProviderSnapshot;
-          }
-          setStripeRuntimeStatus(runtimePayload);
-        } else {
-          setStripeRuntimeStatus(
-            stripeProviderSnapshot
-              ? {
-                  source: stripeProviderSnapshot.runtimeSource || stripeProviderSnapshot.source || 'none',
-                  mode: stripeProviderSnapshot.mode || null,
-                  hasPublishableKey: stripeProviderSnapshot.hasPublishableKey,
-                  hasSecretKey: stripeProviderSnapshot.hasSecretKey,
-                  hasWebhookSecret: stripeProviderSnapshot.hasWebhookSecret,
-                  webhookSource: stripeProviderSnapshot.hasWebhookSecret ? stripeProviderSnapshot.source : 'none',
-                  verified: stripeProviderSnapshot.verified,
-                  accountId: stripeProviderSnapshot.accountId,
-                  chargesEnabled: stripeProviderSnapshot.chargesEnabled,
-                  payoutsEnabled: stripeProviderSnapshot.payoutsEnabled,
-                  providerStatus: stripeProviderSnapshot,
-                }
-              : null
-          );
-          setProviderStatusError('Stripe runtime status could not be loaded. Provider credential status is still shown from DB.');
-        }
+        const stripeProviderSnapshot = providerPayload?.stripeProviderStatus || null;
         setProviderStatusMap(nextMap);
         setProviderStatusLoaded(true);
+        setStripeRuntimeStatus((current) => current || buildStripeRuntimeStatusFromProviderSnapshot(stripeProviderSnapshot));
       } catch (loadError) {
         if (cancelled) return;
         setProviderStatusError(loadError instanceof Error ? loadError.message : 'Failed to load provider statuses');
       } finally {
-        setProviderStatusLoading(false);
+        if (!cancelled) {
+          setProviderStatusLoading(false);
+        }
       }
+
+      void runtimeRequest;
     }
 
     loadProviderStatuses();
@@ -1270,7 +1276,7 @@ export default function SettingsWorkspace() {
       setPaymentActivityError('');
       try {
         // TODO(phase4): Replace this with a dedicated payment/refund activity endpoint when available.
-        const payload = await fetch('/api/orders?page=1&pageSize=25', { cache: 'no-store' }).then(parseApiJson);
+        const payload = await fetch('/api/orders?view=payments_activity&page=1&pageSize=12', { cache: 'no-store' }).then(parseApiJson);
         if (cancelled) return;
         const rows = buildPaymentActivityRowsFromOrders(payload?.orders || [], settings.timezone);
         setPaymentActivityRows(rows);
@@ -1407,6 +1413,11 @@ export default function SettingsWorkspace() {
   const smtpProviderStatus = providerStatusMap.SMTP || null;
   const shippoProviderStatus = providerStatusMap.SHIPPO || null;
   const easypostProviderStatus = providerStatusMap.EASYPOST || null;
+  const isPaymentsSectionActive = activeSection === 'payments';
+  const showPaymentsProviderRowsSkeleton =
+    isPaymentsSectionActive && providerStatusLoading && !providerStatusLoaded && !providerStatusError;
+  const showStripeRuntimeChecking =
+    isPaymentsSectionActive && stripeRuntimeLoading;
   const stripeSetupStatus = useMemo(
     () => describeProviderGatewayStatus(stripeProviderStatus, describeStripeSetup(setupCheckById)),
     [stripeProviderStatus, setupCheckById]
@@ -1437,14 +1448,21 @@ export default function SettingsWorkspace() {
   const paymentProviderRows = useMemo(
     () =>
       buildPaymentProviderRows({
-        stripeSetupStatus,
-        stripeCheckoutSourceLabel,
-        stripeRuntimeModeLabel,
-        stripeWebhookSourceLabel,
-        stripeRuntimeReady,
+        stripeSetupStatus: showStripeRuntimeChecking
+          ? {
+              ...stripeSetupStatus,
+              label: 'Checking status...',
+              tone: 'neutral',
+            }
+          : stripeSetupStatus,
+        stripeCheckoutSourceLabel: showStripeRuntimeChecking ? 'Checking status...' : stripeCheckoutSourceLabel,
+        stripeRuntimeModeLabel: showStripeRuntimeChecking ? 'Checking status...' : stripeRuntimeModeLabel,
+        stripeWebhookSourceLabel: showStripeRuntimeChecking ? 'Checking status...' : stripeWebhookSourceLabel,
+        stripeRuntimeReady: showStripeRuntimeChecking ? false : stripeRuntimeReady,
         stripeMethodChips,
       }),
     [
+      showStripeRuntimeChecking,
       stripeCheckoutSourceLabel,
       stripeMethodChips,
       stripeRuntimeModeLabel,
@@ -2190,9 +2208,9 @@ export default function SettingsWorkspace() {
     setActivePaymentDrawer(providerId);
     if (providerId === PAYMENT_PROVIDER_DRAWER.STRIPE) {
       setStripeCredentialReplaceByField({ ...EMPTY_STRIPE_REPLACE_STATE });
-    }
-    if (providerId === PAYMENT_PROVIDER_DRAWER.STRIPE) {
-      void refreshProviderStatuses();
+      if (!providerStatusLoaded) {
+        void refreshProviderStatuses();
+      }
     }
   }
 
@@ -2375,8 +2393,6 @@ export default function SettingsWorkspace() {
   const activeSavedAgoText = activeSection === 'shipping' ? shippingModeSavedAgoText : savedAgoText;
   const activeSavedErrorCopy =
     activeSection === 'shipping' ? shippingModeSaveError : activeSection === 'brand-kit' ? brandKitError : '';
-  const showPaymentsInitialProviderSkeleton =
-    activeSection === 'payments' && !providerStatusLoaded && !providerStatusError;
   const activeSectionShippingConfigLoaded =
     activeSection === 'shipping'
       ? shippingConfigLoadedBySection.shipping
@@ -2434,55 +2450,37 @@ export default function SettingsWorkspace() {
 
   async function refreshProviderStatuses() {
     setProviderStatusLoading(true);
+    setStripeRuntimeLoading(true);
     setProviderStatusError('');
+    const runtimeRequest = fetch('/api/settings/payments/stripe/runtime-status', { cache: 'no-store' })
+      .then(parseApiJson)
+      .then((runtimePayload) => {
+        setStripeRuntimeStatus(runtimePayload || null);
+      })
+      .catch(() => {
+        setProviderStatusError('Stripe runtime status is still checking. Provider credential status is shown from DB.');
+      })
+      .finally(() => {
+        setStripeRuntimeLoading(false);
+      });
+
     try {
-      const [providerResult, runtimeResult] = await Promise.allSettled([
-        fetch('/api/settings/providers', { cache: 'no-store' }).then(parseApiJson),
-        fetch('/api/settings/payments/stripe/runtime-status', { cache: 'no-store' }).then(parseApiJson),
-      ]);
-
-      if (providerResult.status !== 'fulfilled') {
-        throw providerResult.reason || new Error('Failed to refresh provider statuses');
-      }
-
+      const providerPayload = await fetch('/api/settings/providers', { cache: 'no-store' }).then(parseApiJson);
       const nextMap = {};
-      for (const entry of providerResult.value?.providers || []) {
+      for (const entry of providerPayload?.providers || []) {
         nextMap[entry.provider] = entry;
       }
-      const stripeProviderSnapshot = providerResult.value?.stripeProviderStatus || null;
+      const stripeProviderSnapshot = providerPayload?.stripeProviderStatus || null;
       setProviderStatusMap(nextMap);
-      if (runtimeResult.status === 'fulfilled') {
-        const runtimePayload = runtimeResult.value || null;
-        if (runtimePayload && stripeProviderSnapshot && !runtimePayload.providerStatus) {
-          runtimePayload.providerStatus = stripeProviderSnapshot;
-        }
-        setStripeRuntimeStatus(runtimePayload);
-      } else {
-        setStripeRuntimeStatus(
-          stripeProviderSnapshot
-            ? {
-                source: stripeProviderSnapshot.runtimeSource || stripeProviderSnapshot.source || 'none',
-                mode: stripeProviderSnapshot.mode || null,
-                hasPublishableKey: stripeProviderSnapshot.hasPublishableKey,
-                hasSecretKey: stripeProviderSnapshot.hasSecretKey,
-                hasWebhookSecret: stripeProviderSnapshot.hasWebhookSecret,
-                webhookSource: stripeProviderSnapshot.hasWebhookSecret ? stripeProviderSnapshot.source : 'none',
-                verified: stripeProviderSnapshot.verified,
-                accountId: stripeProviderSnapshot.accountId,
-                chargesEnabled: stripeProviderSnapshot.chargesEnabled,
-                payoutsEnabled: stripeProviderSnapshot.payoutsEnabled,
-                providerStatus: stripeProviderSnapshot,
-              }
-            : null
-        );
-        setProviderStatusError('Stripe runtime status could not be loaded. Provider credential status is still shown from DB.');
-      }
+      setStripeRuntimeStatus((current) => current || buildStripeRuntimeStatusFromProviderSnapshot(stripeProviderSnapshot));
       setProviderStatusLoaded(true);
     } catch (refreshError) {
       setProviderStatusError(refreshError instanceof Error ? refreshError.message : 'Failed to refresh provider statuses');
     } finally {
       setProviderStatusLoading(false);
     }
+
+    void runtimeRequest;
   }
 
   function patchProviderForm(provider, patch) {
@@ -3413,86 +3411,91 @@ export default function SettingsWorkspace() {
                     </p>
                   </div>
                 </section>
-                {showPaymentsInitialProviderSkeleton ? (
-                  <section className={styles.configSection}>
-                    <SettingsCardSkeleton actions={1} chips={3} rows={3} />
-                    <SettingsCardSkeleton actions={0} rows={2} />
-                    <SettingsCardSkeleton actions={0} rows={3} />
-                  </section>
-                ) : null}
-                {!showPaymentsInitialProviderSkeleton && providerStatusError ? (
+                {providerStatusError ? (
                   <div className={styles.statusBlock}>
                     <p className={styles.statusTitle}>Provider action error</p>
                     <p className={styles.statusText}>{providerStatusError}</p>
                   </div>
                 ) : null}
-                {!showPaymentsInitialProviderSkeleton && providerNotice ? (
+                {providerNotice ? (
                   <div className={styles.statusBlock}>
                     <p className={styles.statusTitle}>Provider update</p>
                     <p className={styles.statusText}>{providerNotice}</p>
                   </div>
                 ) : null}
-                {!showPaymentsInitialProviderSkeleton && providerStatusLoading ? (
+                {providerStatusLoading ? (
                   <div className={styles.statusBlock}>
                     <p className={styles.statusText}>Refreshing provider statuses...</p>
                   </div>
                 ) : null}
+                {showStripeRuntimeChecking ? (
+                  <div className={styles.statusBlock}>
+                    <p className={styles.statusText}>Checking Stripe runtime status...</p>
+                  </div>
+                ) : null}
 
-                {!showPaymentsInitialProviderSkeleton ? (
-                  <AdminCard as="section" className={`${styles.paymentSectionCard} ${styles.compactSettingsCard}`} variant="card">
+                <AdminCard as="section" className={`${styles.paymentSectionCard} ${styles.compactSettingsCard}`} variant="card">
                   <div className={`${styles.setupCardHeader} ${styles.compactSectionHeader}`}>
                     <h4>Payment providers</h4>
                     <AdminTooltip content="Provider credentials are managed in drawers to keep this page compact and secret-safe." />
                   </div>
                   <p className={styles.cardSubtext}>Connect gateways and manage payment runtime status by provider.</p>
-                  <div className={styles.providerList}>
-                    {paymentProviderRows.map((providerRow) => (
-                      <article className={`${styles.providerRow} ${styles.compactProviderRow}`} key={providerRow.id}>
-                        <div className={`${styles.providerIcon} ${styles[providerRow.iconClassName] || ''}`}>{providerRow.iconText}</div>
-                        <div className={`${styles.providerMain} ${styles.compactRowMain}`}>
-                          <div className={styles.providerTitleLine}>
-                            <h4 className={styles.compactRowTitle}>{providerRow.name}</h4>
-                            <AdminStatusChip tone={providerRow.status.tone}>{providerRow.status.label}</AdminStatusChip>
-                            {providerRow.badges.map((badge) => (
-                              <AdminStatusChip key={`${providerRow.id}-${badge.label}`} tone={badge.tone}>
-                                {badge.label}
-                              </AdminStatusChip>
-                            ))}
-                          </div>
-                          <p className={styles.compactRowDescription}>{providerRow.description}</p>
-                          <p className={styles.compactMeta}>{providerRow.sourceMeta}</p>
-                          <p className={styles.compactMeta}>{providerRow.statusMeta}</p>
-                          <div className={`${styles.methodChipRow} ${styles.compactChipRow}`}>
-                            {providerRow.chips.map((chip) => (
-                              <span className={styles.methodChip} key={`${providerRow.id}-${chip}`}>
-                                {chip}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                        <div className={`${styles.providerActions} ${styles.compactActionRow}`}>
-                          <AdminButton
-                            aria-label={`Manage ${providerRow.name}`}
-                            onClick={() => openPaymentDrawer(providerRow.id)}
-                            size="sm"
-                            variant="secondary"
-                          >
-                            Manage
-                          </AdminButton>
-                          <AdminButton aria-label={`More ${providerRow.name} actions`} size="sm" variant="icon">
-                            <span className="material-symbols-outlined" aria-hidden="true">
-                              more_horiz
-                            </span>
-                          </AdminButton>
-                        </div>
-                      </article>
-                    ))}
-                  </div>
-                  </AdminCard>
-                ) : null}
+                  {showPaymentsProviderRowsSkeleton ? (
+                    <SettingsProviderRowsSkeleton rows={3} />
+                  ) : (
+                    <div className={styles.providerList}>
+                      {paymentProviderRows.map((providerRow) => {
+                        const stripeRowIsChecking =
+                          providerRow.id === PAYMENT_PROVIDER_DRAWER.STRIPE && showStripeRuntimeChecking;
+                        return (
+                          <article className={`${styles.providerRow} ${styles.compactProviderRow}`} key={providerRow.id}>
+                            <div className={`${styles.providerIcon} ${styles[providerRow.iconClassName] || ''}`}>{providerRow.iconText}</div>
+                            <div className={`${styles.providerMain} ${styles.compactRowMain}`}>
+                              <div className={styles.providerTitleLine}>
+                                <h4 className={styles.compactRowTitle}>{providerRow.name}</h4>
+                                <AdminStatusChip tone={providerRow.status.tone}>{providerRow.status.label}</AdminStatusChip>
+                                {providerRow.badges.map((badge) => (
+                                  <AdminStatusChip key={`${providerRow.id}-${badge.label}`} tone={badge.tone}>
+                                    {badge.label}
+                                  </AdminStatusChip>
+                                ))}
+                              </div>
+                              <p className={styles.compactRowDescription}>{providerRow.description}</p>
+                              <p className={styles.compactMeta}>{providerRow.sourceMeta}</p>
+                              <p className={styles.compactMeta}>
+                                {stripeRowIsChecking ? 'Checking Stripe runtime, webhook, and account status...' : providerRow.statusMeta}
+                              </p>
+                              <div className={`${styles.methodChipRow} ${styles.compactChipRow}`}>
+                                {providerRow.chips.map((chip) => (
+                                  <span className={styles.methodChip} key={`${providerRow.id}-${chip}`}>
+                                    {chip}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                            <div className={`${styles.providerActions} ${styles.compactActionRow}`}>
+                              <AdminButton
+                                aria-label={`Manage ${providerRow.name}`}
+                                onClick={() => openPaymentDrawer(providerRow.id)}
+                                size="sm"
+                                variant="secondary"
+                              >
+                                Manage
+                              </AdminButton>
+                              <AdminButton aria-label={`More ${providerRow.name} actions`} size="sm" variant="icon">
+                                <span className="material-symbols-outlined" aria-hidden="true">
+                                  more_horiz
+                                </span>
+                              </AdminButton>
+                            </div>
+                          </article>
+                        );
+                      })}
+                    </div>
+                  )}
+                </AdminCard>
 
-                {!showPaymentsInitialProviderSkeleton ? (
-                  <AdminCard as="section" className={`${styles.paymentSectionCard} ${styles.compactSettingsCard}`} variant="card">
+                <AdminCard as="section" className={`${styles.paymentSectionCard} ${styles.compactSettingsCard}`} variant="card">
                   <div className={`${styles.setupCardHeader} ${styles.compactSectionHeader}`}>
                     <h4>Customer checkout methods</h4>
                     <AdminTooltip content="Method labels are derived from real runtime status and never claim unsupported behavior." />
@@ -3509,11 +3512,9 @@ export default function SettingsWorkspace() {
                       </article>
                     ))}
                   </div>
-                  </AdminCard>
-                ) : null}
+                </AdminCard>
 
-                {!showPaymentsInitialProviderSkeleton ? (
-                  <AdminCard as="section" className={`${styles.paymentSectionCard} ${styles.compactSettingsCard}`} variant="card">
+                <AdminCard as="section" className={`${styles.paymentSectionCard} ${styles.compactSettingsCard}`} variant="card">
                   <div className={`${styles.setupCardHeader} ${styles.compactSectionHeader}`}>
                     <h4>Payment activity</h4>
                     <AdminTooltip content="Rows currently come from order payment records. Refund timeline enrichment will follow with a dedicated activity API." />
@@ -3533,8 +3534,7 @@ export default function SettingsWorkspace() {
                       title="No payment activity yet"
                     />
                   )}
-                  </AdminCard>
-                ) : null}
+                </AdminCard>
               </div>
             ) : null}
 
