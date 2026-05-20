@@ -29,11 +29,13 @@ export async function PATCH(req: Request, { params }: Params) {
   if (!parsed.success) return err(parsed.error.errors[0].message)
 
   try {
+    const { price, compareAtPrice, ...variantFields } = parsed.data
+
     const variant = await updateVariant(variantId, {
-      ...parsed.data,
-      ...(parsed.data.price !== undefined ? { priceCents: dollarsToCents(parsed.data.price) } : {}),
-      ...(parsed.data.compareAtPrice !== undefined
-        ? { compareAtPriceCents: dollarsToCents(parsed.data.compareAtPrice) }
+      ...variantFields,
+      ...(price !== undefined ? { priceCents: dollarsToCents(price) } : {}),
+      ...(compareAtPrice !== undefined
+        ? { compareAtPriceCents: dollarsToCents(compareAtPrice) }
         : {}),
     })
     return ok(variant)

@@ -30,6 +30,18 @@ describe('product selling tab contract', () => {
     expect(source).toContain('Presale inventory rule check')
   })
 
+  it('keeps digital fulfillment copy foundation-only until no-shipping checkout ships', () => {
+    const source = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/products/ProductSellingPanel.js'),
+      'utf8'
+    )
+
+    expect(source).toContain('No-shipping checkout is not enabled yet.')
+    expect(source).toContain('Digital delivery foundation is saved on the product.')
+    expect(source).not.toContain('No shipping required. Customer receives secure access after payment.')
+    expect(source).not.toContain('Instant digital delivery after payment.')
+  })
+
   it('keeps continue-selling controls inside the variants editor', () => {
     const source = fs.readFileSync(
       path.resolve(process.cwd(), 'src/components/products/ProductVariantEditor.js'),

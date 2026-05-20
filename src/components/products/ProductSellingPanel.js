@@ -39,7 +39,8 @@ const FULFILLMENT_MODES = [
   {
     value: "digital",
     title: "Digital product",
-    subtitle: "No shipping required. Customer receives secure access after payment.",
+    subtitle:
+      "Marks this product as digital for future delivery workflows. No-shipping checkout is not enabled yet.",
     icon: "download",
   },
 ];
@@ -114,10 +115,10 @@ function getPreviewState({ draftProduct, totalInventory, continueSellingCount })
     draftProduct.availabilityMessage?.trim() ||
     (comingSoonActive || presalePending
       ? "This product is launching soon. Add availability details before launch."
-      : presaleActive
-        ? `This item is available for presale.${draftProduct.expectedDeliveryText?.trim() ? ` ${draftProduct.expectedDeliveryText.trim()}` : ""}`
+        : presaleActive
+          ? `This item is available for presale.${draftProduct.expectedDeliveryText?.trim() ? ` ${draftProduct.expectedDeliveryText.trim()}` : ""}`
         : fulfillmentType === "digital"
-          ? "Instant digital delivery after payment."
+          ? "Digital product foundation is configured. Checkout still follows current shipping flow in this release."
           : soldOut
             ? "This product is currently sold out."
             : "Available for immediate purchase.");
@@ -338,10 +339,10 @@ export default function ProductSellingPanel({ onManageInVariants }) {
 
           {draftProduct.fulfillmentType === "digital" ? (
             <div className={styles.digitalNotice}>
-              <strong>Digital delivery</strong>
+              <strong>Digital foundation</strong>
               <span>
-                Digital delivery workflows remain provider-backed and server-owned. This release
-                adds product-level digital availability foundations only.
+                Digital delivery foundation is saved on the product. Secure downloads, no-shipping
+                checkout, and delivery emails should be completed in a dedicated follow-up release.
               </span>
             </div>
           ) : null}

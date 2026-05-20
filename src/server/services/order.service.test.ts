@@ -247,6 +247,94 @@ describe('createOrder inventory and payment side effects', () => {
     expect(mocks.emitInternalEvent).not.toHaveBeenCalled()
   })
 
+  it('allows paid-order decrement for backorder-enabled variants (inventory may go negative)', async () => {
+    mocks.tx.productVariant.updateMany.mockImplementation(async (input: { where: { id: string } }) => {
+      if (input.where.id === 'var_backorder') {
+        return { count: 1 }
+      }
+      return { count: 0 }
+    })
+
+    await createOrder({
+      customerId: 'cust_1',
+      email: 'buyer@example.com',
+      paymentStatus: 'PAID',
+      items: [
+        {
+          productId: 'prod_1',
+          variantId: 'var_backorder',
+          title: 'Backorder Shirt',
+          variantTitle: 'Default',
+          priceCents: 1000,
+          quantity: 3,
+        },
+      ],
+    })
+
+    expect(mocks.tx.productVariant.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'var_backorder',
+        OR: [{ continueSellingWhenOutOfStock: true }, { inventory: { gte: 3 } }],
+      },
+      data: { inventory: { decrement: 3 } },
+    })
+    expect(mocks.tx.order.create).toHaveBeenCalledTimes(1)
+  })
+
+  it('rejects paid-order creation when a non-backorder variant cannot decrement inventory', async () => {
+    mocks.tx.productVariant.updateMany.mockImplementation(async (input: { where: { id: string } }) => {
+      if (input.where.id === 'var_backorder') {
+        return { count: 1 }
+      }
+      if (input.where.id === 'var_strict') {
+        return { count: 0 }
+      }
+      return { count: 1 }
+    })
+
+    await expect(
+      createOrder({
+        customerId: 'cust_1',
+        email: 'buyer@example.com',
+        paymentStatus: 'PAID',
+        items: [
+          {
+            productId: 'prod_1',
+            variantId: 'var_backorder',
+            title: 'Backorder Shirt',
+            variantTitle: 'Default',
+            priceCents: 1000,
+            quantity: 1,
+          },
+          {
+            productId: 'prod_2',
+            variantId: 'var_strict',
+            title: 'Strict Inventory Shirt',
+            variantTitle: 'Default',
+            priceCents: 1500,
+            quantity: 2,
+          },
+        ],
+      })
+    ).rejects.toThrow('Insufficient inventory for variant var_strict')
+
+    expect(mocks.tx.productVariant.updateMany).toHaveBeenNthCalledWith(1, {
+      where: {
+        id: 'var_backorder',
+        OR: [{ continueSellingWhenOutOfStock: true }, { inventory: { gte: 1 } }],
+      },
+      data: { inventory: { decrement: 1 } },
+    })
+    expect(mocks.tx.productVariant.updateMany).toHaveBeenNthCalledWith(2, {
+      where: {
+        id: 'var_strict',
+        OR: [{ continueSellingWhenOutOfStock: true }, { inventory: { gte: 2 } }],
+      },
+      data: { inventory: { decrement: 2 } },
+    })
+    expect(mocks.tx.order.create).not.toHaveBeenCalled()
+  })
+
   it('preserves Stripe payment-intent idempotency by returning existing order without running a new transaction', async () => {
     const existingOrder = createPersistedOrder({
       id: 'ord_existing',

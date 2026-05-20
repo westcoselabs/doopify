@@ -87,6 +87,23 @@ describe('POST /api/checkout/create', () => {
     })
   })
 
+  it('returns 400 with coming-soon availability rejection from server-side checkout workflow', async () => {
+    mocks.runCreateCheckoutWorkflow.mockRejectedValue(new Error('Launching soon'))
+
+    const response = await POST(
+      new Request('http://localhost/api/checkout/create', {
+        method: 'POST',
+        body: JSON.stringify(validPayload),
+      })
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      success: false,
+      error: 'Launching soon',
+    })
+  })
+
   it('passes an optional discount code to checkout creation', async () => {
     mocks.runCreateCheckoutWorkflow.mockResolvedValue({
       checkoutSessionId: 'checkout_1',

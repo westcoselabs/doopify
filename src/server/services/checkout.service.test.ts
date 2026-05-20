@@ -838,6 +838,40 @@ describe('checkout service', () => {
     expect(mocks.createStripePaymentIntent).not.toHaveBeenCalled()
   })
 
+  it('rejects presale products before presale starts and treats them as coming soon', async () => {
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_1',
+        productId: 'product_1',
+        title: 'Default',
+        sku: 'SKU-1',
+        price: 25,
+        inventory: 10,
+        continueSellingWhenOutOfStock: true,
+        product: {
+          id: 'product_1',
+          title: 'Test Shirt',
+          salesMode: 'PRESALE',
+          presaleStartsAt: new Date(Date.now() + 60_000),
+          presaleEndsAt: null,
+          availableForPurchaseAt: null,
+          availabilityMessage: 'Presale opens Friday',
+          fulfillmentType: 'PHYSICAL',
+        },
+      },
+    ])
+
+    await expect(
+      createCheckoutPaymentIntent({
+        email: 'ada@example.com',
+        items: [{ variantId: 'variant_1', quantity: 1 }],
+        shippingAddress: address,
+      })
+    ).rejects.toThrow('Presale opens Friday')
+
+    expect(mocks.createStripePaymentIntent).not.toHaveBeenCalled()
+  })
+
   it('allows presale checkout when variant permits continue selling at zero inventory', async () => {
     mocks.prisma.productVariant.findMany.mockResolvedValue([
       {
@@ -878,6 +912,89 @@ describe('checkout service', () => {
     })
 
     expect(mocks.createStripePaymentIntent).toHaveBeenCalled()
+  })
+
+  it('blocks checkout for zero-inventory variants when continue selling is disabled', async () => {
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_1',
+        productId: 'product_1',
+        title: 'Default',
+        sku: 'SKU-1',
+        price: 25,
+        inventory: 0,
+        continueSellingWhenOutOfStock: false,
+        product: {
+          id: 'product_1',
+          title: 'Test Shirt',
+          salesMode: 'STANDARD',
+          presaleStartsAt: null,
+          presaleEndsAt: null,
+          availableForPurchaseAt: null,
+          availabilityMessage: null,
+          fulfillmentType: 'PHYSICAL',
+        },
+      },
+    ])
+
+    await expect(
+      createCheckoutPaymentIntent({
+        email: 'ada@example.com',
+        items: [{ variantId: 'variant_1', quantity: 1 }],
+        shippingAddress: address,
+      })
+    ).rejects.toThrow('Only 0 units left for this variant.')
+
+    expect(mocks.createStripePaymentIntent).not.toHaveBeenCalled()
+  })
+
+  it('allows checkout for zero-inventory variants when continue selling is enabled', async () => {
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_1',
+        productId: 'product_1',
+        title: 'Default',
+        sku: 'SKU-1',
+        price: 25,
+        inventory: 0,
+        continueSellingWhenOutOfStock: true,
+        product: {
+          id: 'product_1',
+          title: 'Test Shirt',
+          salesMode: 'STANDARD',
+          presaleStartsAt: null,
+          presaleEndsAt: null,
+          availableForPurchaseAt: null,
+          availabilityMessage: null,
+          fulfillmentType: 'PHYSICAL',
+        },
+      },
+    ])
+    mocks.createStripePaymentIntent.mockResolvedValue({
+      id: 'pi_backorder_standard',
+      client_secret: 'secret_backorder_standard',
+      amount: 3499,
+      currency: 'usd',
+      status: 'requires_payment_method',
+    })
+    mocks.prisma.checkoutSession.create.mockResolvedValue({
+      id: 'checkout_backorder_standard',
+    })
+
+    await createCheckoutPaymentIntent({
+      email: 'ada@example.com',
+      items: [{ variantId: 'variant_1', quantity: 1 }],
+      shippingAddress: address,
+    })
+
+    expect(mocks.createStripePaymentIntent).toHaveBeenCalled()
+    expect(mocks.prisma.checkoutSession.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          paymentIntentId: 'pi_backorder_standard',
+        }),
+      })
+    )
   })
 
   it('revalidates selected shipping quote before creating stripe amount', async () => {

@@ -137,19 +137,19 @@ export function getProductAvailabilityBadge(input: {
     return 'DIGITAL'
   }
 
-  const totalInventory = input.variants.reduce(
+  const totalPositiveInventory = input.variants.reduce(
     (sum, variant) => sum + Math.max(0, Number(variant.inventory ?? 0)),
     0
   )
   const hasBackorderVariant = input.variants.some(
-    (variant) => Number(variant.inventory ?? 0) <= 0 && Boolean(variant.continueSellingWhenOutOfStock)
+    (variant) => Boolean(variant.continueSellingWhenOutOfStock)
   )
 
-  if (hasBackorderVariant) {
+  if (totalPositiveInventory <= 0 && hasBackorderVariant) {
     return 'BACKORDER'
   }
 
-  if (totalInventory <= 0) {
+  if (totalPositiveInventory <= 0 && !hasBackorderVariant) {
     return 'SOLD_OUT'
   }
 
@@ -176,7 +176,7 @@ export function getAvailabilityMessage(input: {
   }
 
   if (input.badge === 'DIGITAL') {
-    return 'Digital delivery.'
+    return 'Digital product.'
   }
 
   if (input.badge === 'BACKORDER') {
