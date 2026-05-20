@@ -56,7 +56,8 @@ describe('product variant weight UI contract', () => {
     const contextPath = path.resolve(process.cwd(), 'src/context/ProductContext.js')
     const contextSource = fs.readFileSync(contextPath, 'utf8')
 
-    expect(contextSource).toContain('weight: v.weight != null ? Number(v.weight) : undefined')
+    expect(contextSource).toContain('function normalizeVariantWeightForPayload(value)')
+    expect(contextSource).toContain('weight: normalizeVariantWeightForPayload(v.weight)')
     expect(contextSource).toContain('weightUnit: v.weightUnit || undefined')
   })
 })

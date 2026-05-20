@@ -191,6 +191,19 @@ function normalizeSkuValue(value) {
   return String(value ?? '').trim().toLowerCase();
 }
 
+function normalizeVariantWeightForPayload(value) {
+  if (value === null || value === undefined || value === '') {
+    return undefined;
+  }
+
+  const numeric = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(numeric)) {
+    return undefined;
+  }
+
+  return numeric;
+}
+
 function mergeValidationErrors(...errorSets) {
   const mergedErrors = {};
 
@@ -331,6 +344,8 @@ function getComparableProduct(product) {
       compareAtPrice: variant.compareAtPrice,
       inventoryQty: variant.inventoryQty,
       continueSellingWhenOutOfStock: variant.continueSellingWhenOutOfStock,
+      weight: variant.weight,
+      weightUnit: variant.weightUnit,
       imageId: variant.imageId,
       isDefault: variant.isDefault,
       isActive: variant.isActive,
@@ -895,7 +910,7 @@ export function ProductProvider({ children }) {
           compareAtPrice: v.compareAtPrice ? Number(v.compareAtPrice) : undefined,
           inventory: Number(v.inventoryQty) || 0,
           continueSellingWhenOutOfStock: Boolean(v.continueSellingWhenOutOfStock),
-          weight: v.weight != null ? Number(v.weight) : undefined,
+          weight: normalizeVariantWeightForPayload(v.weight),
           weightUnit: v.weightUnit || undefined,
           position: v.position,
         })),

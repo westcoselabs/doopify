@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   createEmptyProductDraft,
+  generateVariantsFromOptions,
   getComputedProductState,
   getComputedProductStateMeta,
   isFuturePublishDate,
@@ -124,6 +125,40 @@ describe('prepareProductForSave variant weight persistence', () => {
     expect(result.variants[0]?.weight).toBeNull()
     expect(result.variants[0]?.weightUnit).toBe('kg')
     expect(result.variants[0]?.sku).toBe('WEIGHT-BASE')
+  })
+
+  it('preserves zero weight values instead of dropping them as falsy', () => {
+    const withZeroWeight = {
+      ...baseProduct,
+      options: [],
+      variants: [
+        {
+          ...baseProduct.variants[0],
+          weight: 0,
+          weightUnit: 'lb',
+        },
+      ],
+    }
+
+    const result = prepareProductForSave(withZeroWeight)
+    expect(result.variants[0]?.weight).toBe(0)
+    expect(result.variants[0]?.weightUnit).toBe('lb')
+  })
+
+  it('preserves matched variant weights when option values are regenerated', () => {
+    const nextOptions = [{ id: 'opt-size', name: 'Size', values: ['S', 'M', 'L'] }]
+    const regenerated = generateVariantsFromOptions(baseProduct as any, nextOptions, baseProduct.variants as any)
+
+    const variantS = regenerated.find((variant: any) => variant.optionValues?.Size === 'S')
+    const variantM = regenerated.find((variant: any) => variant.optionValues?.Size === 'M')
+    const variantL = regenerated.find((variant: any) => variant.optionValues?.Size === 'L')
+
+    expect(variantS?.weight).toBe(0.75)
+    expect(variantS?.weightUnit).toBe('kg')
+    expect(variantM?.weight).toBe(12)
+    expect(variantM?.weightUnit).toBe('oz')
+    expect(variantL?.weight).toBeNull()
+    expect(variantL?.weightUnit).toBe('kg')
   })
 })
 

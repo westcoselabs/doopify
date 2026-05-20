@@ -146,6 +146,14 @@ function parseIntegerInput(value) {
 }
 
 function normalizeVariantWeight(value) {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === 'string' && !value.trim()) {
+    return null;
+  }
+
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
     return null;
@@ -564,6 +572,8 @@ export function deriveProduct(product) {
     compareAtPrice: normalizeMoney(variant.compareAtPrice),
     inventoryQty: normalizeInventory(variant.inventoryQty),
     continueSellingWhenOutOfStock: Boolean(variant.continueSellingWhenOutOfStock),
+    weight: normalizeVariantWeight(variant.weight),
+    weightUnit: normalizeVariantWeightUnit(variant.weightUnit),
     title: trimString(variant.title) || buildVariantTitle(variant.optionValues, options.map(option => option.name)),
   }));
   const inventorySummary = deriveInventorySummary(variants);

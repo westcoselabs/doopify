@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
       findUnique: vi.fn(),
       count: vi.fn(),
       create: vi.fn(),
+      update: vi.fn(),
     },
     productVariant: {
       findMany: vi.fn(),
@@ -42,6 +43,7 @@ import {
   getProductSummaries,
   getProduct,
   createProduct,
+  updateProduct,
 } from './product.service'
 
 describe('getProductSummaries — lightweight list', () => {
@@ -334,6 +336,92 @@ describe('product storefront visibility', () => {
           handle: 'alpha',
           status: 'ACTIVE',
           OR: [{ publishedAt: null }, { publishedAt: { lte: expect.any(Date) } }],
+        }),
+      })
+    )
+  })
+})
+
+describe('updateProduct â€” variant weight sync', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mocks.emitInternalEvent.mockResolvedValue(undefined)
+    mocks.prisma.$transaction.mockImplementation(async (cb: any) => cb(mocks.prisma))
+    mocks.prisma.product.update.mockResolvedValue({ id: 'prod-1' })
+    mocks.prisma.productVariant.findMany.mockResolvedValue([{ id: 'var-1' }])
+    mocks.prisma.product.findUnique.mockResolvedValue({
+      id: 'prod-1',
+      title: 'Weighted Product',
+      handle: 'weighted-product',
+      status: 'DRAFT',
+      publishedAt: null,
+      description: null,
+      vendor: null,
+      productType: null,
+      tags: [],
+      createdAt: new Date('2024-01-01'),
+      updatedAt: new Date('2024-01-01'),
+      variants: [
+        {
+          id: 'var-1',
+          title: 'Default',
+          priceCents: 1000,
+          compareAtPriceCents: null,
+          sku: 'WEIGHT-1',
+          inventory: 0,
+          continueSellingWhenOutOfStock: false,
+          weight: 0,
+          weightUnit: 'oz',
+          position: 0,
+        },
+      ],
+      media: [],
+      options: [],
+    })
+  })
+
+  it('persists zero weight and defaults cleared weight fields safely', async () => {
+    await updateProduct('prod-1', {
+      variants: [
+        {
+          id: 'var-1',
+          title: 'Default',
+          priceCents: 1000,
+          compareAtPriceCents: undefined,
+          inventory: 0,
+          continueSellingWhenOutOfStock: false,
+          weight: 0,
+          weightUnit: 'oz',
+          position: 0,
+        },
+        {
+          title: 'Default 2',
+          priceCents: 1200,
+          compareAtPriceCents: undefined,
+          inventory: 1,
+          continueSellingWhenOutOfStock: false,
+          weight: undefined,
+          weightUnit: undefined,
+          position: 1,
+        },
+      ],
+    })
+
+    expect(mocks.prisma.productVariant.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'var-1' },
+        data: expect.objectContaining({
+          weight: 0,
+          weightUnit: 'oz',
+        }),
+      })
+    )
+
+    expect(mocks.prisma.productVariant.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          weight: null,
+          weightUnit: 'kg',
         }),
       })
     )
