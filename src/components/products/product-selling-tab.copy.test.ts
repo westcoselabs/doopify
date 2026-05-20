@@ -36,8 +36,13 @@ describe('product selling tab contract', () => {
       'utf8'
     )
 
-    expect(source).toContain('No-shipping checkout is not enabled yet.')
-    expect(source).toContain('Digital delivery foundation is saved on the product.')
+    expect(source).toContain('Coming soon. Digital delivery is planned.')
+    expect(source).toContain('Digital product support is saved in the data model, but checkout still requires shipping in this release.')
+    expect(source).toContain('Digital fulfillment is marked on this product, but digital checkout is not live')
+    expect(source).toContain('Customers will still see the current shipping flow until digital checkout is')
+    expect(source).toContain('disabled={mode.value === "digital"}')
+    expect(source).toContain('mode.value === "digital"')
+    expect(source).toContain('onClick=')
     expect(source).not.toContain('No shipping required. Customer receives secure access after payment.')
     expect(source).not.toContain('Instant digital delivery after payment.')
   })

@@ -40,8 +40,10 @@ const FULFILLMENT_MODES = [
     value: "digital",
     title: "Digital product",
     subtitle:
-      "Marks this product as digital for future delivery workflows. No-shipping checkout is not enabled yet.",
+      "Coming soon. Digital delivery is planned. No-shipping checkout, secure downloads, and delivery emails are not enabled yet.",
     icon: "download",
+    helper:
+      "Digital product support is saved in the data model, but checkout still requires shipping in this release.",
   },
 ];
 
@@ -157,6 +159,7 @@ export default function ProductSellingPanel({ onManageInVariants }) {
   const preview = getPreviewState({ draftProduct, totalInventory, continueSellingCount });
   const showPresaleWarning = draftProduct.salesMode === "presale" && continueSellingCount === 0;
   const pricePreview = draftProduct.basePrice || "0.00";
+  const isLegacyDigital = draftProduct.fulfillmentType === "digital";
 
   return (
     <div className={styles.layout}>
@@ -328,8 +331,14 @@ export default function ProductSellingPanel({ onManageInVariants }) {
               <AdminSelectableTile
                 key={mode.value}
                 className={styles.modeTile}
+                disabled={mode.value === "digital"}
+                footer={mode.value === "digital" ? mode.helper : null}
                 media={<span className={`material-symbols-outlined ${styles.modeIcon}`}>{mode.icon}</span>}
-                onClick={() => actions.setDraftField("fulfillmentType", mode.value)}
+                onClick={
+                  mode.value === "digital"
+                    ? undefined
+                    : () => actions.setDraftField("fulfillmentType", mode.value)
+                }
                 selected={draftProduct.fulfillmentType === mode.value}
                 subtitle={mode.subtitle}
                 title={mode.title}
@@ -337,12 +346,13 @@ export default function ProductSellingPanel({ onManageInVariants }) {
             ))}
           </div>
 
-          {draftProduct.fulfillmentType === "digital" ? (
+          {isLegacyDigital ? (
             <div className={styles.digitalNotice}>
-              <strong>Digital foundation</strong>
+              <strong>Digital checkout not live yet</strong>
               <span>
-                Digital delivery foundation is saved on the product. Secure downloads, no-shipping
-                checkout, and delivery emails should be completed in a dedicated follow-up release.
+                Digital fulfillment is marked on this product, but digital checkout is not live
+                yet. Customers will still see the current shipping flow until digital checkout is
+                completed.
               </span>
             </div>
           ) : null}
