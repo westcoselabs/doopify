@@ -123,6 +123,24 @@ Email is optional for private beta. See [docs/setup/email.md](./setup/email.md).
 
 ---
 
+## Paid order succeeded but confirmation email is delayed
+
+**Symptom:** Order is paid/created, but confirmation email is missing or arrives late.
+
+**What this means:** Order finalization already succeeded. Email delivery is async and depends on job runner availability.
+
+**Resolution:**
+1. Open `/admin/webhooks` and switch to **Email deliveries**.
+2. Check **Email job processing health** and **Background runners**:
+   - warning/critical usually indicates queued due jobs, failed jobs, or stale/idle runner heartbeats.
+3. Confirm your worker/cron is calling `POST /api/jobs/run`.
+4. For failed/bounced/complained deliveries, use **Retry** in Delivery logs when available.
+5. If runner is healthy but email still fails, verify email provider credentials in **Settings -> Email**.
+
+This is visibility-only monitoring: checkout/order success does not depend on email send success.
+
+---
+
 ## TypeScript or build errors
 
 Run the verification gate:

@@ -2,12 +2,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   getEmailDeliveries: vi.fn(),
+  getEmailJobHealthSnapshot: vi.fn(),
   requireAdmin: vi.fn(),
 }))
 
 vi.mock('@/server/services/email-delivery.service', () => ({
   EMAIL_DELIVERY_STATUSES: ['PENDING', 'SENT', 'FAILED', 'BOUNCED', 'COMPLAINED', 'RETRYING', 'RESEND_REQUESTED'],
   getEmailDeliveries: mocks.getEmailDeliveries,
+}))
+vi.mock('@/server/jobs/email-job-health.service', () => ({
+  getEmailJobHealthSnapshot: mocks.getEmailJobHealthSnapshot,
 }))
 vi.mock('@/server/auth/require-auth', () => ({
   requireAdmin: mocks.requireAdmin,
@@ -21,6 +25,30 @@ describe('GET /api/email-deliveries', () => {
     mocks.requireAdmin.mockResolvedValue({
       ok: true,
       user: { id: 'staff-1', email: 'staff@example.com', firstName: null, lastName: null, role: 'STAFF' },
+    })
+    mocks.getEmailJobHealthSnapshot.mockResolvedValue({
+      level: 'healthy',
+      message: 'Email delivery processing is healthy.',
+      queuedCount: 0,
+      dueCount: 0,
+      runningCount: 0,
+      failedCount: 0,
+      oldestDueAgeMinutes: null,
+      runner: {
+        health: 'healthy',
+        totalRunners: 1,
+        failingRunners: 0,
+        latestSeenAt: '2026-05-20T00:00:00.000Z',
+      },
+      thresholds: {
+        warningDue: 5,
+        criticalDue: 25,
+        warningFailed: 1,
+        criticalFailed: 5,
+        warningAgeMinutes: 10,
+        criticalAgeMinutes: 30,
+        runnerStaleMinutes: 10,
+      },
     })
   })
 
@@ -40,6 +68,14 @@ describe('GET /api/email-deliveries', () => {
       template: 'fulfillment_tracking',
       page: 2,
       pageSize: 5,
+    })
+    expect(mocks.getEmailJobHealthSnapshot).toHaveBeenCalled()
+    const payload = await response.json()
+    expect(payload.success).toBe(true)
+    expect(payload.data.jobHealth).toMatchObject({
+      level: 'healthy',
+      queuedCount: 0,
+      failedCount: 0,
     })
   })
 

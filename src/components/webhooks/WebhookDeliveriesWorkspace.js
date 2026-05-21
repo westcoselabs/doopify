@@ -40,6 +40,8 @@ export const DELIVERY_LOGS_EMPTY_DESCRIPTION = 'Logs will appear here after prov
 export const DELIVERY_LOG_METRIC_LABELS = ['Received', 'Processed', 'Retrying', 'Failed'];
 export const RUNNER_VISIBILITY_TITLE = 'Background runners';
 export const RUNNER_VISIBILITY_SUBTITLE = 'Track whether cron-triggered or external workers are alive. Compatible with Vercel Cron and any external scheduler that calls POST /api/jobs/run.';
+export const EMAIL_JOB_HEALTH_TITLE = 'Email job processing health';
+export const EMAIL_JOB_HEALTH_WARNING_COPY = 'Transactional email is async. Order success is already finalized, but delayed runners can delay customer emails.';
 
 function formatTimestamp(value, fallback = 'Not scheduled') {
   if (!value) return fallback;
@@ -60,6 +62,12 @@ function getRunnerHealthDisplay(health) {
   if (health === 'healthy') return { label: 'Healthy', tone: 'success' };
   if (health === 'failing') return { label: 'Failing', tone: 'danger' };
   return { label: 'Idle', tone: 'neutral' };
+}
+
+function getEmailJobHealthDisplay(level) {
+  if (level === 'critical') return { label: 'Needs attention', tone: 'danger' };
+  if (level === 'warning') return { label: 'Watch closely', tone: 'warning' };
+  return { label: 'Healthy', tone: 'success' };
 }
 
 function getReplayDisabledReason(delivery) {
@@ -107,6 +115,7 @@ export default function WebhookDeliveriesWorkspace() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [emailTemplate, setEmailTemplate] = useState('ALL');
+  const [emailJobHealth, setEmailJobHealth] = useState(null);
   const [runnerStatusRows, setRunnerStatusRows] = useState([]);
   const [runnerStatusLoading, setRunnerStatusLoading] = useState(false);
 
@@ -190,16 +199,19 @@ export default function WebhookDeliveriesWorkspace() {
       if (!json.success) {
         setNotice(json.error || 'Email deliveries could not be loaded.');
         setEmailDeliveries([]);
+        setEmailJobHealth(null);
         return;
       }
 
       setEmailDeliveries(json.data.deliveries || []);
+      setEmailJobHealth(json.data.jobHealth || null);
       setEmailPagination(json.data.pagination || { page: 1, pageSize: 20, total: 0, totalPages: 1 });
       setNotice('');
     } catch (error) {
       console.error('[WebhookDeliveriesWorkspace] email load failed', error);
       setNotice('Email deliveries could not be loaded.');
       setEmailDeliveries([]);
+      setEmailJobHealth(null);
     } finally {
       setEmailLoading(false);
     }
@@ -718,6 +730,32 @@ export default function WebhookDeliveriesWorkspace() {
             <p className={styles.runnerEmpty}>No runner heartbeats yet. Trigger POST /api/jobs/run from Vercel Cron or an external worker to start tracking.</p>
           )}
         </AdminCard>
+
+        {isEmail && emailJobHealth ? (
+          <AdminCard className={styles.emailHealthPanel} variant="card">
+            <div className={styles.emailHealthHeader}>
+              <div>
+                <h3>{EMAIL_JOB_HEALTH_TITLE}</h3>
+                <p>{EMAIL_JOB_HEALTH_WARNING_COPY}</p>
+              </div>
+              <AdminStatusChip tone={getEmailJobHealthDisplay(emailJobHealth.level).tone}>
+                {getEmailJobHealthDisplay(emailJobHealth.level).label}
+              </AdminStatusChip>
+            </div>
+            <p className={styles.notice}>{emailJobHealth.message}</p>
+            <div className={styles.emailHealthGrid}>
+              <div><span>Queued</span><strong>{emailJobHealth.queuedCount}</strong></div>
+              <div><span>Due now</span><strong>{emailJobHealth.dueCount}</strong></div>
+              <div><span>Running</span><strong>{emailJobHealth.runningCount}</strong></div>
+              <div><span>Failed/exhausted</span><strong>{emailJobHealth.failedCount}</strong></div>
+              <div>
+                <span>Oldest due age</span>
+                <strong>{emailJobHealth.oldestDueAgeMinutes == null ? 'N/A' : `${emailJobHealth.oldestDueAgeMinutes}m`}</strong>
+              </div>
+              <div><span>Runner health</span><strong>{emailJobHealth.runner?.health || 'unknown'}</strong></div>
+            </div>
+          </AdminCard>
+        ) : null}
 
         <AdminStatsGrid>
           <AdminStatCard label={DELIVERY_LOG_METRIC_LABELS[0]} value={String(stats.received || 0)} />

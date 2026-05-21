@@ -43,6 +43,7 @@ describe('product selling tab contract', () => {
     expect(source).toContain('disabled={mode.value === "digital"}')
     expect(source).toContain('mode.value === "digital"')
     expect(source).toContain('onClick=')
+    expect(source).not.toContain('badge = "Digital"')
     expect(source).not.toContain('No shipping required. Customer receives secure access after payment.')
     expect(source).not.toContain('Instant digital delivery after payment.')
   })

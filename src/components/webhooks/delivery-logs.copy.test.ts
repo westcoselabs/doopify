@@ -25,6 +25,8 @@ describe('delivery logs copy + labels', () => {
 
     expect(workspace).toContain('title={DELIVERY_LOGS_TITLE}')
     expect(workspace).toContain('This page is for monitoring')
+    expect(workspace).toContain('EMAIL_JOB_HEALTH_TITLE')
+    expect(workspace).toContain('Transactional email is async')
     expect(workspace).toContain('Settings -> Webhooks')
     expect(workspace).toContain('Manage outbound webhooks')
     expect(workspace).toContain('Set up email')

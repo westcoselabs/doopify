@@ -2,6 +2,7 @@ import { err, ok } from '@/lib/api'
 import { prisma } from '@/lib/prisma'
 import { requireOwner } from '@/server/auth/require-auth'
 import { getStripeRuntimeConnection } from '@/server/payments/stripe-runtime.service'
+import { getVariantInventoryReadiness } from '@/server/services/product-availability.service'
 import { getRuntimeProviderConnection } from '@/server/services/provider-connection.service'
 import {
   buildLaunchReadinessReport,
@@ -20,17 +21,23 @@ async function gatherProductFacts() {
     select: {
       id: true,
       media: { where: { isFeatured: true }, select: { id: true }, take: 1 },
-      variants: { select: { priceCents: true, inventory: true } },
+      variants: { select: { priceCents: true, inventory: true, continueSellingWhenOutOfStock: true } },
     },
   })
 
   let activeProductsWithValidPrice = 0
   let activeProductsWithInventory = 0
+  let activeProductsSellableOnBackorder = 0
+  let activeProductsInventoryReady = 0
   let activeProductsWithMedia = 0
 
   for (const product of activeProducts) {
+    const readiness = getVariantInventoryReadiness(product.variants)
+
     if (product.variants.some((v) => v.priceCents > 0)) activeProductsWithValidPrice++
-    if (product.variants.some((v) => v.inventory > 0)) activeProductsWithInventory++
+    if (readiness.hasPositiveInventory) activeProductsWithInventory++
+    if (readiness.backorderOnly) activeProductsSellableOnBackorder++
+    if (readiness.inventoryReady) activeProductsInventoryReady++
     if (product.media.length > 0) activeProductsWithMedia++
   }
 
@@ -38,6 +45,8 @@ async function gatherProductFacts() {
     activeProductCount: activeProducts.length,
     activeProductsWithValidPrice,
     activeProductsWithInventory,
+    activeProductsSellableOnBackorder,
+    activeProductsInventoryReady,
     activeProductsWithMedia,
   }
 }

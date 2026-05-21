@@ -39,6 +39,8 @@ export type LaunchReadinessFacts = {
   activeProductCount: number
   activeProductsWithValidPrice: number
   activeProductsWithInventory: number
+  activeProductsSellableOnBackorder: number
+  activeProductsInventoryReady: number
   activeProductsWithMedia: number
 
   storefrontUrlConfigured: boolean
@@ -172,19 +174,36 @@ export function buildLaunchReadinessReport(facts: LaunchReadinessFacts): LaunchR
   })
 
   // Product inventory
-  const inventoryReady = facts.activeProductCount > 0 && facts.activeProductsWithInventory > 0
+  const inventoryReady = facts.activeProductCount > 0 && facts.activeProductsInventoryReady > 0
+  const hasBackorderOnlyCoverage = facts.activeProductsSellableOnBackorder > 0
+  let inventorySummary: string
+
+  if (facts.activeProductCount === 0) {
+    inventorySummary = 'No active products to check inventory for.'
+  } else if (facts.activeProductsWithInventory > 0 && hasBackorderOnlyCoverage) {
+    inventorySummary = `${facts.activeProductsWithInventory} active product(s) have available inventory. ${facts.activeProductsSellableOnBackorder} active product(s) are sellable with zero inventory because continue-selling is enabled.`
+  } else if (facts.activeProductsWithInventory > 0) {
+    inventorySummary = `${facts.activeProductsWithInventory} active product(s) have available inventory.`
+  } else if (hasBackorderOnlyCoverage) {
+    inventorySummary = `Inventory is zero, but continue-selling is enabled for ${facts.activeProductsSellableOnBackorder} active product(s).`
+  } else {
+    inventorySummary = 'No active products have available inventory. All variants are at 0 and continue-selling is disabled.'
+  }
+
+  const inventoryFix =
+    facts.activeProductCount > 0 && !inventoryReady
+      ? 'Add inventory to at least one active product variant or enable continue-selling for at least one variant.'
+      : hasBackorderOnlyCoverage
+        ? 'Inventory is currently backorder-only. Restock at least one variant when possible.'
+        : undefined
+
   checks.push({
     id: 'products-inventory',
     title: 'Product inventory',
     optional: false,
     status: facts.activeProductCount === 0 || !inventoryReady ? 'needs_setup' : 'ready',
-    summary:
-      facts.activeProductCount === 0
-        ? 'No active products to check inventory for.'
-        : inventoryReady
-          ? `${facts.activeProductsWithInventory} active product(s) have available inventory.`
-          : 'No active products have available inventory. All variants are at 0.',
-    fix: inventoryReady ? undefined : 'Add inventory to at least one active product variant.',
+    summary: inventorySummary,
+    fix: inventoryFix,
   })
 
   // Product media (optional)

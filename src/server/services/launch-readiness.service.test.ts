@@ -22,6 +22,8 @@ function baseFacts(): LaunchReadinessFacts {
     activeProductCount: 2,
     activeProductsWithValidPrice: 2,
     activeProductsWithInventory: 2,
+    activeProductsSellableOnBackorder: 0,
+    activeProductsInventoryReady: 2,
     activeProductsWithMedia: 2,
     storefrontUrlConfigured: true,
     emailProviderSource: 'db',
@@ -102,6 +104,8 @@ describe('buildLaunchReadinessReport', () => {
     facts.activeProductCount = 0
     facts.activeProductsWithValidPrice = 0
     facts.activeProductsWithInventory = 0
+    facts.activeProductsSellableOnBackorder = 0
+    facts.activeProductsInventoryReady = 0
     facts.activeProductsWithMedia = 0
 
     const report = buildLaunchReadinessReport(facts)
@@ -114,12 +118,43 @@ describe('buildLaunchReadinessReport', () => {
   it('returns launchReady false when active products exist but none have inventory', () => {
     const facts = baseFacts()
     facts.activeProductsWithInventory = 0
+    facts.activeProductsSellableOnBackorder = 0
+    facts.activeProductsInventoryReady = 0
 
     const report = buildLaunchReadinessReport(facts)
 
     expect(report.launchReady).toBe(false)
     const inventory = report.checks.find((c) => c.id === 'products-inventory')
     expect(inventory?.status).toBe('needs_setup')
+  })
+
+  it('marks inventory as ready with warning summary when inventory is zero but continue-selling is enabled', () => {
+    const facts = baseFacts()
+    facts.activeProductsWithInventory = 0
+    facts.activeProductsSellableOnBackorder = 2
+    facts.activeProductsInventoryReady = 2
+
+    const report = buildLaunchReadinessReport(facts)
+
+    expect(report.launchReady).toBe(true)
+    const inventory = report.checks.find((c) => c.id === 'products-inventory')
+    expect(inventory?.status).toBe('ready')
+    expect(inventory?.summary).toContain('Inventory is zero, but continue-selling is enabled')
+  })
+
+  it('reports mixed inventory and backorder coverage accurately', () => {
+    const facts = baseFacts()
+    facts.activeProductsWithInventory = 1
+    facts.activeProductsSellableOnBackorder = 1
+    facts.activeProductsInventoryReady = 2
+
+    const report = buildLaunchReadinessReport(facts)
+
+    expect(report.launchReady).toBe(true)
+    const inventory = report.checks.find((c) => c.id === 'products-inventory')
+    expect(inventory?.status).toBe('ready')
+    expect(inventory?.summary).toContain('1 active product(s) have available inventory')
+    expect(inventory?.summary).toContain('1 active product(s) are sellable with zero inventory')
   })
 
   it('does not block launch when email provider is not configured', () => {

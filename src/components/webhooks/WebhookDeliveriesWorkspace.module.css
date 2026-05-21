@@ -33,6 +33,56 @@
   padding: 0.78rem;
 }
 
+.emailHealthPanel {
+  display: grid;
+  gap: 0.62rem;
+  padding: 0.78rem;
+}
+
+.emailHealthHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.emailHealthHeader h3 {
+  margin: 0 0 0.25rem;
+  color: var(--on-surface);
+  font-size: 0.88rem;
+}
+
+.emailHealthHeader p {
+  margin: 0;
+  color: var(--on-surface-variant);
+  font-size: 0.78rem;
+}
+
+.emailHealthGrid {
+  display: grid;
+  gap: 0.45rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.emailHealthGrid div {
+  border: 1px solid var(--glass-border);
+  border-radius: 0.66rem;
+  padding: 0.46rem 0.52rem;
+  background: color-mix(in srgb, var(--surface-container-low) 76%, transparent);
+}
+
+.emailHealthGrid span {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--on-surface-variant);
+  font-size: 0.7rem;
+}
+
+.emailHealthGrid strong {
+  color: var(--on-surface);
+  font-size: 0.78rem;
+}
+
 .runnerHeader {
   display: flex;
   align-items: flex-start;
@@ -247,6 +297,10 @@
   }
 
   .diagnosticGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .emailHealthGrid {
     grid-template-columns: 1fr;
   }
 }

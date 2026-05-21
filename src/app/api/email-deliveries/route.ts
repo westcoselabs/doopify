@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 import { err, ok } from '@/lib/api'
 import { requireAdmin } from '@/server/auth/require-auth'
+import { getEmailJobHealthSnapshot } from '@/server/jobs/email-job-health.service'
 import { EMAIL_DELIVERY_STATUSES, getEmailDeliveries } from '@/server/services/email-delivery.service'
 
 const EMAIL_DELIVERY_STATUS_FILTERS = ['ALL', ...EMAIL_DELIVERY_STATUSES] as const
@@ -32,14 +33,20 @@ export async function GET(req: Request) {
       return err('Invalid email delivery template', 400)
     }
 
-    const deliveries = await getEmailDeliveries({
-      status: parsedStatus.data,
-      template: parsedTemplate.data,
-      page: parsePage(searchParams.get('page'), 1),
-      pageSize: Math.min(100, parsePage(searchParams.get('pageSize'), 20)),
-    })
+    const [deliveries, jobHealth] = await Promise.all([
+      getEmailDeliveries({
+        status: parsedStatus.data,
+        template: parsedTemplate.data,
+        page: parsePage(searchParams.get('page'), 1),
+        pageSize: Math.min(100, parsePage(searchParams.get('pageSize'), 20)),
+      }),
+      getEmailJobHealthSnapshot(),
+    ])
 
-    return ok(deliveries)
+    return ok({
+      ...deliveries,
+      jobHealth,
+    })
   } catch (error) {
     console.error('[GET /api/email-deliveries]', error)
     return err('Failed to fetch email deliveries', 500)

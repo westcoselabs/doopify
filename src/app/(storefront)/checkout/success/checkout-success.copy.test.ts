@@ -11,7 +11,7 @@ const PAGE = 'src/app/(storefront)/checkout/success/CheckoutSuccessClientPage.ts
 describe('checkout success waiting-state copy', () => {
   it('renders customer-friendly processing copy with loading and no internal terminology', () => {
     const source = read(PAGE)
-    expect(source).toContain('Processing your order')
+    expect(source).toContain('Confirming your order…')
     expect(source).toContain('We&apos;re confirming your payment and preparing your order. This usually only takes a few seconds.')
     expect(source).toContain('Please don&apos;t close or refresh this page.')
     expect(source).toContain('className="spinner"')
@@ -27,7 +27,9 @@ describe('checkout success waiting-state copy', () => {
     expect(source).toContain('Your payment was successful and your order has been received.')
     expect(source).toContain('Order #')
     expect(source).toContain('We&apos;re still processing your order')
-    expect(source).toContain('Your payment was submitted, but confirmation is taking longer than expected. You may receive your confirmation shortly.')
+    expect(source).toContain("Payment received. We're still finalizing your order.")
+    expect(source).toContain("We couldn't confirm your order status due to a network issue.")
+    expect(source).toContain('If this takes more than a minute, contact support with your payment reference')
     expect(source).toContain('Payment could not be completed')
     expect(source).toContain('Please return to checkout and try another payment method.')
   })

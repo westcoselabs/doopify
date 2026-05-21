@@ -16,10 +16,16 @@ type AvailabilityVariant = {
   continueSellingWhenOutOfStock?: boolean | null
 }
 
+export type VariantInventoryReadiness = {
+  hasPositiveInventory: boolean
+  hasBackorderVariant: boolean
+  backorderOnly: boolean
+  inventoryReady: boolean
+}
+
 export type ProductAvailabilityBadge =
   | 'COMING_SOON'
   | 'PRESALE'
-  | 'DIGITAL'
   | 'BACKORDER'
   | 'SOLD_OUT'
   | null
@@ -117,6 +123,26 @@ export function canPurchaseVariant(
   return { ok: true as const }
 }
 
+export function getVariantInventoryReadiness(
+  variants: AvailabilityVariant[]
+): VariantInventoryReadiness {
+  const totalPositiveInventory = variants.reduce(
+    (sum, variant) => sum + Math.max(0, Number(variant.inventory ?? 0)),
+    0
+  )
+  const hasPositiveInventory = totalPositiveInventory > 0
+  const hasBackorderVariant = variants.some(
+    (variant) => Boolean(variant.continueSellingWhenOutOfStock)
+  )
+
+  return {
+    hasPositiveInventory,
+    hasBackorderVariant,
+    backorderOnly: !hasPositiveInventory && hasBackorderVariant,
+    inventoryReady: hasPositiveInventory || hasBackorderVariant,
+  }
+}
+
 export function getProductAvailabilityBadge(input: {
   product: AvailabilityProduct
   variants: AvailabilityVariant[]
@@ -133,23 +159,13 @@ export function getProductAvailabilityBadge(input: {
     return 'PRESALE'
   }
 
-  if ((input.product.fulfillmentType ?? 'PHYSICAL') === 'DIGITAL') {
-    return 'DIGITAL'
-  }
+  const readiness = getVariantInventoryReadiness(input.variants)
 
-  const totalPositiveInventory = input.variants.reduce(
-    (sum, variant) => sum + Math.max(0, Number(variant.inventory ?? 0)),
-    0
-  )
-  const hasBackorderVariant = input.variants.some(
-    (variant) => Boolean(variant.continueSellingWhenOutOfStock)
-  )
-
-  if (totalPositiveInventory <= 0 && hasBackorderVariant) {
+  if (readiness.backorderOnly) {
     return 'BACKORDER'
   }
 
-  if (totalPositiveInventory <= 0 && !hasBackorderVariant) {
+  if (!readiness.inventoryReady) {
     return 'SOLD_OUT'
   }
 
@@ -173,10 +189,6 @@ export function getAvailabilityMessage(input: {
 
   if (input.badge === 'COMING_SOON') {
     return 'Coming soon.'
-  }
-
-  if (input.badge === 'DIGITAL') {
-    return 'Digital product.'
   }
 
   if (input.badge === 'BACKORDER') {

@@ -105,8 +105,6 @@ function getPreviewState({ draftProduct, totalInventory, continueSellingCount })
     badge = draftProduct.storefrontBadgeText?.trim() || "Coming soon";
   } else if (presaleActive) {
     badge = draftProduct.storefrontBadgeText?.trim() || "Presale";
-  } else if (fulfillmentType === "digital") {
-    badge = "Digital";
   } else if (backorderActive) {
     badge = "Backorder";
   } else if (soldOut) {

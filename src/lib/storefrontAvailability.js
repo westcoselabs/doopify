@@ -5,7 +5,7 @@ function normalizeBadgeLabel(badge) {
 
   if (badge === 'COMING_SOON') return 'Coming soon';
   if (badge === 'PRESALE') return 'Presale';
-  if (badge === 'DIGITAL') return 'Digital';
+  if (badge === 'DIGITAL') return null;
   if (badge === 'BACKORDER') return 'Backorder';
   if (badge === 'SOLD_OUT') return 'Sold out';
   return null;

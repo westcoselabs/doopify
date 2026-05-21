@@ -97,6 +97,20 @@ function resolveSupportSummary(store: PublicStoreSettings | null) {
   }
 }
 type ViewState = 'processing' | 'confirmed' | 'pending' | 'failed'
+type PendingState = 'none' | 'delayed' | 'poll_error'
+
+const DELAYED_STATUS_THRESHOLD_MS = 8000
+const LONG_WAIT_SUPPORT_HINT_MS = 60000
+
+function formatPaymentReference(paymentIntentId: string | null) {
+  if (!paymentIntentId) return ''
+
+  const normalized = paymentIntentId.replace(/[^a-zA-Z0-9]/g, '').toUpperCase()
+  if (!normalized) return ''
+
+  if (normalized.length <= 10) return normalized
+  return `${normalized.slice(0, 4)}-${normalized.slice(-6)}`
+}
 
 export default function CheckoutSuccessClientPage() {
   const searchParams = useSearchParams();
@@ -109,7 +123,8 @@ export default function CheckoutSuccessClientPage() {
   const [orderCurrency, setOrderCurrency] = useState('USD');
   const [estimatedDeliveryText, setEstimatedDeliveryText] = useState('');
   const [failureReason, setFailureReason] = useState('');
-  const [timedOut, setTimedOut] = useState(false);
+  const [pendingState, setPendingState] = useState<PendingState>('none');
+  const [showLongWaitSupportHint, setShowLongWaitSupportHint] = useState(false);
   const [pendingMessage, setPendingMessage] = useState('');
   const [pollCycle, setPollCycle] = useState(0);
   const [store, setStore] = useState<PublicStoreSettings | null>(null);
@@ -167,30 +182,51 @@ export default function CheckoutSuccessClientPage() {
           setOrderCurrency(String(payload.data.currency || 'USD'));
           setEstimatedDeliveryText(String(payload.data.estimatedDeliveryText || '').trim());
           setFailureReason('');
+          setPendingState('none');
           setPendingMessage('');
-          setTimedOut(false);
+          setShowLongWaitSupportHint(false);
           clearCart();
           return;
         }
 
         if (nextStatus === 'failed') {
           setFailureReason('Please return to checkout and try another payment method.');
+          setPendingState('none');
           setPendingMessage('');
-          setTimedOut(false);
+          setShowLongWaitSupportHint(false);
           return;
         }
 
-        if (Date.now() - startedAt >= STATUS_WAIT_TIMEOUT_MS) {
-          setTimedOut(true);
-          setPendingMessage('Your payment was submitted, but confirmation is taking longer than expected. You may receive your confirmation shortly.');
+        const elapsedMs = Date.now() - startedAt
+        const isDelayed = elapsedMs >= DELAYED_STATUS_THRESHOLD_MS
+        const hitLongWaitHint = elapsedMs >= LONG_WAIT_SUPPORT_HINT_MS
+        const hitPollingTimeout = elapsedMs >= STATUS_WAIT_TIMEOUT_MS
+
+        if (isDelayed) {
+          setPendingState('delayed')
+          setPendingMessage("Payment received. We're still finalizing your order.")
+        } else {
+          setPendingState('none')
+          setPendingMessage('')
+        }
+
+        if (hitLongWaitHint) {
+          setShowLongWaitSupportHint(true)
+        }
+
+        if (hitPollingTimeout) {
           return;
         }
 
         timer = window.setTimeout(pollStatus, STATUS_POLL_INTERVAL_MS);
       } catch {
         if (!cancelled) {
-          setTimedOut(true);
-          setPendingMessage('Your payment was submitted, but confirmation is taking longer than expected. You may receive your confirmation shortly.');
+          const elapsedMs = Date.now() - startedAt
+          setPendingState('poll_error')
+          setPendingMessage("We couldn't confirm your order status due to a network issue.")
+          if (elapsedMs >= LONG_WAIT_SUPPORT_HINT_MS) {
+            setShowLongWaitSupportHint(true)
+          }
         }
       }
     }
@@ -204,19 +240,21 @@ export default function CheckoutSuccessClientPage() {
   }, [clearCart, paymentIntentId, pollCycle]);
 
   const support = useMemo(() => resolveSupportSummary(store), [store]);
+  const paymentReference = useMemo(() => formatPaymentReference(paymentIntentId), [paymentIntentId])
   const primaryActionStyle = CHECKOUT_RESULT_PRIMARY_ACTION_STYLE;
   const viewState: ViewState =
     status === 'paid'
       ? 'confirmed'
       : status === 'failed'
         ? 'failed'
-        : timedOut
+        : pendingState !== 'none'
           ? 'pending'
           : 'processing';
 
   function handleCheckAgain() {
-    setTimedOut(false);
+    setPendingState('none');
     setPendingMessage('');
+    setShowLongWaitSupportHint(false);
     setPollCycle((current) => current + 1);
   }
 
@@ -250,7 +288,7 @@ export default function CheckoutSuccessClientPage() {
             <>
               <div className="spinner" aria-hidden />
               <p className="badge">Order update</p>
-              <h1 className="title">Processing your order</h1>
+              <h1 className="title">Confirming your order…</h1>
               <p className="body">
                 We&apos;re confirming your payment and preparing your order. This usually only takes a few seconds.
               </p>
@@ -295,8 +333,14 @@ export default function CheckoutSuccessClientPage() {
               <p className="badge">Still working</p>
               <h1 className="title">We&apos;re still processing your order</h1>
               <p className="body">
-                {pendingMessage || 'Your payment was submitted, but confirmation is taking longer than expected. You may receive your confirmation shortly.'}
+                {pendingMessage || "Payment received. We're still finalizing your order."}
               </p>
+              {showLongWaitSupportHint ? (
+                <p className="support-subtle">
+                  If this takes more than a minute, contact support with your payment reference
+                  {paymentReference ? ` (${paymentReference})` : ''}.
+                </p>
+              ) : null}
               <p className="support">{support.helpText}</p>
               <div className="actions">
                 <button className="btn btn-primary" onClick={handleCheckAgain} style={primaryActionStyle} type="button">Check again</button>

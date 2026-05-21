@@ -7,6 +7,7 @@ This worker is the smallest safe E2 process: it calls existing protected runner 
 - Calls `POST /api/jobs/run`
 - Calls `POST /api/webhook-retries/run`
 - Calls `POST /api/abandoned-checkouts/send-due`
+- Keeps async transactional email jobs moving (`SEND_ORDER_CONFIRMATION_EMAIL`, `SEND_FULFILLMENT_EMAIL`) so delivery logs stay current
 - Supports:
   - once mode (single pass)
   - loop mode (interval polling)
@@ -106,3 +107,15 @@ This is compatible with current auth model and does not require worker loop depl
 - Direct DB-claim worker remains deferred.
 - Stale `RUNNING` job recovery is not implemented yet.
 - Crash-safe retry-claim hardening for inbound/outbound retry paths is still future work.
+
+## Email Backlog Visibility
+
+- Delivery logs now include **Email job processing health** in Email mode.
+- This health signal is observational only:
+  - it does **not** change paid-order finalization
+  - it does **not** block checkout success
+  - it does **not** expose secrets
+- If health is warning/critical:
+  1. Refresh **Delivery logs** and **Background runners**.
+  2. Confirm `/api/jobs/run` is being called by worker/cron.
+  3. Retry failed email deliveries from Delivery logs when eligible.
