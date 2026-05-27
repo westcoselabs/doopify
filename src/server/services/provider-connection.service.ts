@@ -267,7 +267,7 @@ function deriveConnectionState(input: {
   return 'CREDENTIALS_SAVED' as const
 }
 
-function maskCredential(provider: SupportedProvider, key: string, value: string | null) {
+export function maskCredential(provider: SupportedProvider, key: string, value: string | null) {
   if (!value) return null
 
   if (key === 'MODE' && provider === 'STRIPE') return value
