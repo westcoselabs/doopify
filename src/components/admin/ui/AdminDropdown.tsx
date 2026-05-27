@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
@@ -34,10 +34,10 @@ export default function AdminDropdown({
   const isControlled = typeof open === 'boolean';
   const isOpen = isControlled ? Boolean(open) : internalOpen;
 
-  const setOpen = (nextOpen: boolean) => {
+  const setOpen = useCallback((nextOpen: boolean) => {
     if (!isControlled) setInternalOpen(nextOpen);
     onOpenChange?.(nextOpen);
-  };
+  }, [isControlled, onOpenChange]);
 
   useEffect(() => {
 // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional effect-driven state sync for existing async/load flow
@@ -101,7 +101,7 @@ export default function AdminDropdown({
       window.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen]);
+  }, [isOpen, setOpen]);
 
   return (
     <div className={buildClassName(['admin-dropdown', className])} ref={rootRef}>

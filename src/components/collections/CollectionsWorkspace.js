@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
 import AppShell from '../AppShell';
 import AdminButton from '../admin/ui/AdminButton';
@@ -48,11 +48,12 @@ export default function CollectionsWorkspace() {
   const [searchQuery, setSearchQuery] = useState('');
   const [productSearch, setProductSearch] = useState('');
   const detailRequestRef = useRef(0);
+  const initialWorkspaceLoadRef = useRef(false);
 
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const deferredProductSearch = useDeferredValue(productSearch);
 
-  async function loadCollectionDetail(collectionId, fallbackCollection) {
+  const loadCollectionDetail = useCallback(async (collectionId, fallbackCollection) => {
     if (!collectionId || collectionId === 'new') return null;
     const requestId = detailRequestRef.current + 1;
     detailRequestRef.current = requestId;
@@ -73,9 +74,9 @@ export default function CollectionsWorkspace() {
     } finally {
       if (detailRequestRef.current === requestId) setLoadingCollection(false);
     }
-  }
+  }, []);
 
-  async function loadWorkspace(preferredCollectionId) {
+  const loadWorkspace = useCallback(async (preferredCollectionId) => {
     setLoading(true);
     try {
       const [collectionsRes, productsRes] = await Promise.all([fetch('/api/collections?page=1&pageSize=100'), fetch('/api/products?pageSize=200&status=ACTIVE')]);
@@ -91,10 +92,13 @@ export default function CollectionsWorkspace() {
       else { detailRequestRef.current += 1; setLoadingCollection(false); setSelectedCollectionId('new'); setDraft(EMPTY_DRAFT); }
     } catch (error) { console.error('[CollectionsWorkspace] failed to load workspace', error); setNotice('Collections could not be loaded right now.'); }
     finally { setLoading(false); }
-  }
+  }, [loadCollectionDetail, selectedCollectionId]);
 
-// eslint-disable-next-line react-hooks/set-state-in-effect -- intentional effect-driven state sync for existing async/load flow
-  useEffect(() => { loadWorkspace(); }, []);
+  useEffect(() => {
+    if (initialWorkspaceLoadRef.current) return;
+    initialWorkspaceLoadRef.current = true;
+    void loadWorkspace();
+  }, [loadWorkspace]);
 
   const filteredCollections = useMemo(() => {
     const query = deferredSearchQuery.trim().toLowerCase();

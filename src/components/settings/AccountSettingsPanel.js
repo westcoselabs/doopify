@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useEffect } from 'react';
+import { useCallback } from 'react';
 import AdminButton from '../admin/ui/AdminButton';
 import AdminCard from '../admin/ui/AdminCard';
 import AdminField from '../admin/ui/AdminField';
@@ -28,7 +29,7 @@ export default function AccountSettingsPanel({ currentUser }) {
 
   const isOwner = currentUser?.role === 'OWNER';
 
-  const loadMfaStatus = async () => {
+  const loadMfaStatus = useCallback(async () => {
     if (!isOwner) return;
     setMfaLoading(true);
     setMfaError('');
@@ -42,12 +43,12 @@ export default function AccountSettingsPanel({ currentUser }) {
     } finally {
       setMfaLoading(false);
     }
-  };
+  }, [isOwner]);
 
   useEffect(() => {
 // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional effect-driven state sync for existing async/load flow
     loadMfaStatus();
-  }, [isOwner]);
+  }, [loadMfaStatus]);
 
   const setField = (key, value) => {
     setPasswordForm((f) => ({ ...f, [key]: value }));
