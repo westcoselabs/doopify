@@ -6,6 +6,8 @@ import AppShell from '../AppShell';
 import { useSettings } from '../../context/SettingsContext';
 import styles from './SettingsWorkspace.module.css';
 import IntegrationsPanel from './IntegrationsPanel';
+import GeneralSettingsPanel from './GeneralSettingsPanel';
+import SetupFirstRunGuidePanel from './SetupFirstRunGuidePanel';
 import AdminButton from '../admin/ui/AdminButton';
 import AdminCard from '../admin/ui/AdminCard';
 import AdminDrawer from '../admin/ui/AdminDrawer';
@@ -14,15 +16,19 @@ import AdminField from '../admin/ui/AdminField';
 import AdminInput from '../admin/ui/AdminInput';
 import AdminLiveStatus from '../admin/ui/AdminLiveStatus';
 import AdminSelect from '../admin/ui/AdminSelect';
-import AdminSavedState from '../admin/ui/AdminSavedState';
 import AdminStatusChip from '../admin/ui/AdminStatusChip';
 import AdminTable from '../admin/ui/AdminTable';
 import AdminTextarea from '../admin/ui/AdminTextarea';
 import AdminTooltip from '../admin/ui/AdminTooltip';
-import SettingsPageSkeleton, { SettingsProviderRowsSkeleton } from './SettingsSkeletons';
+import { SettingsProviderRowsSkeleton } from './SettingsSkeletons';
 import ShippingSettingsWorkspace from './ShippingSettingsWorkspace';
 import TeamSettingsPanel from './TeamSettingsPanel';
 import AccountSettingsPanel from './AccountSettingsPanel';
+import SettingsToastViewport from './SettingsToastViewport';
+import SettingsWorkspaceLoadState from './SettingsWorkspaceLoadState';
+import SettingsWorkspacePageHeader from './SettingsWorkspacePageHeader';
+import SettingsWorkspaceNav from './SettingsWorkspaceNav';
+import SettingsSetupDiagnosticsState from './SettingsSetupDiagnosticsState';
 import { formatDateTimeForDisplay } from '@/lib/date-time-format';
 import {
   STORE_CURRENCY_OPTIONS,
@@ -444,6 +450,48 @@ function buildStripeRuntimeStatusFromProviderSnapshot(stripeProviderSnapshot) {
   };
 }
 
+function toProviderGatewayStatusFromStripeSnapshot(stripeProviderSnapshot) {
+  if (!stripeProviderSnapshot) return null;
+  const state = stripeProviderSnapshot.verified
+    ? 'VERIFIED'
+    : stripeProviderSnapshot.lastError
+      ? 'ERROR'
+      : stripeProviderSnapshot.configured
+        ? 'CREDENTIALS_SAVED'
+        : 'NOT_CONFIGURED';
+
+  return {
+    provider: 'STRIPE',
+    state,
+    source: stripeProviderSnapshot.source || stripeProviderSnapshot.runtimeSource || 'none',
+    lastError: stripeProviderSnapshot.lastError || null,
+    lastVerifiedAt: stripeProviderSnapshot.lastVerifiedAt || null,
+  };
+}
+
+function toProviderGatewayStatusFromStripeSavedStatus(stripeStatus) {
+  if (!stripeStatus) return null;
+  const verificationStatus = String(stripeStatus.verificationStatus || '').trim().toLowerCase();
+  const state =
+    verificationStatus === 'verified'
+      ? 'VERIFIED'
+      : verificationStatus === 'needs_attention'
+        ? 'ERROR'
+        : verificationStatus === 'needs_setup'
+          ? 'NOT_CONFIGURED'
+          : stripeStatus.configured
+            ? 'CREDENTIALS_SAVED'
+            : 'NOT_CONFIGURED';
+
+  return {
+    provider: 'STRIPE',
+    state,
+    source: stripeStatus.source || 'none',
+    lastError: stripeStatus.lastError || null,
+    lastVerifiedAt: stripeStatus.lastVerifiedAt || null,
+  };
+}
+
 function getHigherStatus(left, right) {
   if (!left) return right || 'PASS';
   if (!right) return left;
@@ -517,15 +565,18 @@ function describeResendSetup(checkById) {
 function describeProviderGatewayStatus(providerStatus, fallbackStatus) {
   if (!providerStatus) return fallbackStatus;
 
+  const verificationTimeoutLike =
+    providerStatus.state === 'ERROR' && isLikelyVerificationTimeout(providerStatus.lastError);
+
   const stateLabelMap = {
     VERIFIED: 'Verified',
     CREDENTIALS_SAVED: 'Credentials saved',
-    ERROR: 'Error',
+    ERROR: verificationTimeoutLike ? 'Verification unavailable' : 'Error',
     NOT_CONFIGURED: 'Not configured',
   };
 
   const label = stateLabelMap[providerStatus.state] || 'Not configured';
-  const tone = PROVIDER_STATE_TONE[providerStatus.state] || 'warning';
+  const tone = verificationTimeoutLike ? 'warning' : PROVIDER_STATE_TONE[providerStatus.state] || 'warning';
   const sourceLabel = PROVIDER_SOURCE_LABEL[providerStatus.source] || 'Not active';
 
   let detail = `Source: ${sourceLabel}.`;
@@ -534,7 +585,9 @@ function describeProviderGatewayStatus(providerStatus, fallbackStatus) {
   } else if (providerStatus.state === 'CREDENTIALS_SAVED') {
     detail = `Credentials saved. API verification has not been completed from this screen.`;
   } else if (providerStatus.state === 'ERROR') {
-    detail = providerStatus.lastError || 'Provider verification failed. Review credentials and retry.';
+    detail = verificationTimeoutLike
+      ? 'Saved configuration is present, but verification is temporarily unavailable.'
+      : providerStatus.lastError || 'Provider verification failed. Review credentials and retry.';
   }
 
   return {
@@ -546,11 +599,69 @@ function describeProviderGatewayStatus(providerStatus, fallbackStatus) {
   };
 }
 
+function describeStripeSavedStatus(stripeStatus, fallbackProviderStatus, fallbackStatus) {
+  if (!stripeStatus || typeof stripeStatus !== 'object') {
+    return describeProviderGatewayStatus(fallbackProviderStatus, fallbackStatus);
+  }
+
+  const sourceLabel = PROVIDER_SOURCE_LABEL[stripeStatus.source] || 'Not active';
+  const verificationStatus = String(stripeStatus.verificationStatus || '').trim().toLowerCase();
+  const statusMap = {
+    verified: {
+      label: 'Verified',
+      tone: 'success',
+      detail: `Verified connection. Source: ${sourceLabel}.`,
+    },
+    configured: {
+      label: 'Configured',
+      tone: 'warning',
+      detail: 'Credentials are saved. Use "Verify now" to confirm live API connectivity.',
+    },
+    verification_unavailable: {
+      label: 'Verification unavailable',
+      tone: 'warning',
+      detail: `Configuration is present. Verification metadata is unavailable right now. Source: ${sourceLabel}.`,
+    },
+    needs_attention: {
+      label: 'Needs attention',
+      tone: 'danger',
+      detail: stripeStatus.lastError || 'Stripe verification failed. Review credentials and retry.',
+    },
+    needs_setup: {
+      label: 'Needs setup',
+      tone: 'warning',
+      detail: 'Required Stripe configuration is missing. Save publishable key, secret key, and webhook secret.',
+    },
+  };
+
+  if (!statusMap[verificationStatus]) {
+    return describeProviderGatewayStatus(fallbackProviderStatus, fallbackStatus);
+  }
+
+  const resolved = statusMap[verificationStatus];
+  return {
+    ...resolved,
+    sourceLabel,
+    lastVerifiedAt: stripeStatus.lastVerifiedAt || null,
+  };
+}
+
 function normalizeStatusLabel(value) {
   return String(value || '')
     .toLowerCase()
     .replace(/_/g, ' ')
     .trim();
+}
+
+function isLikelyVerificationTimeout(value) {
+  const normalized = normalizeStatusLabel(value);
+  if (!normalized) return false;
+  return (
+    normalized.includes('timeout') ||
+    normalized.includes('timed out') ||
+    normalized.includes('network') ||
+    normalized.includes('temporarily unavailable')
+  );
 }
 
 function formatEventType(value) {
@@ -683,7 +794,8 @@ export function buildPaymentProviderRows(input) {
     stripeCheckoutSourceLabel,
     stripeRuntimeModeLabel,
     stripeWebhookSourceLabel,
-    stripeRuntimeReady,
+    stripeSavedStatusLoading,
+    stripeLastCheckedText,
     stripeMethodChips,
   } = input;
 
@@ -695,17 +807,17 @@ export function buildPaymentProviderRows(input) {
       name: 'Stripe',
       description:
         'Accept cards and eligible Stripe wallet methods like Apple Pay, Google Pay, Link, and Cash App Pay.',
-      status: {
-        label: stripeSetupStatus.label,
-        tone: stripeSetupStatus.tone,
-      },
-      sourceMeta: `Checkout active source: ${stripeCheckoutSourceLabel}`,
+      status: stripeSavedStatusLoading
+        ? null
+        : {
+            label: stripeSetupStatus.label,
+            tone: stripeSetupStatus.tone,
+          },
+      statusLoading: stripeSavedStatusLoading,
+      sourceMeta: `Checkout source: ${stripeCheckoutSourceLabel}`,
       statusMeta: `Mode: ${stripeRuntimeModeLabel} • Webhook: ${stripeWebhookSourceLabel}`,
+      lastCheckedMeta: stripeLastCheckedText ? `Last checked: ${stripeLastCheckedText}` : null,
       chips: stripeMethodChips,
-      badges: [
-        { label: 'Official', tone: 'neutral' },
-        stripeRuntimeReady ? { label: 'Checkout active', tone: 'success' } : { label: 'Setup needed', tone: 'warning' },
-      ],
     },
     {
       id: PAYMENT_PROVIDER_DRAWER.PAYPAL,
@@ -714,17 +826,14 @@ export function buildPaymentProviderRows(input) {
       name: 'PayPal',
       description: 'Let customers pay with PayPal, Pay Later, and Venmo where eligible.',
       status: {
-        label: 'Setup needed',
+        label: 'Coming soon',
         tone: 'warning',
       },
+      statusLoading: false,
       sourceMeta: 'Runtime support: not implemented',
       statusMeta:
         'Do not enable checkout visibility until payment creation, webhook verification, refund support, and order finalization are shipped.',
       chips: ['PayPal', 'Pay Later', 'Venmo'],
-      badges: [
-        { label: 'Official', tone: 'neutral' },
-        { label: 'Coming soon', tone: 'warning' },
-      ],
     },
     {
       id: PAYMENT_PROVIDER_DRAWER.MANUAL,
@@ -736,10 +845,10 @@ export function buildPaymentProviderRows(input) {
         label: 'Built-in',
         tone: 'neutral',
       },
+      statusLoading: false,
       sourceMeta: 'Checkout runtime: draft orders and invoices',
       statusMeta: 'Storefront manual checkout should remain disabled unless a server-owned manual flow is implemented.',
       chips: ['Cash', 'Bank transfer', 'Invoice'],
-      badges: [{ label: 'Future-ready', tone: 'neutral' }],
     },
   ];
 }
@@ -830,10 +939,6 @@ export default function SettingsWorkspace() {
   const [setupLoading, setSetupLoading] = useState(false);
   const [setupLoaded, setSetupLoaded] = useState(false);
   const [setupError, setSetupError] = useState('');
-  const [readinessStatus, setReadinessStatus] = useState(null);
-  const [readinessLoading, setReadinessLoading] = useState(false);
-  const [readinessLoaded, setReadinessLoaded] = useState(false);
-  const [readinessError, setReadinessError] = useState('');
   const [deploymentStatus, setDeploymentStatus] = useState(null);
   const [deploymentLoading, setDeploymentLoading] = useState(false);
   const [deploymentLoaded, setDeploymentLoaded] = useState(false);
@@ -842,6 +947,11 @@ export default function SettingsWorkspace() {
   const [wizardLoading, setWizardLoading] = useState(false);
   const [wizardLoaded, setWizardLoaded] = useState(false);
   const [wizardError, setWizardError] = useState('');
+  const [setupSectionExpanded, setSetupSectionExpanded] = useState({
+    firstRunGuide: true,
+    deploymentValidation: false,
+    advancedDiagnostics: false,
+  });
   const [providerStatusMap, setProviderStatusMap] = useState({});
   const [providerStatusLoading, setProviderStatusLoading] = useState(false);
   const [providerStatusLoaded, setProviderStatusLoaded] = useState(false);
@@ -849,6 +959,7 @@ export default function SettingsWorkspace() {
   const [providerNotice, setProviderNotice] = useState('');
   const [stripeRuntimeStatus, setStripeRuntimeStatus] = useState(null);
   const [stripeRuntimeLoading, setStripeRuntimeLoading] = useState(false);
+  const [stripeRuntimeLoaded, setStripeRuntimeLoaded] = useState(false);
   const [activePaymentDrawer, setActivePaymentDrawer] = useState(null);
   const [activeEmailDrawer, setActiveEmailDrawer] = useState(null);
   const [activeBrandDrawer, setActiveBrandDrawer] = useState(null);
@@ -878,15 +989,16 @@ export default function SettingsWorkspace() {
   const [emailActivityLoading, setEmailActivityLoading] = useState(false);
   const [emailActivityLoaded, setEmailActivityLoaded] = useState(false);
   const [emailActivityError, setEmailActivityError] = useState('');
+  const [emailStatus, setEmailStatus] = useState(null);
+  const [emailStatusLoading, setEmailStatusLoading] = useState(false);
+  const [emailStatusLoaded, setEmailStatusLoaded] = useState(false);
+  const [emailStatusError, setEmailStatusError] = useState('');
   const [setupCopiedCommandId, setSetupCopiedCommandId] = useState('');
   const [savedState, setSavedState] = useState('saved');
-  const [lastSavedAt, setLastSavedAt] = useState(Date.now());
   const [shippingModeSavedState, setShippingModeSavedState] = useState('saved');
   const [shippingModeDirty, setShippingModeDirty] = useState(false);
   const [shippingModeSaveActionReady, setShippingModeSaveActionReady] = useState(false);
   const [shippingModeSaveError, setShippingModeSaveError] = useState('');
-  const [shippingModeLastSavedAt, setShippingModeLastSavedAt] = useState(Date.now());
-  const [saveClock, setSaveClock] = useState(Date.now());
   const [brandKit, setBrandKit] = useState(() => normalizeBrandKit(null));
   const [brandKitLoading, setBrandKitLoading] = useState(false);
   const [brandKitLoaded, setBrandKitLoaded] = useState(false);
@@ -1106,35 +1218,6 @@ export default function SettingsWorkspace() {
   }, [activeSection, setupLoaded]);
 
   useEffect(() => {
-    if (activeSection !== 'setup' || readinessLoaded) return;
-
-    let cancelled = false;
-
-    async function loadReadinessStatus() {
-      setReadinessLoading(true);
-      setReadinessError('');
-      try {
-        const data = await fetch('/api/readiness', { cache: 'no-store' }).then(parseApiJson);
-        if (!cancelled) setReadinessStatus(data);
-      } catch (loadError) {
-        if (!cancelled) {
-          setReadinessStatus(null);
-          setReadinessError(loadError instanceof Error ? loadError.message : 'Failed to load launch readiness');
-        }
-      } finally {
-        setReadinessLoading(false);
-        if (!cancelled) {
-          setReadinessLoaded(true);
-        }
-      }
-    }
-
-    loadReadinessStatus();
-
-    return () => { cancelled = true; };
-  }, [activeSection, readinessLoaded]);
-
-  useEffect(() => {
     if (activeSection !== 'setup' || deploymentLoaded) return;
 
     let cancelled = false;
@@ -1207,8 +1290,40 @@ export default function SettingsWorkspace() {
   }
 
   useEffect(() => {
-    const shouldLoadProviders = ['payments', 'shipping', 'email'].includes(activeSection);
-    if (!shouldLoadProviders || providerStatusLoaded) {
+    if (activeSection !== 'payments' || stripeRuntimeLoaded) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadStripeRuntimeStatus() {
+      setStripeRuntimeLoading(true);
+      setProviderStatusError('');
+      try {
+        const runtimePayload = await fetch('/api/settings/payments/stripe/status', { cache: 'no-store' }).then(parseApiJson);
+        if (cancelled) return;
+        setStripeRuntimeStatus(runtimePayload || null);
+      } catch {
+        if (cancelled) return;
+        setProviderStatusError('Failed to load Stripe status.');
+      } finally {
+        if (!cancelled) {
+          setStripeRuntimeLoading(false);
+          setStripeRuntimeLoaded(true);
+        }
+      }
+    }
+
+    loadStripeRuntimeStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, stripeRuntimeLoaded]);
+
+  useEffect(() => {
+    const shouldLoadProviderMatrix = ['shipping', 'email'].includes(activeSection);
+    if (!shouldLoadProviderMatrix || providerStatusLoaded) {
       return;
     }
 
@@ -1216,23 +1331,7 @@ export default function SettingsWorkspace() {
 
     async function loadProviderStatuses() {
       setProviderStatusLoading(true);
-      setStripeRuntimeLoading(true);
       setProviderStatusError('');
-      const runtimeRequest = fetch('/api/settings/payments/stripe/runtime-status', { cache: 'no-store' })
-        .then(parseApiJson)
-        .then((runtimePayload) => {
-          if (cancelled) return;
-          setStripeRuntimeStatus(runtimePayload || null);
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setProviderStatusError('Stripe runtime status is still checking. Provider credential status is shown from DB.');
-        })
-        .finally(() => {
-          if (cancelled) return;
-          setStripeRuntimeLoading(false);
-        });
-
       try {
         const providerPayload = await fetch('/api/settings/providers', { cache: 'no-store' }).then(parseApiJson);
         if (cancelled) return;
@@ -1253,8 +1352,6 @@ export default function SettingsWorkspace() {
           setProviderStatusLoading(false);
         }
       }
-
-      void runtimeRequest;
     }
 
     loadProviderStatuses();
@@ -1263,6 +1360,39 @@ export default function SettingsWorkspace() {
       cancelled = true;
     };
   }, [activeSection, providerStatusLoaded]);
+
+  useEffect(() => {
+    if (activeSection !== 'email' || emailStatusLoaded) {
+      return;
+    }
+
+    let cancelled = false;
+
+    async function loadEmailStatus() {
+      setEmailStatusLoading(true);
+      setEmailStatusError('');
+      try {
+        const payload = await fetch('/api/settings/email/status', { cache: 'no-store' }).then(parseApiJson);
+        if (cancelled) return;
+        setEmailStatus(payload || null);
+        setEmailStatusLoaded(true);
+      } catch (loadError) {
+        if (cancelled) return;
+        setEmailStatus(null);
+        setEmailStatusError(loadError instanceof Error ? loadError.message : 'Failed to load email setup status');
+      } finally {
+        if (!cancelled) {
+          setEmailStatusLoading(false);
+        }
+      }
+    }
+
+    loadEmailStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, emailStatusLoaded]);
 
   useEffect(() => {
     if (activeSection !== 'payments' || paymentActivityLoaded) {
@@ -1393,9 +1523,6 @@ export default function SettingsWorkspace() {
   const showSetupLoadingState = activeSection === 'setup' && setupLoading && !setupStatus && !setupError;
   const showSetupErrorState = activeSection === 'setup' && Boolean(setupError);
   const showSetupDiagnostics = activeSection === 'setup' && hasSetupDiagnostics;
-  const showReadinessLoading = activeSection === 'setup' && readinessLoading && !readinessStatus && !readinessError;
-  const showReadinessError = activeSection === 'setup' && Boolean(readinessError);
-  const showReadinessChecklist = activeSection === 'setup' && Boolean(readinessStatus?.checks?.length);
   const showDeploymentLoading = activeSection === 'setup' && deploymentLoading && !deploymentStatus && !deploymentError;
   const showDeploymentError = activeSection === 'setup' && Boolean(deploymentError);
   const showDeploymentChecklist = activeSection === 'setup' && Boolean(deploymentStatus?.checks?.length);
@@ -1408,36 +1535,85 @@ export default function SettingsWorkspace() {
     () => setupOptionalProductionSteps.filter((step) => !/STRIPE|RESEND|SMTP|SENDLAYER|EASYPOST|SHIPPO/i.test(step)),
     [setupOptionalProductionSteps]
   );
-  const stripeProviderStatus = providerStatusMap.STRIPE || stripeRuntimeStatus?.providerStatus || null;
+  const stripeProviderStatus =
+    providerStatusMap.STRIPE ||
+    toProviderGatewayStatusFromStripeSavedStatus(stripeRuntimeStatus) ||
+    toProviderGatewayStatusFromStripeSnapshot(stripeRuntimeStatus?.providerStatus) ||
+    null;
   const resendProviderStatus = providerStatusMap.RESEND || null;
   const smtpProviderStatus = providerStatusMap.SMTP || null;
   const shippoProviderStatus = providerStatusMap.SHIPPO || null;
   const easypostProviderStatus = providerStatusMap.EASYPOST || null;
   const isPaymentsSectionActive = activeSection === 'payments';
-  const showPaymentsProviderRowsSkeleton =
-    isPaymentsSectionActive && providerStatusLoading && !providerStatusLoaded && !providerStatusError;
-  const showStripeRuntimeChecking =
-    isPaymentsSectionActive && stripeRuntimeLoading;
+  const stripeSavedStatusPending =
+    !stripeRuntimeStatus && !stripeProviderStatus && (stripeRuntimeLoading || !stripeRuntimeLoaded);
+  const showPaymentsProviderRowsSkeleton = false;
   const stripeSetupStatus = useMemo(
-    () => describeProviderGatewayStatus(stripeProviderStatus, describeStripeSetup(setupCheckById)),
-    [stripeProviderStatus, setupCheckById]
+    () => {
+      if (stripeSavedStatusPending) {
+        return {
+          label: 'Loading saved status...',
+          tone: 'neutral',
+          detail: 'Loading saved Stripe status.',
+          sourceLabel: 'Not active',
+          lastVerifiedAt: null,
+        };
+      }
+
+      if (stripeProviderStatus && !stripeRuntimeStatus) {
+        return describeProviderGatewayStatus(stripeProviderStatus, describeStripeSetup(setupCheckById));
+      }
+
+      if (!stripeRuntimeStatus) {
+        return {
+          label: 'Verification unavailable',
+          tone: 'warning',
+          detail: 'Saved Stripe status is temporarily unavailable. Refresh and try again.',
+          sourceLabel: 'Not active',
+          lastVerifiedAt: null,
+        };
+      }
+
+      const resolved = describeStripeSavedStatus(
+        stripeRuntimeStatus,
+        stripeProviderStatus,
+        describeStripeSetup(setupCheckById)
+      );
+
+      if (
+        resolved.label === 'Needs attention' &&
+        isLikelyVerificationTimeout(stripeRuntimeStatus?.lastError || resolved.detail)
+      ) {
+        return {
+          ...resolved,
+          label: 'Verification unavailable',
+          tone: 'warning',
+          detail: 'Saved Stripe configuration is present, but verification is temporarily unavailable.',
+        };
+      }
+
+      return resolved;
+    },
+    [stripeProviderStatus, setupCheckById, stripeRuntimeStatus, stripeSavedStatusPending]
   );
   const stripeCheckoutSourceLabel =
     STRIPE_CHECKOUT_SOURCE_LABEL[stripeRuntimeStatus?.source] || STRIPE_CHECKOUT_SOURCE_LABEL.none;
   const stripeResolvedWebhookSource =
-    stripeRuntimeStatus?.providerStatus?.webhookConfigured
-      ? stripeRuntimeStatus?.providerStatus?.source || 'db'
-      : stripeRuntimeStatus?.webhookSource;
+    stripeRuntimeStatus?.hasWebhookSecret
+      ? stripeRuntimeStatus?.source || 'db'
+      : 'none';
   const stripeWebhookSourceLabel =
     STRIPE_WEBHOOK_SOURCE_LABEL[stripeResolvedWebhookSource] || STRIPE_WEBHOOK_SOURCE_LABEL.none;
   const stripeRuntimeModeLabel =
     stripeRuntimeStatus?.mode || stripeRuntimeStatus?.providerStatus?.mode || 'unknown';
-  const stripeRuntimeReady = Boolean(stripeRuntimeStatus?.source && stripeRuntimeStatus.source !== 'none');
   const stripeWebhookEndpoint = stripeRuntimeStatus?.webhookEndpoint || '';
   const stripeWebhookEndpointReady = Boolean(stripeRuntimeStatus?.webhookEndpointReady);
   const stripeWebhookEndpointIssue = stripeRuntimeStatus?.webhookEndpointIssue || null;
   const stripeWebhookEndpointMessage = stripeRuntimeStatus?.webhookEndpointMessage || '';
   const stripeWebhookEndpointStatusLabel = stripeWebhookEndpointReady ? 'Ready' : 'Store URL needs setup';
+  const stripeLastCheckedText = stripeSetupStatus?.lastVerifiedAt
+    ? formatDateTimeForDisplay(stripeSetupStatus.lastVerifiedAt, { timeZone: settings.timezone, fallbackText: '' })
+    : null;
   const stripeMethodChips = useMemo(() => getStripeMethodChips(stripeRuntimeStatus), [stripeRuntimeStatus]);
   const showStripeRuntimeMismatchWarning =
     stripeProviderStatus?.state === 'VERIFIED' && stripeRuntimeStatus?.source && stripeRuntimeStatus.source !== 'db';
@@ -1448,25 +1624,20 @@ export default function SettingsWorkspace() {
   const paymentProviderRows = useMemo(
     () =>
       buildPaymentProviderRows({
-        stripeSetupStatus: showStripeRuntimeChecking
-          ? {
-              ...stripeSetupStatus,
-              label: 'Checking status...',
-              tone: 'neutral',
-            }
-          : stripeSetupStatus,
-        stripeCheckoutSourceLabel: showStripeRuntimeChecking ? 'Checking status...' : stripeCheckoutSourceLabel,
-        stripeRuntimeModeLabel: showStripeRuntimeChecking ? 'Checking status...' : stripeRuntimeModeLabel,
-        stripeWebhookSourceLabel: showStripeRuntimeChecking ? 'Checking status...' : stripeWebhookSourceLabel,
-        stripeRuntimeReady: showStripeRuntimeChecking ? false : stripeRuntimeReady,
+        stripeSetupStatus,
+        stripeCheckoutSourceLabel,
+        stripeRuntimeModeLabel,
+        stripeWebhookSourceLabel,
+        stripeSavedStatusLoading: stripeSavedStatusPending,
+        stripeLastCheckedText,
         stripeMethodChips,
       }),
     [
-      showStripeRuntimeChecking,
       stripeCheckoutSourceLabel,
+      stripeLastCheckedText,
       stripeMethodChips,
       stripeRuntimeModeLabel,
-      stripeRuntimeReady,
+      stripeSavedStatusPending,
       stripeSetupStatus,
       stripeWebhookSourceLabel,
     ]
@@ -1610,45 +1781,61 @@ export default function SettingsWorkspace() {
     providerForms.STRIPE.webhookSecret,
   ]);
   const stripeConnectionPresentation = useMemo(() => {
-    const state = resolveStripeConnectionState({
-      providerState: stripeProviderStatus?.state || null,
-      credentialMaskMap: stripeCredentialMaskMap,
-    });
+    const statusLabel = String(stripeSetupStatus.label || '').trim();
+    const normalizedStatusLabel = normalizeStatusLabel(statusLabel);
 
-    if (state === 'VERIFIED') {
+    if (normalizedStatusLabel === 'loading saved status...') {
+      return {
+        heading: 'Stripe saved status',
+        badgeLabel: 'Loading saved status...',
+        badgeTone: 'neutral',
+        copy: stripeSetupStatus.detail,
+      };
+    }
+
+    if (normalizedStatusLabel === 'verification unavailable') {
+      return {
+        heading: 'Stripe is configured',
+        badgeLabel: 'Verification unavailable',
+        badgeTone: 'warning',
+        copy: stripeSetupStatus.detail,
+      };
+    }
+
+    if (normalizedStatusLabel === 'verified') {
       return {
         heading: 'Stripe is connected',
         badgeLabel: 'Verified',
         badgeTone: 'success',
-        copy: 'Checkout can use your saved Stripe credentials.',
+        copy: stripeSetupStatus.detail,
       };
     }
 
-    if (state === 'CREDENTIALS_SAVED') {
+    if (normalizedStatusLabel === 'configured') {
       return {
         heading: 'Stripe credentials saved',
-        badgeLabel: 'Needs verification',
+        badgeLabel: 'Configured',
         badgeTone: 'warning',
-        copy: 'Verify your Stripe API connection to enable checkout.',
+        copy: stripeSetupStatus.detail,
       };
     }
 
-    if (state === 'ERROR') {
+    if (normalizedStatusLabel === 'needs attention') {
       return {
         heading: 'Stripe needs attention',
-        badgeLabel: 'Error',
+        badgeLabel: 'Needs attention',
         badgeTone: 'danger',
-        copy: stripeProviderStatus?.lastError || 'Provider verification failed. Review credentials and retry.',
+        copy: stripeSetupStatus.detail,
       };
     }
 
     return {
       heading: 'Stripe is not configured',
-      badgeLabel: 'Not configured',
+      badgeLabel: 'Needs setup',
       badgeTone: 'warning',
-      copy: 'Save your Stripe API credentials to configure checkout.',
+      copy: stripeSetupStatus.detail,
     };
-  }, [stripeCredentialMaskMap, stripeProviderStatus?.lastError, stripeProviderStatus?.state]);
+  }, [stripeSetupStatus.detail, stripeSetupStatus.label]);
   const stripeConnectionSummaryRows = useMemo(
     () => [
       { label: 'Status', value: stripeConnectionPresentation.badgeLabel },
@@ -1694,18 +1881,133 @@ export default function SettingsWorkspace() {
   const smtpCredentialMeta = smtpProviderStatus?.credentialMeta || [];
   const resendSavedCredentialMeta = resendCredentialMeta.filter((entry) => entry.present);
   const smtpSavedCredentialMeta = smtpCredentialMeta.filter((entry) => entry.present);
+  const senderConfigured = Boolean(String(settings.senderEmail || '').trim());
+  const activeEmailProvider = emailStatus?.provider === 'RESEND' || emailStatus?.provider === 'SMTP'
+    ? emailStatus.provider
+    : null;
+  const emailProviderSource = String(emailStatus?.providerSource || 'none').trim().toLowerCase();
+  const emailVerificationStatus = String(emailStatus?.verificationStatus || '').trim().toLowerCase();
+  const emailProviderStatusPending = !emailStatus && !providerStatusLoaded && (providerStatusLoading || activeSection === 'email');
+  const emailProviderSetupStatus = useMemo(() => {
+    if (!emailStatus) {
+      return {
+        label: 'Loading saved status...',
+        tone: 'neutral',
+        detail: 'Loading saved email provider status.',
+      };
+    }
+
+    if (emailVerificationStatus === 'verified') {
+      return {
+        label: 'Verified',
+        tone: 'success',
+        detail: `${emailStatus.provider || 'Provider'} setup is verified.`,
+      };
+    }
+    if (emailVerificationStatus === 'needs_attention') {
+      if (isLikelyVerificationTimeout(emailStatus?.lastError)) {
+        return {
+          label: 'Verification unavailable',
+          tone: 'warning',
+          detail: 'Saved email provider configuration is present, but verification is temporarily unavailable.',
+        };
+      }
+      return {
+        label: 'Needs attention',
+        tone: 'danger',
+        detail: emailStatus.lastError || 'Email provider verification failed. Review credentials and verify again.',
+      };
+    }
+    if (emailVerificationStatus === 'verification_unavailable') {
+      return {
+        label: 'Verification unavailable',
+        tone: 'warning',
+        detail:
+          emailProviderSource === 'env'
+            ? 'Email provider is active from environment fallback credentials. Save and verify provider credentials in Settings -> Email.'
+            : 'Saved email provider configuration exists, but verification metadata is unavailable.',
+      };
+    }
+    if (emailVerificationStatus === 'configured') {
+      return {
+        label: 'Configured',
+        tone: 'warning',
+        detail: 'Saved provider configuration exists, but verification has not been run yet.',
+      };
+    }
+
+    return {
+      label: 'Setup needed',
+      tone: 'warning',
+      detail: 'Connect and save an email provider before sending transactional emails.',
+    };
+  }, [emailProviderSource, emailStatus, emailVerificationStatus]);
+  const emailJobHealthPresentation = useMemo(() => {
+    const health = String(emailStatus?.jobHealthStatus || 'unknown').trim().toLowerCase();
+    if (health === 'healthy') {
+      return {
+        label: 'Healthy',
+        tone: 'success',
+        detail: 'Email worker and queue health look good.',
+        showLogsAction: false,
+      };
+    }
+    if (health === 'critical') {
+      return {
+        label: 'Critical',
+        tone: 'danger',
+        detail: 'Email queue processing needs attention.',
+        showLogsAction: true,
+      };
+    }
+    if (health === 'warning') {
+      return {
+        label: 'Warning',
+        tone: 'warning',
+        detail: 'Email delivery processing may be delayed.',
+        showLogsAction: true,
+      };
+    }
+    return {
+      label: 'Unknown',
+      tone: 'warning',
+      detail: 'Email job health is currently unknown.',
+      showLogsAction: true,
+    };
+  }, [emailStatus?.jobHealthStatus]);
   const resendSetupStatus = useMemo(
-    () => describeProviderGatewayStatus(resendProviderStatus, describeResendSetup(setupCheckById)),
-    [resendProviderStatus, setupCheckById]
+    () =>
+      resendProviderStatus
+        ? describeProviderGatewayStatus(resendProviderStatus, describeResendSetup(setupCheckById))
+        : emailProviderStatusPending
+          ? {
+              label: 'Loading saved status...',
+              tone: 'neutral',
+              detail: 'Loading saved provider verification status.',
+            }
+          : describeProviderGatewayStatus(resendProviderStatus, describeResendSetup(setupCheckById)),
+    [emailProviderStatusPending, resendProviderStatus, setupCheckById]
   );
   const smtpSetupStatus = useMemo(
     () =>
-      describeProviderGatewayStatus(smtpProviderStatus, {
-        label: 'Not configured',
-        tone: 'warning',
-        detail: 'SMTP credentials are not configured yet.',
-      }),
-    [smtpProviderStatus]
+      smtpProviderStatus
+        ? describeProviderGatewayStatus(smtpProviderStatus, {
+            label: 'Not configured',
+            tone: 'warning',
+            detail: 'SMTP credentials are not configured yet.',
+          })
+        : emailProviderStatusPending
+          ? {
+              label: 'Loading saved status...',
+              tone: 'neutral',
+              detail: 'Loading saved provider verification status.',
+            }
+          : describeProviderGatewayStatus(smtpProviderStatus, {
+              label: 'Not configured',
+              tone: 'warning',
+              detail: 'SMTP credentials are not configured yet.',
+            }),
+    [emailProviderStatusPending, smtpProviderStatus]
   );
   const emailProviderRows = useMemo(
     () => [
@@ -1718,7 +2020,15 @@ export default function SettingsWorkspace() {
         description: 'Transactional email API provider for customer receipts and updates.',
         badges: [
           { label: 'Official', tone: 'neutral' },
-          resendSetupStatus.label === 'Verified' ? { label: 'Active', tone: 'success' } : { label: 'Setup needed', tone: 'warning' },
+          resendSetupStatus.label === 'Verified'
+            ? { label: 'Active', tone: 'success' }
+            : resendSetupStatus.label === 'Loading saved status...'
+              ? { label: 'Loading saved status...', tone: 'neutral' }
+            : resendSetupStatus.label === 'Credentials saved'
+              ? { label: 'Configured', tone: 'warning' }
+            : resendSetupStatus.label === 'Error'
+                ? { label: 'Needs attention', tone: 'danger' }
+                : { label: 'Needs setup', tone: 'warning' },
         ],
         chips: ['Order confirmations', 'Shipping updates', 'Delivery webhooks'],
       },
@@ -1731,7 +2041,15 @@ export default function SettingsWorkspace() {
         description: 'Use host/port credentials from your mail service when SMTP delivery is required.',
         badges: [
           { label: 'Built-in', tone: 'neutral' },
-          smtpSetupStatus.label === 'Verified' ? { label: 'Ready', tone: 'success' } : { label: 'Setup needed', tone: 'warning' },
+          smtpSetupStatus.label === 'Verified'
+            ? { label: 'Ready', tone: 'success' }
+            : smtpSetupStatus.label === 'Loading saved status...'
+              ? { label: 'Loading saved status...', tone: 'neutral' }
+            : smtpSetupStatus.label === 'Credentials saved'
+              ? { label: 'Configured', tone: 'warning' }
+            : smtpSetupStatus.label === 'Error'
+                ? { label: 'Needs attention', tone: 'danger' }
+                : { label: 'Needs setup', tone: 'warning' },
         ],
         chips: ['Host + port auth', 'TLS toggle', 'Manual verification'],
       },
@@ -1789,29 +2107,12 @@ export default function SettingsWorkspace() {
   }, [shippingProvider, shippingSetupStatus, easypostProviderStatus]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => setSaveClock(Date.now()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const savedAgoText = useMemo(() => {
-    const elapsedSeconds = Math.max(1, Math.round((saveClock - lastSavedAt) / 1000));
-    if (elapsedSeconds < 60) {
-      return `${elapsedSeconds}s ago`;
-    }
-
-    const elapsedMinutes = Math.round(elapsedSeconds / 60);
-    return `${elapsedMinutes}m ago`;
-  }, [lastSavedAt, saveClock]);
-
-  const shippingModeSavedAgoText = useMemo(() => {
-    const elapsedSeconds = Math.max(1, Math.round((saveClock - shippingModeLastSavedAt) / 1000));
-    if (elapsedSeconds < 60) {
-      return `${elapsedSeconds}s ago`;
-    }
-
-    const elapsedMinutes = Math.round(elapsedSeconds / 60);
-    return `${elapsedMinutes}m ago`;
-  }, [shippingModeLastSavedAt, saveClock]);
+    if (savedState !== 'saved_just_now') return;
+    const timer = window.setTimeout(() => {
+      setSavedState((current) => (current === 'saved_just_now' ? 'saved' : current));
+    }, 3000);
+    return () => window.clearTimeout(timer);
+  }, [savedState]);
 
   useEffect(() => {
     if (shippingModeSavedState !== 'saved_just_now') return;
@@ -1826,8 +2127,7 @@ export default function SettingsWorkspace() {
 
     try {
       await updateSettings(patch);
-      setSavedState('saved');
-      setLastSavedAt(Date.now());
+      setSavedState('saved_just_now');
     } catch {
       setSavedState('error');
     }
@@ -1849,8 +2149,7 @@ export default function SettingsWorkspace() {
         body: JSON.stringify(brandKit),
       }).then(parseApiJson);
       setBrandKit(updated);
-      setSavedState('saved');
-      setLastSavedAt(Date.now());
+      setSavedState('saved_just_now');
     } catch (saveError) {
       setSavedState('error');
       setBrandKitError(saveError instanceof Error ? saveError.message : 'Failed to save brand kit');
@@ -2107,21 +2406,6 @@ export default function SettingsWorkspace() {
     }
   }
 
-  async function refreshReadinessStatus() {
-    try {
-      setReadinessLoading(true);
-      setReadinessError('');
-      const data = await fetch('/api/readiness', { cache: 'no-store' }).then(parseApiJson);
-      setReadinessStatus(data);
-    } catch (refreshError) {
-      setReadinessStatus(null);
-      setReadinessError(refreshError instanceof Error ? refreshError.message : 'Failed to refresh launch readiness');
-    } finally {
-      setReadinessLoading(false);
-      setReadinessLoaded(true);
-    }
-  }
-
   async function refreshDeploymentValidation() {
     try {
       setDeploymentLoading(true);
@@ -2209,7 +2493,7 @@ export default function SettingsWorkspace() {
     if (providerId === PAYMENT_PROVIDER_DRAWER.STRIPE) {
       setStripeCredentialReplaceByField({ ...EMPTY_STRIPE_REPLACE_STATE });
       if (!providerStatusLoaded) {
-        void refreshProviderStatuses();
+        void refreshProviderStatuses({ includeRuntime: false });
       }
     }
   }
@@ -2378,9 +2662,6 @@ export default function SettingsWorkspace() {
     setShippingModeDirty(
       typeof context?.dirty === 'boolean' ? context.dirty : state === 'dirty' || state === 'error'
     );
-    if (state === 'saved' || state === 'saved_just_now') {
-      setShippingModeLastSavedAt(Date.now());
-    }
   }, []);
 
   const handleRegisterShippingModeSaveAction = useCallback((action) => {
@@ -2390,7 +2671,6 @@ export default function SettingsWorkspace() {
   }, []);
 
   const activeSavedState = activeSection === 'shipping' ? shippingModeSavedState : savedState;
-  const activeSavedAgoText = activeSection === 'shipping' ? shippingModeSavedAgoText : savedAgoText;
   const activeSavedErrorCopy =
     activeSection === 'shipping' ? shippingModeSaveError : activeSection === 'brand-kit' ? brandKitError : '';
   const activeSectionShippingConfigLoaded =
@@ -2417,8 +2697,6 @@ export default function SettingsWorkspace() {
     emailActivityLoaded,
     setupLoading,
     setupLoaded,
-    readinessLoading,
-    readinessLoaded,
     deploymentLoading,
     deploymentLoaded,
     wizardLoading,
@@ -2435,34 +2713,54 @@ export default function SettingsWorkspace() {
           shippingModeDirty,
         })
       : null;
+  const brandHeaderSaveState =
+    activeSection === 'brand-kit'
+      ? {
+          disabled: loading || Boolean(error) || activeTabLoading || brandKitLoading || savedState !== 'dirty',
+          label: savedState === 'saving' ? 'Saving...' : savedState === 'dirty' ? 'Save changes' : 'Saved',
+        }
+      : null;
   const headerSaveButtonDisabled =
     loading ||
     Boolean(error) ||
     activeTabLoading ||
-    (activeSection === 'brand-kit' && brandKitLoading) ||
+    (activeSection === 'brand-kit' && Boolean(brandHeaderSaveState?.disabled)) ||
     (activeSection === 'shipping' && Boolean(shippingHeaderSaveState?.disabled));
   const headerSaveButtonLabel =
     activeSection === 'shipping'
-      ? shippingHeaderSaveState?.label || 'Save changes'
+      ? shippingHeaderSaveState?.label || (shippingModeDirty ? 'Save changes' : 'Saved')
       : activeSection === 'brand-kit'
-        ? 'Save changes'
-        : 'Auto-saved';
+        ? brandHeaderSaveState?.label || 'Saved'
+        : 'Saved';
+  const headerSaveButtonOnClick =
+    activeSection === 'brand-kit'
+      ? handleBrandKitSave
+      : activeSection === 'shipping'
+        ? () => void invokeShippingSaveAction(shippingModeSaveActionRef.current)
+        : undefined;
 
-  async function refreshProviderStatuses() {
+  async function refreshProviderStatuses(options = { includeRuntime: true }) {
+    const includeRuntime = options?.includeRuntime !== false;
     setProviderStatusLoading(true);
-    setStripeRuntimeLoading(true);
+    if (includeRuntime) {
+      setStripeRuntimeLoading(true);
+    }
     setProviderStatusError('');
-    const runtimeRequest = fetch('/api/settings/payments/stripe/runtime-status', { cache: 'no-store' })
-      .then(parseApiJson)
-      .then((runtimePayload) => {
-        setStripeRuntimeStatus(runtimePayload || null);
-      })
-      .catch(() => {
-        setProviderStatusError('Stripe runtime status is still checking. Provider credential status is shown from DB.');
-      })
-      .finally(() => {
-        setStripeRuntimeLoading(false);
-      });
+    const runtimeRequest = includeRuntime
+      ? fetch('/api/settings/payments/stripe/status', { cache: 'no-store' })
+          .then(parseApiJson)
+          .then((runtimePayload) => {
+            setStripeRuntimeStatus(runtimePayload || null);
+            setStripeRuntimeLoaded(true);
+          })
+          .catch(() => {
+            setProviderStatusError('Failed to refresh Stripe status.');
+          })
+          .finally(() => {
+            setStripeRuntimeLoading(false);
+            setStripeRuntimeLoaded(true);
+          })
+      : Promise.resolve();
 
     try {
       const providerPayload = await fetch('/api/settings/providers', { cache: 'no-store' }).then(parseApiJson);
@@ -2480,7 +2778,21 @@ export default function SettingsWorkspace() {
       setProviderStatusLoading(false);
     }
 
-    void runtimeRequest;
+    await runtimeRequest;
+  }
+
+  async function refreshEmailStatus() {
+    setEmailStatusLoading(true);
+    setEmailStatusError('');
+    try {
+      const payload = await fetch('/api/settings/email/status', { cache: 'no-store' }).then(parseApiJson);
+      setEmailStatus(payload || null);
+      setEmailStatusLoaded(true);
+    } catch (refreshError) {
+      setEmailStatusError(refreshError instanceof Error ? refreshError.message : 'Failed to refresh email setup status');
+    } finally {
+      setEmailStatusLoading(false);
+    }
   }
 
   function patchProviderForm(provider, patch) {
@@ -2554,10 +2866,13 @@ export default function SettingsWorkspace() {
       if (provider === 'STRIPE') {
         await refreshProviderStatuses();
       }
+      if (provider === 'RESEND' || provider === 'SMTP') {
+        await refreshEmailStatus();
+      }
       resetProviderForm(provider);
       setProviderNotice(
         provider === 'STRIPE'
-          ? 'Credentials saved securely. Secret values are encrypted and hidden. Run "Verify Stripe API" to confirm DB-backed runtime connectivity.'
+          ? 'Credentials saved securely. Secret values are encrypted and hidden. Run "Verify now" to confirm DB-backed runtime connectivity.'
           : `${provider} credentials saved. Run verification to confirm connectivity.`
       );
     } catch (saveError) {
@@ -2578,6 +2893,9 @@ export default function SettingsWorkspace() {
       applyProviderStatus(data?.provider || provider, data?.status);
       if (provider === 'STRIPE') {
         await refreshProviderStatuses();
+      }
+      if (provider === 'RESEND' || provider === 'SMTP') {
+        await refreshEmailStatus();
       }
       if (data?.verification?.ok) {
         setProviderNotice(`${provider} verification succeeded.`);
@@ -2602,6 +2920,9 @@ export default function SettingsWorkspace() {
       applyProviderStatus(data?.provider || provider, data?.status);
       if (provider === 'STRIPE') {
         await refreshProviderStatuses();
+      }
+      if (provider === 'RESEND' || provider === 'SMTP') {
+        await refreshEmailStatus();
       }
       resetProviderForm(provider);
       setProviderNotice(`${provider} credentials disconnected.`);
@@ -2901,166 +3222,44 @@ export default function SettingsWorkspace() {
       searchValue=""
     >
       <div className={styles.page}>
-        <div className={`${styles.navPanel} glass-card refraction-edge admin-spotlight`}>
-          <div className={styles.navHeader}>
-            <p className={styles.eyebrow}>Settings</p>
-            <h2 className={styles.title}>Store settings</h2>
-          </div>
-          <div className={styles.sectionList}>
-            {SETTINGS_SECTIONS.map((section) => (
-              <AdminButton
-                key={section.id}
-                className={activeSection === section.id ? styles.sectionButtonActive : styles.sectionButton}
-                disabled={loading}
-                onClick={() => setActiveSection(section.id)}
-                size="sm"
-                variant={activeSection === section.id ? 'primary' : 'secondary'}
-              >
-                {section.label}
-              </AdminButton>
-            ))}
-          </div>
-        </div>
+        <SettingsWorkspaceNav
+          activeSection={activeSection}
+          loading={loading}
+          onSelectSection={setActiveSection}
+          sections={SETTINGS_SECTIONS}
+        />
 
         <div className={styles.detailPanel}>
           <div aria-busy={loading || shippingConfigLoading || setupLoading} className={`${styles.detailCard} glass-card refraction-edge admin-spotlight`}>
-            <div className={styles.detailHeader}>
-              <div>
-                <p className={styles.eyebrow}>Settings</p>
-                <h2 className={styles.title}>{activeTitle}</h2>
-              </div>
-              {activeSection === 'setup' ? (
-                <AdminButton disabled={setupLoading} onClick={() => refreshSetupStatus()} size="sm" variant="secondary">
-                  {setupLoading ? 'Refreshing...' : 'Refresh diagnostics'}
-                </AdminButton>
-              ) : (
-                <div className={styles.headerActions}>
-                  <AdminSavedState errorCopy={activeSavedErrorCopy} savedAgoText={activeSavedAgoText} state={activeSavedState} />
-                  <AdminButton
-                    disabled={!showHeaderSaveButton || headerSaveButtonDisabled}
-                    onClick={
-                      activeSection === 'brand-kit'
-                        ? handleBrandKitSave
-                        : activeSection === 'shipping'
-                          ? () => void invokeShippingSaveAction(shippingModeSaveActionRef.current)
-                          : undefined
-                    }
-                    size="sm"
-                    variant="primary"
-                  >
-                    {headerSaveButtonLabel}
-                  </AdminButton>
-                </div>
-              )}
-            </div>
+            <SettingsWorkspacePageHeader
+              activeSavedErrorCopy={activeSavedErrorCopy}
+              activeSavedState={activeSavedState}
+              activeSection={activeSection}
+              activeTitle={activeTitle}
+              headerSaveButtonDisabled={headerSaveButtonDisabled}
+              headerSaveButtonLabel={headerSaveButtonLabel}
+              onHeaderSaveClick={headerSaveButtonOnClick}
+              onRefreshSetupStatus={refreshSetupStatus}
+              setupLoading={setupLoading}
+              showHeaderSaveButton={showHeaderSaveButton}
+            />
 
-            {activeTabLoading && !error ? <SettingsPageSkeleton section={activeSection} /> : null}
-
-            {!activeTabLoading && !loading && error ? (
-              <div className={styles.statusBlock}>
-                <p className={styles.statusTitle}>Settings could not be loaded.</p>
-                <p className={styles.statusText}>{error}</p>
-              </div>
-            ) : null}
+            <SettingsWorkspaceLoadState
+              activeSection={activeSection}
+              activeTabLoading={activeTabLoading}
+              error={error}
+              loading={loading}
+            />
 
             {!activeTabLoading && !loading && !error && activeSection === 'general' ? (
-              <div className={styles.configStack}>
-                <AdminCard as="section" className={`${styles.paymentSectionCard} ${styles.compactSettingsCard}`} variant="card">
-                  <div className={`${styles.setupCardHeader} ${styles.compactSectionHeader}`}>
-                    <h4>Store identity</h4>
-                  </div>
-                  <p className={styles.cardSubtext}>Core store details used across admin and customer messages.</p>
-                  <div className={styles.drawerFormGrid}>
-                    <AdminField label="Store name">
-                      <AdminInput
-                        onChange={(event) => handleSettingsPatch({ storeName: event.target.value })}
-                        placeholder="Doopify Store"
-                        value={settings.storeName || ''}
-                      />
-                    </AdminField>
-                    <AdminField label="Support email">
-                      <AdminInput
-                        onChange={(event) => handleSettingsPatch({ supportEmail: event.target.value })}
-                        placeholder="support@example.com"
-                        value={settings.supportEmail || ''}
-                      />
-                    </AdminField>
-                    <AdminField label="Phone">
-                      <AdminInput
-                        onChange={(event) => handleSettingsPatch({ phone: event.target.value })}
-                        placeholder="+1 555 555 5555"
-                        value={settings.phone || ''}
-                      />
-                    </AdminField>
-                    <AdminField
-                      hint="Used for admin date displays, scheduled actions, and merchant-facing timestamps."
-                      label="Time zone"
-                    >
-                      <AdminSelect
-                        className={styles.input}
-                        onChange={(nextValue) => handleSettingsPatch({ timezone: nextValue })}
-                        options={GENERAL_SETTINGS_TIMEZONE_OPTIONS}
-                        value={settings.timezone || 'America/New_York'}
-                      />
-                    </AdminField>
-                    <AdminField
-                      hint="Used for new checkout sessions, payment intents, shipping rates, and new orders. Existing orders keep their original currency."
-                      label="Currency"
-                    >
-                      <AdminSelect
-                        className={styles.input}
-                        onChange={(nextValue) => handleSettingsPatch({ currency: nextValue })}
-                        options={GENERAL_SETTINGS_CURRENCY_OPTIONS}
-                        value={settings.currency || 'USD'}
-                      />
-                    </AdminField>
-                  </div>
-                </AdminCard>
-
-                <AdminCard as="section" className={`${styles.paymentSectionCard} ${styles.compactSettingsCard}`} variant="card">
-                  <div className={`${styles.setupCardHeader} ${styles.compactSectionHeader}`}>
-                    <h4>Store address</h4>
-                  </div>
-                  <p className={styles.cardSubtext}>Used in shipping docs and customer-facing records.</p>
-                  <div className={styles.compactDrawerGrid}>
-                    <p className={styles.compactMeta}>
-                      <strong>Status:</strong> {hasStoreAddress ? 'Configured' : 'No store address configured'}
-                    </p>
-                    {hasStoreAddress ? (
-                      <p className={styles.compactMeta}>
-                        <strong>Address:</strong> {settings.address}
-                      </p>
-                    ) : (
-                      <p className={styles.compactMeta}>Add a default ship-from location in Shipping & delivery to complete address setup.</p>
-                    )}
-                  </div>
-                  <div className={styles.compactActionRow}>
-                    <AdminButton onClick={() => setActiveSection('shipping')} size="sm" variant="secondary">
-                      {hasStoreAddress ? 'Edit address' : 'Add address'}
-                    </AdminButton>
-                  </div>
-                </AdminCard>
-
-                <AdminCard as="section" className={`${styles.paymentSectionCard} ${styles.compactSettingsCard}`} variant="card">
-                  <div className={`${styles.setupCardHeader} ${styles.compactSectionHeader}`}>
-                    <h4>Operational defaults</h4>
-                  </div>
-                  <p className={styles.cardSubtext}>
-                    Payment, shipping, and email providers are configured in their dedicated tabs.
-                  </p>
-                  <div className={styles.compactActionRow}>
-                    <AdminButton onClick={() => setActiveSection('payments')} size="sm" variant="secondary">
-                      Open payments
-                    </AdminButton>
-                    <AdminButton onClick={() => setActiveSection('shipping')} size="sm" variant="secondary">
-                      Open shipping
-                    </AdminButton>
-                    <AdminButton onClick={() => setActiveSection('email')} size="sm" variant="secondary">
-                      Open email
-                    </AdminButton>
-                  </div>
-                </AdminCard>
-              </div>
+              <GeneralSettingsPanel
+                currencyOptions={GENERAL_SETTINGS_CURRENCY_OPTIONS}
+                hasStoreAddress={hasStoreAddress}
+                onNavigateSection={setActiveSection}
+                onSettingsPatch={handleSettingsPatch}
+                settings={settings}
+                timezoneOptions={GENERAL_SETTINGS_TIMEZONE_OPTIONS}
+              />
             ) : null}
 
             {!activeTabLoading && !loading && !error && activeSection === 'brand-kit' ? (
@@ -3417,23 +3616,18 @@ export default function SettingsWorkspace() {
                     <p className={styles.statusText}>{providerStatusError}</p>
                   </div>
                 ) : null}
+                {emailStatusError ? (
+                  <div className={styles.statusBlock}>
+                    <p className={styles.statusTitle}>Email status error</p>
+                    <p className={styles.statusText}>{emailStatusError}</p>
+                  </div>
+                ) : null}
                 {providerNotice ? (
                   <div className={styles.statusBlock}>
                     <p className={styles.statusTitle}>Provider update</p>
                     <p className={styles.statusText}>{providerNotice}</p>
                   </div>
                 ) : null}
-                {providerStatusLoading ? (
-                  <div className={styles.statusBlock}>
-                    <p className={styles.statusText}>Refreshing provider statuses...</p>
-                  </div>
-                ) : null}
-                {showStripeRuntimeChecking ? (
-                  <div className={styles.statusBlock}>
-                    <p className={styles.statusText}>Checking Stripe runtime status...</p>
-                  </div>
-                ) : null}
-
                 <AdminCard as="section" className={`${styles.paymentSectionCard} ${styles.compactSettingsCard}`} variant="card">
                   <div className={`${styles.setupCardHeader} ${styles.compactSectionHeader}`}>
                     <h4>Payment providers</h4>
@@ -3445,26 +3639,27 @@ export default function SettingsWorkspace() {
                   ) : (
                     <div className={styles.providerList}>
                       {paymentProviderRows.map((providerRow) => {
-                        const stripeRowIsChecking =
-                          providerRow.id === PAYMENT_PROVIDER_DRAWER.STRIPE && showStripeRuntimeChecking;
                         return (
                           <article className={`${styles.providerRow} ${styles.compactProviderRow}`} key={providerRow.id}>
                             <div className={`${styles.providerIcon} ${styles[providerRow.iconClassName] || ''}`}>{providerRow.iconText}</div>
                             <div className={`${styles.providerMain} ${styles.compactRowMain}`}>
                               <div className={styles.providerTitleLine}>
                                 <h4 className={styles.compactRowTitle}>{providerRow.name}</h4>
-                                <AdminStatusChip tone={providerRow.status.tone}>{providerRow.status.label}</AdminStatusChip>
-                                {providerRow.badges.map((badge) => (
-                                  <AdminStatusChip key={`${providerRow.id}-${badge.label}`} tone={badge.tone}>
-                                    {badge.label}
-                                  </AdminStatusChip>
-                                ))}
+                                {providerRow.status ? (
+                                  <AdminStatusChip tone={providerRow.status.tone}>{providerRow.status.label}</AdminStatusChip>
+                                ) : providerRow.statusLoading ? (
+                                  <span
+                                    aria-label="Loading saved Stripe status"
+                                    className={styles.statusChipSpinner}
+                                    role="status"
+                                    title="Loading saved Stripe status"
+                                  />
+                                ) : null}
                               </div>
                               <p className={styles.compactRowDescription}>{providerRow.description}</p>
                               <p className={styles.compactMeta}>{providerRow.sourceMeta}</p>
-                              <p className={styles.compactMeta}>
-                                {stripeRowIsChecking ? 'Checking Stripe runtime, webhook, and account status...' : providerRow.statusMeta}
-                              </p>
+                              <p className={styles.compactMeta}>{providerRow.statusMeta}</p>
+                              {providerRow.lastCheckedMeta ? <p className={styles.compactMeta}>{providerRow.lastCheckedMeta}</p> : null}
                               <div className={`${styles.methodChipRow} ${styles.compactChipRow}`}>
                                 {providerRow.chips.map((chip) => (
                                   <span className={styles.methodChip} key={`${providerRow.id}-${chip}`}>
@@ -3474,6 +3669,17 @@ export default function SettingsWorkspace() {
                               </div>
                             </div>
                             <div className={`${styles.providerActions} ${styles.compactActionRow}`}>
+                              {providerRow.id === PAYMENT_PROVIDER_DRAWER.STRIPE ? (
+                                <AdminButton
+                                  aria-label="Verify Stripe now"
+                                  disabled={providerActionById.STRIPE === 'verifying'}
+                                  onClick={() => handleVerifyProvider('STRIPE')}
+                                  size="sm"
+                                  variant="ghost"
+                                >
+                                  {providerActionById.STRIPE === 'verifying' ? 'Verifying...' : 'Verify now'}
+                                </AdminButton>
+                              ) : null}
                               <AdminButton
                                 aria-label={`Manage ${providerRow.name}`}
                                 onClick={() => openPaymentDrawer(providerRow.id)}
@@ -3569,20 +3775,54 @@ export default function SettingsWorkspace() {
                     <article className={styles.checkoutMethodCard}>
                       <div className={styles.providerTitleLine}>
                         <h4 className={styles.compactRowTitle}>Provider connected</h4>
-                        <AdminStatusChip tone={resendSetupStatus.tone}>{resendSetupStatus.label}</AdminStatusChip>
+                        <AdminStatusChip tone={emailProviderSetupStatus.tone}>{emailProviderSetupStatus.label}</AdminStatusChip>
                       </div>
-                      <p className={styles.compactRowDescription}>{resendSetupStatus.detail}</p>
+                      <p className={styles.compactRowDescription}>{emailProviderSetupStatus.detail}</p>
+                      {emailStatus?.lastVerifiedAt ? (
+                        <p className={styles.compactMeta}>
+                          Last verified: {formatDateTime(emailStatus.lastVerifiedAt, settings.timezone)}
+                        </p>
+                      ) : null}
+                      {emailStatus?.lastError ? (
+                        <p className={styles.compactMeta}>Last error: {emailStatus.lastError}</p>
+                      ) : null}
+                      {activeEmailProvider ? (
+                        <div className={styles.compactActionRow}>
+                          <AdminButton
+                            disabled={providerActionById[activeEmailProvider] === 'verifying'}
+                            onClick={() => handleVerifyProvider(activeEmailProvider)}
+                            size="sm"
+                            variant="secondary"
+                          >
+                            {providerActionById[activeEmailProvider] === 'verifying' ? 'Verifying...' : 'Verify email setup'}
+                          </AdminButton>
+                        </div>
+                      ) : null}
                     </article>
                     <article className={styles.checkoutMethodCard}>
                       <div className={styles.providerTitleLine}>
                         <h4 className={styles.compactRowTitle}>Sender identity</h4>
-                        <AdminStatusChip tone={settings.senderEmail ? 'success' : 'warning'}>
-                          {settings.senderEmail ? 'Configured' : 'Setup needed'}
+                        <AdminStatusChip tone={senderConfigured ? 'success' : 'warning'}>
+                          {senderConfigured ? 'Configured' : 'Setup needed'}
                         </AdminStatusChip>
                       </div>
                       <p className={styles.compactRowDescription}>
-                        {settings.senderEmail ? `Using ${settings.senderEmail}` : 'Add a sender email so customer messages use your store identity.'}
+                        {senderConfigured ? `Using ${settings.senderEmail}` : 'Add a sender email so customer messages use your store identity.'}
                       </p>
+                    </article>
+                    <article className={styles.checkoutMethodCard}>
+                      <div className={styles.providerTitleLine}>
+                        <h4 className={styles.compactRowTitle}>Job health</h4>
+                        <AdminStatusChip tone={emailJobHealthPresentation.tone}>{emailJobHealthPresentation.label}</AdminStatusChip>
+                      </div>
+                      <p className={styles.compactRowDescription}>{emailJobHealthPresentation.detail}</p>
+                      {emailJobHealthPresentation.showLogsAction ? (
+                        <div className={styles.compactActionRow}>
+                          <AdminButton asChild size="sm" variant="ghost">
+                            <Link href="/admin/webhooks">Open delivery logs</Link>
+                          </AdminButton>
+                        </div>
+                      ) : null}
                     </article>
                   </div>
                 </AdminCard>
@@ -3623,6 +3863,16 @@ export default function SettingsWorkspace() {
                           </div>
                         </div>
                         <div className={styles.providerActions}>
+                          {providerRow.id === EMAIL_PROVIDER_DRAWER.RESEND || providerRow.id === EMAIL_PROVIDER_DRAWER.SMTP ? (
+                            <AdminButton
+                              disabled={providerActionById[providerRow.id] === 'verifying'}
+                              onClick={() => handleVerifyProvider(providerRow.id)}
+                              size="sm"
+                              variant="ghost"
+                            >
+                              {providerActionById[providerRow.id] === 'verifying' ? 'Verifying...' : 'Verify email setup'}
+                            </AdminButton>
+                          ) : null}
                           <AdminButton onClick={() => openEmailDrawer(providerRow.id)} size="sm" variant="secondary">
                             Manage
                           </AdminButton>
@@ -3997,205 +4247,70 @@ export default function SettingsWorkspace() {
             {!activeTabLoading && !loading && !error && activeSection === 'setup' ? (
               <div className={styles.setupPanel}>
                 <AdminCard className={styles.setupSummaryCard} variant="card">
-                  <h4>Setup mode</h4>
+                  <h4>Launch setup</h4>
                   <p className={styles.statusText}>
-                    This page reports setup status only. It does not save secrets or run local commands from the browser.
-                    Required for checkout: store profile, Stripe in Settings -&gt; Payments, shipping, one active product,
-                    and a paid test checkout. Optional: email, team access, and owner MFA.
+                    Review the setup items that matter before sending customers to your store.
                   </p>
                 </AdminCard>
 
-                {/* ── Getting started wizard ──────────────────────────────── */}
-                {showWizardLoading ? (
-                  <div className={styles.statusBlock}>
-                    <div className={styles.loadingLine} />
-                    <div className={styles.loadingLine} />
-                    <div className={`${styles.loadingLine} ${styles.loadingLineShort}`} />
-                    <p className={styles.statusText}>Loading setup checklist...</p>
-                  </div>
-                ) : null}
+                <SetupFirstRunGuidePanel
+                  isOpen={setupSectionExpanded.firstRunGuide}
+                  onRefreshWizard={refreshWizard}
+                  onToggleOpen={(isOpen) => {
+                    setSetupSectionExpanded((current) => ({
+                      ...current,
+                      firstRunGuide: isOpen,
+                    }));
+                  }}
+                  showWizardError={showWizardError}
+                  showWizardLoading={showWizardLoading}
+                  showWizardSteps={showWizardSteps}
+                  wizardError={wizardError}
+                  wizardLoading={wizardLoading}
+                  wizardSteps={wizardSteps}
+                />
 
-                {showWizardError ? (
-                  <div className={styles.statusBlock}>
-                    <p className={styles.statusTitle}>Setup checklist error</p>
-                    <p className={styles.statusText}>{wizardError}</p>
-                  </div>
-                ) : null}
-
-                {showWizardSteps ? (
-                  <>
-                    <AdminCard className={styles.setupSummaryCard} variant="card">
-                      <div className={styles.setupCardHeader}>
-                        <div>
-                          <p className={styles.eyebrow}>First-run checklist</p>
-                          <h3 className={styles.setupHeadline}>
-                            {wizardSteps.wizardComplete ? 'Store ready for pilot' : 'Setup in progress'}
-                          </h3>
-                          <p className={styles.statusText}>
-                            {wizardSteps.completedCount} of {wizardSteps.steps.length} steps complete
-                            {wizardSteps.wizardComplete ? ' · all required steps done' : ''}
-                          </p>
-                        </div>
-                        <AdminButton
-                          disabled={wizardLoading}
-                          onClick={() => refreshWizard()}
-                          size="sm"
-                          variant="secondary"
-                        >
-                          {wizardLoading ? 'Refreshing...' : 'Refresh'}
-                        </AdminButton>
-                      </div>
-                    </AdminCard>
-
-                    <section className={styles.setupList} style={{ listStyle: 'none', padding: 0 }}>
-                      {(wizardSteps.steps || []).map((step) => (
-                        <AdminCard
-                          as="article"
-                          className={styles.setupCard}
-                          key={step.id}
-                          variant="card"
-                          style={{ marginBottom: '0.5rem' }}
-                        >
-                          <div className={styles.setupCardHeader}>
-                            <div>
-                              <h4 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                <span style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  width: '1.4rem',
-                                  height: '1.4rem',
-                                  borderRadius: '50%',
-                                  fontSize: '0.72rem',
-                                  fontWeight: 700,
-                                  flexShrink: 0,
-                                  background: step.status === 'ready'
-                                    ? 'var(--success-100, #dcfce7)'
-                                    : step.status === 'optional'
-                                      ? 'var(--surface-container-low)'
-                                      : 'var(--warning-100, #fef9c3)',
-                                  color: step.status === 'ready'
-                                    ? 'var(--success-700, #15803d)'
-                                    : step.status === 'optional'
-                                      ? 'var(--on-surface-variant)'
-                                      : 'var(--warning-700, #a16207)',
-                                }}>
-                                  {step.status === 'ready' ? '✓' : step.step}
-                                </span>
-                                {step.title}
-                                {!step.isRequired ? (
-                                  <span style={{ fontSize: '0.72rem', color: 'var(--on-surface-variant)', fontWeight: 400 }}>
-                                    optional
-                                  </span>
-                                ) : null}
-                              </h4>
-                              <p className={styles.statusText} style={{ marginTop: '0.25rem' }}>{step.reason}</p>
-                            </div>
-                            <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0, alignItems: 'center' }}>
-                              <AdminStatusChip
-                                tone={
-                                  step.status === 'ready' ? 'success'
-                                    : step.status === 'optional' || step.status === 'skipped' ? 'neutral'
-                                      : 'warning'
-                                }
-                              >
-                                {step.status === 'needs_setup' ? 'Needs setup' : step.status}
-                              </AdminStatusChip>
-                              {step.ctaRoute && step.ctaLabel ? (
-                                <a
-                                  href={step.ctaRoute}
-                                  style={{
-                                    fontSize: '0.8rem',
-                                    color: 'var(--primary)',
-                                    textDecoration: 'none',
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                >
-                                  {step.ctaLabel} →
-                                </a>
-                              ) : null}
-                            </div>
-                          </div>
-                        </AdminCard>
-                      ))}
-                    </section>
-                  </>
-                ) : null}
-
-                {showReadinessLoading ? (
-                  <div className={styles.statusBlock}>
-                    <div className={styles.loadingLine} />
-                    <div className={styles.loadingLine} />
-                    <div className={`${styles.loadingLine} ${styles.loadingLineShort}`} />
-                    <p className={styles.statusText}>Loading launch readiness...</p>
-                  </div>
-                ) : null}
-
-                {showReadinessError ? (
-                  <div className={styles.statusBlock}>
-                    <p className={styles.statusTitle}>Launch readiness error</p>
-                    <p className={styles.statusText}>{readinessError}</p>
-                  </div>
-                ) : null}
-
-                {showReadinessChecklist ? (
-                  <>
-                    <AdminCard className={styles.setupSummaryCard} variant="card">
-                      <div className={styles.setupCardHeader}>
-                        <div>
-                          <p className={styles.eyebrow}>Launch readiness</p>
-                          <h3 className={styles.setupHeadline}>
-                            {readinessStatus.launchReady ? 'Ready to launch' : 'Not ready to launch'}
-                          </h3>
-                          <p className={styles.statusText}>
-                            {readinessStatus.readyCount} ready&nbsp;&middot;&nbsp;
-                            {readinessStatus.needsSetupCount} need setup&nbsp;&middot;&nbsp;
-                            {readinessStatus.skippedCount} skipped&nbsp;&middot;&nbsp;
-                            {readinessStatus.optionalCount} optional
-                          </p>
-                        </div>
-                        <AdminButton
-                          disabled={readinessLoading}
-                          onClick={() => refreshReadinessStatus()}
-                          size="sm"
-                          variant="secondary"
-                        >
-                          {readinessLoading ? 'Refreshing...' : 'Refresh'}
-                        </AdminButton>
-                      </div>
-                    </AdminCard>
-
-                    <section className={styles.setupGrid}>
-                      {(readinessStatus.checks || []).map((check) => (
-                        <AdminCard as="article" className={styles.setupCard} key={check.id} variant="card">
-                          <div className={styles.setupCardHeader}>
-                            <h4>{check.title}</h4>
-                            <AdminStatusChip
-                              tone={
-                                check.status === 'ready'
-                                  ? 'success'
-                                  : check.status === 'needs_setup'
-                                    ? 'danger'
-                                    : 'neutral'
-                              }
-                            >
-                              {check.status === 'ready'
-                                ? 'Ready'
-                                : check.status === 'needs_setup'
-                                  ? 'Needs setup'
-                                  : check.status === 'skipped'
-                                    ? 'Skipped'
-                                    : 'Optional'}
-                            </AdminStatusChip>
-                          </div>
-                          <p className={styles.statusText}>{check.summary}</p>
-                          {check.fix ? <p className={styles.setupFixText}>Fix: {check.fix}</p> : null}
-                        </AdminCard>
-                      ))}
-                    </section>
-                  </>
-                ) : null}
-
+                <details
+                  className={styles.setupCollapsibleSection}
+                  onToggle={(event) => {
+                    const isOpen = event.currentTarget.open;
+                    setSetupSectionExpanded((current) => ({
+                      ...current,
+                      deploymentValidation: isOpen,
+                    }));
+                  }}
+                >
+                  <summary
+                    aria-controls="setup-deployment-validation-body"
+                    aria-expanded={setupSectionExpanded.deploymentValidation}
+                    className={styles.setupCollapsibleSummary}
+                  >
+                    <div className={styles.setupCollapsibleHeading}>
+                      <h4>Deployment validation</h4>
+                      <p className={styles.statusText}>
+                        Infrastructure and environment configuration checks.
+                      </p>
+                    </div>
+                    <span className={styles.setupCollapsibleAffordance}>
+                      <span className={styles.setupCollapsibleState}>
+                        {showDeploymentError
+                          ? 'Needs attention'
+                          : showDeploymentLoading
+                            ? 'Loading deployment validation...'
+                            : deploymentStatus?.deploymentReady
+                              ? 'Ready'
+                              : showDeploymentChecklist
+                                ? 'Issues found'
+                                : 'Available'}
+                      </span>
+                      <span aria-hidden="true" className={styles.setupChevronIcon}>
+                        <svg className={styles.setupChevronSvg} viewBox="0 0 16 16">
+                          <path d="M4 6l4 4 4-4" />
+                        </svg>
+                      </span>
+                    </span>
+                  </summary>
+                  <div className={styles.setupCollapsibleBody} id="setup-deployment-validation-body">
                 {showDeploymentLoading ? (
                   <div className={styles.statusBlock}>
                     <div className={styles.loadingLine} />
@@ -4247,6 +4362,8 @@ export default function SettingsWorkspace() {
                                   ? 'success'
                                   : check.status === 'needs_setup'
                                     ? 'danger'
+                                    : check.status === 'warning'
+                                      ? 'warning'
                                     : 'neutral'
                               }
                             >
@@ -4254,6 +4371,8 @@ export default function SettingsWorkspace() {
                                 ? 'Ready'
                                 : check.status === 'needs_setup'
                                   ? 'Needs setup'
+                                  : check.status === 'warning'
+                                    ? 'Warning'
                                   : check.status === 'skipped'
                                     ? 'Skipped'
                                     : 'Optional'}
@@ -4266,7 +4385,48 @@ export default function SettingsWorkspace() {
                     </section>
                   </>
                 ) : null}
+                  </div>
+                </details>
 
+                <details
+                  className={styles.setupCollapsibleSection}
+                  onToggle={(event) => {
+                    const isOpen = event.currentTarget.open;
+                    setSetupSectionExpanded((current) => ({
+                      ...current,
+                      advancedDiagnostics: isOpen,
+                    }));
+                  }}
+                >
+                  <summary
+                    aria-controls="setup-advanced-diagnostics-body"
+                    aria-expanded={setupSectionExpanded.advancedDiagnostics}
+                    className={styles.setupCollapsibleSummary}
+                  >
+                    <div className={styles.setupCollapsibleHeading}>
+                      <h4>Advanced diagnostics</h4>
+                      <p className={styles.statusText}>
+                        Foundation checks, environment hints, and setup helper commands for owners and developers.
+                      </p>
+                    </div>
+                    <span className={styles.setupCollapsibleAffordance}>
+                      <span className={styles.setupCollapsibleState}>
+                        {showSetupErrorState
+                          ? 'Needs attention'
+                          : showSetupLoadingState
+                            ? 'Loading diagnostics...'
+                            : showSetupDiagnostics
+                              ? `${setupCompletionPercent}% complete`
+                              : 'Available'}
+                      </span>
+                      <span aria-hidden="true" className={styles.setupChevronIcon}>
+                        <svg className={styles.setupChevronSvg} viewBox="0 0 16 16">
+                          <path d="M4 6l4 4 4-4" />
+                        </svg>
+                      </span>
+                    </span>
+                  </summary>
+                  <div className={styles.setupCollapsibleBody} id="setup-advanced-diagnostics-body">
                 {showSetupDiagnostics ? (
                   <AdminCard className={styles.setupSummaryCard} variant="card">
                     <div>
@@ -4280,28 +4440,13 @@ export default function SettingsWorkspace() {
                   </AdminCard>
                 ) : null}
 
-                {showSetupLoadingState ? (
-                  <div className={styles.statusBlock}>
-                    <div className={styles.loadingLine} />
-                    <div className={styles.loadingLine} />
-                    <div className={`${styles.loadingLine} ${styles.loadingLineShort}`} />
-                    <p className={styles.statusText}>Loading setup diagnostics...</p>
-                  </div>
-                ) : null}
-
-                {showSetupErrorState ? (
-                  <div className={styles.statusBlock}>
-                    <p className={styles.statusTitle}>Setup diagnostics error</p>
-                    <p className={styles.statusText}>{setupError}</p>
-                  </div>
-                ) : null}
-
-                {!showSetupLoadingState && !showSetupErrorState && !showSetupDiagnostics && setupLoaded ? (
-                  <div className={styles.statusBlock}>
-                    <p className={styles.statusTitle}>Setup diagnostics unavailable</p>
-                    <p className={styles.statusText}>The diagnostics payload is missing expected checklist data.</p>
-                  </div>
-                ) : null}
+                <SettingsSetupDiagnosticsState
+                  setupError={setupError}
+                  setupLoaded={setupLoaded}
+                  showSetupDiagnostics={showSetupDiagnostics}
+                  showSetupErrorState={showSetupErrorState}
+                  showSetupLoadingState={showSetupLoadingState}
+                />
 
                 {showSetupDiagnostics ? (
                   <>
@@ -4427,6 +4572,8 @@ export default function SettingsWorkspace() {
                     </section>
                   </>
                 ) : null}
+                  </div>
+                </details>
               </div>
             ) : null}
 
@@ -4596,7 +4743,7 @@ export default function SettingsWorkspace() {
                   size="sm"
                   variant="secondary"
                 >
-                  {providerActionById.STRIPE === 'verifying' ? 'Verifying...' : 'Verify connection'}
+                  {providerActionById.STRIPE === 'verifying' ? 'Verifying...' : 'Verify now'}
                 </AdminButton>
                 <AdminButton onClick={handleCopyStripeWebhookEndpoint} size="sm" variant="ghost">
                   {setupCopiedCommandId === 'stripe-webhook-endpoint' ? 'Copied endpoint' : 'Copy webhook endpoint'}
@@ -5590,22 +5737,12 @@ export default function SettingsWorkspace() {
           </div>
         ) : null}
       </AdminDrawer>
-      {settingsToasts.length ? (
-        <div aria-live="polite" className={styles.toastViewport}>
-          {settingsToasts.map((toast) => (
-            <button
-              className={`${styles.toastCard} ${toast.tone === 'success' ? styles.toastSuccess : ''} ${toast.tone === 'error' ? styles.toastError : ''}`}
-              key={toast.id}
-              onClick={() => dismissSettingsToast(toast.id)}
-              type="button"
-            >
-              {toast.message}
-            </button>
-          ))}
-        </div>
-      ) : null}
+      <SettingsToastViewport onDismiss={dismissSettingsToast} toasts={settingsToasts} />
     </AppShell>
   );
 }
+
+
+
 
 

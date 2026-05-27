@@ -3,6 +3,7 @@ import { evaluatePublicStoreUrl } from '@/lib/public-store-url'
 import { prisma } from '@/lib/prisma'
 import { requireOwner } from '@/server/auth/require-auth'
 import { getStripeProviderStatus } from '@/server/payments/stripe-runtime.service'
+import { evaluateProductLaunchReadiness } from '@/server/services/product-launch-readiness.service'
 import { getRuntimeProviderConnection } from '@/server/services/provider-connection.service'
 import {
   buildSetupWizardSteps,
@@ -20,23 +21,25 @@ async function gatherProductFacts() {
     where: { status: 'ACTIVE' },
     select: {
       id: true,
-      variants: { select: { priceCents: true, inventory: true } },
+      title: true,
+      salesMode: true,
+      presaleStartsAt: true,
+      presaleEndsAt: true,
+      availableForPurchaseAt: true,
+      fulfillmentType: true,
+      media: { where: { isFeatured: true }, select: { id: true }, take: 1 },
+      variants: {
+        select: {
+          priceCents: true,
+          inventory: true,
+          continueSellingWhenOutOfStock: true,
+          weight: true,
+        },
+      },
     },
   })
 
-  let activeProductsWithValidPrice = 0
-  let activeProductsWithInventory = 0
-
-  for (const product of activeProducts) {
-    if (product.variants.some((v) => v.priceCents > 0)) activeProductsWithValidPrice++
-    if (product.variants.some((v) => v.inventory > 0)) activeProductsWithInventory++
-  }
-
-  return {
-    activeProductCount: activeProducts.length,
-    activeProductsWithValidPrice,
-    activeProductsWithInventory,
-  }
+  return evaluateProductLaunchReadiness(activeProducts)
 }
 
 export async function GET(req: Request) {

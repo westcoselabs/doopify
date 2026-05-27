@@ -61,14 +61,24 @@ describe('settings skeleton loading state', () => {
     ).toBe(true)
   })
 
-  it('shows skeleton for setup while checklist services are loading', () => {
+  it('does not block setup behind page skeleton while setup panels load', () => {
     expect(
       isSettingsTabLoadingState({
         activeSection: 'setup',
         setupLoading: true,
         setupLoaded: false,
       })
-    ).toBe(true)
+    ).toBe(false)
+  })
+
+  it('does not block setup while diagnostics are still loading', () => {
+    expect(
+      isSettingsTabLoadingState({
+        activeSection: 'setup',
+        setupLoading: true,
+        setupLoaded: false,
+      })
+    ).toBe(false)
   })
 
   it('does not show skeleton once tab data is loaded', () => {

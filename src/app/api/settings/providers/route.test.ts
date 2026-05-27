@@ -3,7 +3,6 @@
 const mocks = vi.hoisted(() => ({
   requireOwner: vi.fn(),
   listProviderStatuses: vi.fn(),
-  getStripeProviderStatusSnapshot: vi.fn(),
 }))
 
 vi.mock('@/server/auth/require-auth', () => ({
@@ -11,7 +10,6 @@ vi.mock('@/server/auth/require-auth', () => ({
 }))
 
 vi.mock('@/server/services/provider-connection.service', () => ({
-  getStripeProviderStatusSnapshot: mocks.getStripeProviderStatusSnapshot,
   listProviderStatuses: mocks.listProviderStatuses,
 }))
 
@@ -50,26 +48,6 @@ describe('settings providers route', () => {
         credentialMeta: [{ key: 'API_KEY', present: true, maskedValue: 're_1••••yz' }],
       },
     ])
-    mocks.getStripeProviderStatusSnapshot.mockResolvedValue({
-      configured: false,
-      verified: false,
-      mode: null,
-      publishableKeyMasked: null,
-      secretKeyMasked: null,
-      webhookSecretMasked: null,
-      hasPublishableKey: false,
-      hasSecretKey: false,
-      hasWebhookSecret: false,
-      webhookConfigured: false,
-      accountId: null,
-      chargesEnabled: null,
-      payoutsEnabled: null,
-      lastVerifiedAt: null,
-      lastError: null,
-      source: 'none',
-      runtimeSource: 'none',
-    })
-
     const response = await GET(new Request('http://localhost/api/settings/providers'))
     expect(response.status).toBe(200)
     const payload = await response.json()

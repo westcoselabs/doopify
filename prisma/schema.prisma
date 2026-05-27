@@ -1141,6 +1141,19 @@ model JobRunnerHeartbeat {
   @@map("job_runner_heartbeats")
 }
 
+model LaunchReadinessSnapshot {
+  id         String   @id @default(cuid())
+  scope      String   @unique @default("default")
+  payload    Json
+  checkedAt  DateTime
+  runByUserId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([checkedAt])
+  @@map("launch_readiness_snapshots")
+}
+
 model AnalyticsEvent {
   id         String   @id @default(cuid())
   event      String

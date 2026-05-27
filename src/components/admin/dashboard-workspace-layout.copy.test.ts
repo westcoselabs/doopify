@@ -43,5 +43,24 @@ describe('AdminDashboardWorkspace layout and empty-state contract', () => {
     expect(css).toContain('.sideRail')
     expect(css).toContain('align-items: start;')
   })
+
+  it('does not render or fetch the merchant-facing launch checklist card', () => {
+    const sourcePath = path.resolve(process.cwd(), 'src/components/admin/AdminDashboardWorkspace.js')
+    const source = fs.readFileSync(sourcePath, 'utf8')
+
+    expect(source).not.toContain('/api/readiness')
+    expect(source).not.toContain('buildDashboardLaunchChecklistCard')
+    expect(source).not.toContain('View launch checklist')
+    expect(source).not.toContain('Launch checklist')
+  })
+
+  it('loads setup wizard data lazily only when dashboard setup guidance is needed', () => {
+    const sourcePath = path.resolve(process.cwd(), 'src/components/admin/AdminDashboardWorkspace.js')
+    const source = fs.readFileSync(sourcePath, 'utf8')
+
+    expect(source).toContain('shouldLoadSetupWizard')
+    expect(source).toContain('setTimeout(loadSetupWizard, 250)')
+    expect(source).toContain('/api/setup/wizard')
+  })
 })
 

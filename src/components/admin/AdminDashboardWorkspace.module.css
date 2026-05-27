@@ -57,6 +57,69 @@
   gap: 0.62rem;
 }
 
+.launchChecklistCard {
+  gap: 0.56rem;
+}
+
+.launchChecklistCopy {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.launchChecklistCopy p {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--on-surface-variant);
+}
+
+.launchChecklistCopy span {
+  color: var(--on-surface);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.launchChecklistItems {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.launchChecklistItem {
+  border: 1px solid var(--glass-border);
+  border-radius: 0.64rem;
+  background: color-mix(in srgb, var(--surface-container-low) 78%, transparent);
+  padding: 0.5rem 0.56rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.launchChecklistItemHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.42rem;
+}
+
+.launchChecklistItemHead strong {
+  color: var(--on-surface);
+  font-size: 0.78rem;
+}
+
+.launchChecklistItem small {
+  color: var(--on-surface-variant);
+  font-size: 0.72rem;
+}
+
+.launchChecklistActions {
+  border-top: 1px solid var(--glass-border);
+  padding-top: 0.45rem;
+  margin-top: 0.05rem;
+}
+
+.launchChecklistActions a {
+  font-size: 0.76rem;
+  color: var(--primary);
+}
+
 .sideRail {
   display: grid;
   gap: 0.78rem;

@@ -22,8 +22,25 @@ function allMissingFacts(): SetupWizardFacts {
     shippingCanUseLiveRates: false,
     emailProviderSource: 'none',
     activeProductCount: 0,
+    activePurchasableProductCount: 0,
     activeProductsWithValidPrice: 0,
+    activePurchasableProductsWithValidPrice: 0,
+    activeProductsMissingValidPrice: 0,
     activeProductsWithInventory: 0,
+    activeProductsSellableOnBackorder: 0,
+    activeProductsInventoryReady: 0,
+    activeProductsWithoutSellableInventory: 0,
+    activeComingSoonProductCount: 0,
+    activePresaleProductCount: 0,
+    activePresaleNotSellableProductCount: 0,
+    activePhysicalProductsMissingWeight: 0,
+    samples: {
+      missingPrice: [],
+      missingWeight: [],
+      unsellableInventory: [],
+      comingSoon: [],
+      presaleNotSellable: [],
+    },
     recentPaidOrderExists: false,
   }
 }
@@ -45,8 +62,25 @@ function allReadyFacts(): SetupWizardFacts {
     shippingCanUseLiveRates: false,
     emailProviderSource: 'db',
     activeProductCount: 2,
+    activePurchasableProductCount: 2,
     activeProductsWithValidPrice: 2,
+    activePurchasableProductsWithValidPrice: 2,
+    activeProductsMissingValidPrice: 0,
     activeProductsWithInventory: 2,
+    activeProductsSellableOnBackorder: 0,
+    activeProductsInventoryReady: 2,
+    activeProductsWithoutSellableInventory: 0,
+    activeComingSoonProductCount: 0,
+    activePresaleProductCount: 0,
+    activePresaleNotSellableProductCount: 0,
+    activePhysicalProductsMissingWeight: 0,
+    samples: {
+      missingPrice: [],
+      missingWeight: [],
+      unsellableInventory: [],
+      comingSoon: [],
+      presaleNotSellable: [],
+    },
     recentPaidOrderExists: true,
   }
 }
@@ -168,10 +202,56 @@ describe('buildSetupWizardSteps', () => {
     expect(byId.get('test-checkout')?.status).toBe('needs_setup')
   })
 
+  it('does not mark product step ready when only coming-soon products exist', () => {
+    const facts = allReadyFacts()
+    facts.activePurchasableProductCount = 0
+    facts.activeProductsInventoryReady = 0
+    facts.activeComingSoonProductCount = 2
+
+    const report = buildSetupWizardSteps(facts)
+    const product = report.steps.find((s) => s.id === 'product')
+
+    expect(product?.status).toBe('needs_setup')
+    expect(product?.reason).toContain('coming soon')
+    expect(product?.ctaRoute).toBe('/products?readiness=coming_soon')
+  })
+
+  it('keeps product step ready when inventory is backorder-only', () => {
+    const facts = allReadyFacts()
+    facts.activeProductsWithInventory = 0
+    facts.activeProductsSellableOnBackorder = 2
+    facts.activeProductsInventoryReady = 2
+
+    const report = buildSetupWizardSteps(facts)
+    const product = report.steps.find((s) => s.id === 'product')
+
+    expect(product?.status).toBe('ready')
+    expect(product?.reason).toContain('backorder-enabled')
+  })
+
+  it('includes missing physical weight warning text without hard failing the product step', () => {
+    const facts = allReadyFacts()
+    facts.activePhysicalProductsMissingWeight = 1
+
+    const report = buildSetupWizardSteps(facts)
+    const product = report.steps.find((s) => s.id === 'product')
+
+    expect(product?.status).toBe('ready')
+    expect(product?.reason).toContain('missing valid variant weight')
+  })
+
   it('has docs links for all steps', () => {
     const report = buildSetupWizardSteps(allMissingFacts())
     report.steps.forEach((step) => {
       expect(step.docsLink).toMatch(/^\/docs\//)
     })
+  })
+
+  it('links test-checkout and pilot-readiness docs to merchant launch guide', () => {
+    const report = buildSetupWizardSteps(allMissingFacts())
+    const byId = new Map(report.steps.map((step) => [step.id, step]))
+
+    expect(byId.get('test-checkout')?.docsLink).toBe('/docs/operations/merchant-launch-guide')
+    expect(byId.get('pilot-readiness')?.docsLink).toBe('/docs/operations/merchant-launch-guide')
   })
 })

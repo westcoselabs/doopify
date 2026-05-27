@@ -18,13 +18,14 @@ function getStateCopy(state: SavedState, savedAgoText: string, errorCopy: string
   if (state === 'dirty') return 'Unsaved changes';
   if (state === 'saved_just_now') return 'Saved just now';
   if (state === 'error') return errorCopy || 'Save failed';
+  if (state === 'saved' || state === 'idle') return 'Saved';
   return savedAgoText ? `Saved ${savedAgoText}` : 'Saved';
 }
 
 export default function AdminSavedState({
   className = '',
   errorCopy = '',
-  savedAgoText = '2s ago',
+  savedAgoText = '',
   state = 'idle',
 }: AdminSavedStateProps) {
   const copy = getStateCopy(state, savedAgoText, errorCopy);

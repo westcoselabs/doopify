@@ -183,4 +183,12 @@ describe('shipping settings UX copy and validation', () => {
     expect(source).toContain('setModeSaveState("saved_just_now")')
     expect(source).toContain('setModeSaveState("error")')
   })
+
+  it('keeps saved provider status neutral while setup status is loading', () => {
+    const source = read(WORKSPACE)
+    expect(source).toContain('const setupStatusPending = setupStatusLoading && !setupStatus;')
+    expect(source).toContain('label: "Loading saved status..."')
+    expect(source).toContain('setupStatusPending ? "Loading"')
+    expect(source).toContain('setupStatusPending ? "neutral"')
+  })
 })

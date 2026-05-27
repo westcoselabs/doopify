@@ -53,6 +53,8 @@ export default function AdminDashboardWorkspace() {
   const { settings } = useSettings();
   const [sessionUser, setSessionUser] = useState(null);
   const [setupWizard, setSetupWizard] = useState(null);
+  const [setupWizardLoaded, setSetupWizardLoaded] = useState(false);
+  const [setupWizardLoading, setSetupWizardLoading] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -69,28 +71,6 @@ export default function AdminDashboardWorkspace() {
     }
 
     loadSession();
-
-    return () => {
-      ignore = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    let ignore = false;
-
-    async function loadSetupWizard() {
-      try {
-        const response = await fetch('/api/setup/wizard', { cache: 'no-store' });
-        if (!response.ok) return;
-
-        const payload = await response.json().catch(() => null);
-        if (!ignore && payload?.success) {
-          setSetupWizard(payload.data || null);
-        }
-      } catch {}
-    }
-
-    loadSetupWizard();
 
     return () => {
       ignore = true;
@@ -147,6 +127,44 @@ export default function AdminDashboardWorkspace() {
   const recentActivity = overview.activity;
   const loading = ordersLoading || productsLoading || customersLoading;
   const firstRunGuide = useMemo(() => buildDashboardFirstRunGuide(setupWizard), [setupWizard]);
+  const shouldLoadSetupWizard =
+    sessionUser?.role === 'OWNER' &&
+    !setupWizardLoaded &&
+    !setupWizardLoading;
+
+  useEffect(() => {
+    if (!shouldLoadSetupWizard) return;
+
+    let ignore = false;
+    let handle = null;
+
+    async function loadSetupWizard() {
+      setSetupWizardLoading(true);
+      try {
+        const response = await fetch('/api/setup/wizard', { cache: 'no-store' });
+        if (!response.ok) return;
+
+        const payload = await response.json().catch(() => null);
+        if (!ignore && payload?.success) {
+          setSetupWizard(payload.data || null);
+        }
+      } catch {
+      } finally {
+        if (!ignore) {
+          setSetupWizardLoading(false);
+          setSetupWizardLoaded(true);
+        }
+      }
+    }
+
+    // Delay non-critical setup wizard fetch so readiness/main dashboard content can render first.
+    handle = setTimeout(loadSetupWizard, 250);
+
+    return () => {
+      ignore = true;
+      if (handle) clearTimeout(handle);
+    };
+  }, [shouldLoadSetupWizard]);
 
   const userName =
     [sessionUser?.firstName, sessionUser?.lastName].filter(Boolean).join(' ') ||

@@ -46,6 +46,17 @@ describe('shipping header save button helper', () => {
     expect(state.label).toBe('Save changes')
   })
 
+  it('shows a disabled Saved state when there are no unsaved shipping changes', () => {
+    const state = getShippingHeaderSaveButtonState({
+      hasSaveAction: true,
+      shippingModeSavedState: 'saved',
+      shippingModeDirty: false,
+    })
+
+    expect(state.disabled).toBe(true)
+    expect(state.label).toBe('Saved')
+  })
+
   it('keeps Save changes enabled for shipping mode edits when the save action is ready', () => {
     const state = getShippingHeaderSaveButtonState({
       hasSaveAction: true,

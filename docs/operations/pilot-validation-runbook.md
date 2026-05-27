@@ -14,6 +14,8 @@
 - Real Stripe webhooks are registered and reachable via HTTPS.
 - All validation steps use real data flows — no mocks.
 
+Optional pre-check: run `npm run test:e2e` locally for a safe smoke baseline before manual pilot validation (install browsers first with `npm run test:e2e:install` or `npx playwright install`).
+
 ---
 
 ## 1. Required Environment Checklist

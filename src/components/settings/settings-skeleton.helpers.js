@@ -14,8 +14,6 @@ export function isSettingsTabLoadingState({
   emailActivityLoaded = false,
   setupLoading = false,
   setupLoaded = false,
-  readinessLoading = false,
-  readinessLoaded = false,
   deploymentLoading = false,
   deploymentLoaded = false,
   wizardLoading = false,
@@ -26,12 +24,8 @@ export function isSettingsTabLoadingState({
   if (loading) return true;
 
   if (activeSection === "setup") {
-    return (
-      (setupLoading && !setupLoaded) ||
-      (readinessLoading && !readinessLoaded) ||
-      (deploymentLoading && !deploymentLoaded) ||
-      (wizardLoading && !wizardLoaded)
-    );
+    // Setup diagnostics sections load independently inside the setup tab.
+    return false;
   }
 
   if (activeSection === "account") {
