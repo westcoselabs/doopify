@@ -9,6 +9,9 @@ export type SecurityHeaderOptions = {
   cspMode?: CspMode
   mediaOrigins?: string[]
   analyticsOrigins?: string[]
+  cspReportUri?: string | null
+  cspReportTo?: string | null
+  cspReportToGroup?: string | null
 }
 
 const DEFAULT_MEDIA_ORIGINS = ['https:']
@@ -83,8 +86,53 @@ function resolveCspMode(environment: RuntimeEnvironment, explicitMode?: CspMode)
   return 'report-only'
 }
 
+function resolveCspReportUri(explicitValue?: string | null) {
+  const candidate = explicitValue ?? process.env.CSP_REPORT_URI ?? '/api/csp-report'
+  if (typeof candidate !== 'string') return null
+
+  const normalized = candidate.trim()
+  if (!normalized) return null
+
+  if (normalized.startsWith('/')) return normalized
+
+  try {
+    return new URL(normalized).toString()
+  } catch {
+    return null
+  }
+}
+
+function resolveCspReportToEndpoint(explicitValue?: string | null) {
+  const candidate = explicitValue ?? process.env.CSP_REPORT_TO
+  if (typeof candidate !== 'string') return null
+
+  const normalized = candidate.trim()
+  if (!normalized) return null
+
+  try {
+    const url = new URL(normalized)
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null
+    return url.toString()
+  } catch {
+    return null
+  }
+}
+
+function resolveCspReportToGroup(explicitValue?: string | null) {
+  const candidate = explicitValue ?? process.env.CSP_REPORT_TO_GROUP ?? 'csp-endpoint'
+  if (typeof candidate !== 'string') return null
+
+  const normalized = candidate.trim()
+  if (!normalized) return null
+
+  if (!/^[a-zA-Z0-9._-]+$/.test(normalized)) return null
+  return normalized
+}
+
 function buildCsp(options: Required<Pick<SecurityHeaderOptions, 'mediaOrigins' | 'analyticsOrigins'>> & {
   environment: RuntimeEnvironment
+  cspReportUri: string | null
+  cspReportToGroup: string | null
 }) {
   const scriptSources = unique([
     "'self'",
@@ -102,7 +150,7 @@ function buildCsp(options: Required<Pick<SecurityHeaderOptions, 'mediaOrigins' |
   ])
   const frameSources = unique(STRIPE_FRAME_ORIGINS)
 
-  return [
+  const directives = [
     "default-src 'self'",
     "base-uri 'self'",
     "object-src 'none'",
@@ -119,7 +167,17 @@ function buildCsp(options: Required<Pick<SecurityHeaderOptions, 'mediaOrigins' |
     "worker-src 'self' blob:",
     "manifest-src 'self'",
     ...(options.environment === 'production' ? ['upgrade-insecure-requests'] : []),
-  ].join('; ')
+  ]
+
+  if (options.cspReportUri) {
+    directives.push(`report-uri ${options.cspReportUri}`)
+  }
+
+  if (options.cspReportToGroup) {
+    directives.push(`report-to ${options.cspReportToGroup}`)
+  }
+
+  return directives.join('; ')
 }
 
 export function buildSecurityHeaders(options: SecurityHeaderOptions = {}) {
@@ -145,15 +203,33 @@ export function buildSecurityHeaders(options: SecurityHeaderOptions = {}) {
   }
 
   if (cspMode !== 'off') {
+    const cspReportUri = resolveCspReportUri(options.cspReportUri)
+    const cspReportTo = resolveCspReportToEndpoint(options.cspReportTo)
+    const cspReportToGroup = cspReportTo ? resolveCspReportToGroup(options.cspReportToGroup) : null
+
     const csp = buildCsp({
       environment,
       mediaOrigins: resolveMediaOrigins(options.mediaOrigins),
       analyticsOrigins: options.analyticsOrigins ?? parseOrigins(process.env.CSP_ANALYTICS_ORIGINS),
+      cspReportUri,
+      cspReportToGroup,
     })
     headers.set(
       cspMode === 'enforce' ? 'Content-Security-Policy' : 'Content-Security-Policy-Report-Only',
       csp
     )
+
+    if (cspReportTo && cspReportToGroup) {
+      headers.set(
+        'Report-To',
+        JSON.stringify({
+          group: cspReportToGroup,
+          max_age: 10886400,
+          endpoints: [{ url: cspReportTo }],
+        })
+      )
+      headers.set('Reporting-Endpoints', `${cspReportToGroup}="${cspReportTo}"`)
+    }
   }
 
   return headers

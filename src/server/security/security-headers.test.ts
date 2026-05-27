@@ -35,6 +35,7 @@ describe('security headers', () => {
     expect(headers.get('Content-Security-Policy')).toBeNull()
     expect(headers.get('Content-Security-Policy-Report-Only')).toContain("default-src 'self'")
     expect(headers.get('Content-Security-Policy-Report-Only')).toContain("frame-ancestors 'none'")
+    expect(headers.get('Content-Security-Policy-Report-Only')).toContain('report-uri /api/csp-report')
   })
 
   it('uses report-only CSP by default in non-production environments too', () => {
@@ -107,5 +108,30 @@ describe('security headers', () => {
     const headers = buildSecurityHeaders({ environment: 'production' })
 
     expect(Array.from(headers.entries())).toEqual([])
+  })
+
+  it('adds report-to headers and CSP directive when configured', () => {
+    const headers = buildSecurityHeaders({
+      environment: 'production',
+      cspReportTo: 'https://reports.example.com/csp',
+      cspReportToGroup: 'doopify-csp',
+    })
+
+    expect(headers.get('Content-Security-Policy-Report-Only')).toContain('report-to doopify-csp')
+    expect(headers.get('Report-To')).toContain('"group":"doopify-csp"')
+    expect(headers.get('Report-To')).toContain('https://reports.example.com/csp')
+    expect(headers.get('Reporting-Endpoints')).toBe('doopify-csp="https://reports.example.com/csp"')
+  })
+
+  it('ignores invalid report-to endpoint values', () => {
+    const headers = buildSecurityHeaders({
+      environment: 'production',
+      cspReportTo: 'not-a-valid-url',
+      cspReportToGroup: 'doopify-csp',
+    })
+
+    expect(headers.get('Content-Security-Policy-Report-Only')).not.toContain('report-to doopify-csp')
+    expect(headers.get('Report-To')).toBeNull()
+    expect(headers.get('Reporting-Endpoints')).toBeNull()
   })
 })
