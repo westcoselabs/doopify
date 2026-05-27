@@ -285,7 +285,59 @@ export default function WebhookDeliveriesWorkspace() {
     ]
   );
 
-  async function handleReplay(delivery) {
+  const loadDiagnostics = useCallback(async (deliveryId, showLoading = true) => {
+    if (!deliveryId) return;
+
+    if (showLoading) {
+      setInspectingId(deliveryId);
+      setDiagnostics(null);
+    }
+
+    try {
+      const response = await fetch(`/api/webhook-deliveries/${deliveryId}`, { cache: 'no-store' });
+      const json = await response.json();
+      if (!json.success) {
+        setNotice(json.error || 'Webhook diagnostics could not be loaded.');
+        return;
+      }
+
+      setDiagnostics(json.data);
+      setNotice('');
+    } catch (error) {
+      console.error('[WebhookDeliveriesWorkspace] diagnostics failed', error);
+      setNotice('Webhook diagnostics could not be loaded.');
+    } finally {
+      if (showLoading) setInspectingId(null);
+    }
+  }, []);
+
+  const loadEmailDiagnostics = useCallback(async (deliveryId, showLoading = true) => {
+    if (!deliveryId) return;
+
+    if (showLoading) {
+      setEmailInspectingId(deliveryId);
+      setEmailDiagnostics(null);
+    }
+
+    try {
+      const response = await fetch(`/api/email-deliveries/${deliveryId}`, { cache: 'no-store' });
+      const json = await response.json();
+      if (!json.success) {
+        setNotice(json.error || 'Email delivery details could not be loaded.');
+        return;
+      }
+
+      setEmailDiagnostics(json.data);
+      setNotice('');
+    } catch (error) {
+      console.error('[WebhookDeliveriesWorkspace] email diagnostics failed', error);
+      setNotice('Email delivery details could not be loaded.');
+    } finally {
+      if (showLoading) setEmailInspectingId(null);
+    }
+  }, []);
+
+  const handleReplay = useCallback(async (delivery) => {
     if (!delivery?.id) return;
 
     const disabledReason = getReplayDisabledReason(delivery);
@@ -315,9 +367,9 @@ export default function WebhookDeliveriesWorkspace() {
     } finally {
       setReplayingId(null);
     }
-  }
+  }, [loadDeliveries, loadDiagnostics, pagination.page]);
 
-  async function handleRetryOutbound(delivery) {
+  const handleRetryOutbound = useCallback(async (delivery) => {
     if (!delivery?.id) return;
     setRetryingOutboundId(delivery.id);
     setNotice('');
@@ -338,9 +390,9 @@ export default function WebhookDeliveriesWorkspace() {
     } finally {
       setRetryingOutboundId(null);
     }
-  }
+  }, [loadOutboundDeliveries, outboundPagination.page]);
 
-  async function handleResendEmail(delivery) {
+  const handleResendEmail = useCallback(async (delivery) => {
     if (!delivery?.id) return;
     setResendingEmailId(delivery.id);
     setNotice('');
@@ -363,59 +415,7 @@ export default function WebhookDeliveriesWorkspace() {
     } finally {
       setResendingEmailId(null);
     }
-  }
-
-  async function loadDiagnostics(deliveryId, showLoading = true) {
-    if (!deliveryId) return;
-
-    if (showLoading) {
-      setInspectingId(deliveryId);
-      setDiagnostics(null);
-    }
-
-    try {
-      const response = await fetch(`/api/webhook-deliveries/${deliveryId}`, { cache: 'no-store' });
-      const json = await response.json();
-      if (!json.success) {
-        setNotice(json.error || 'Webhook diagnostics could not be loaded.');
-        return;
-      }
-
-      setDiagnostics(json.data);
-      setNotice('');
-    } catch (error) {
-      console.error('[WebhookDeliveriesWorkspace] diagnostics failed', error);
-      setNotice('Webhook diagnostics could not be loaded.');
-    } finally {
-      if (showLoading) setInspectingId(null);
-    }
-  }
-
-  async function loadEmailDiagnostics(deliveryId, showLoading = true) {
-    if (!deliveryId) return;
-
-    if (showLoading) {
-      setEmailInspectingId(deliveryId);
-      setEmailDiagnostics(null);
-    }
-
-    try {
-      const response = await fetch(`/api/email-deliveries/${deliveryId}`, { cache: 'no-store' });
-      const json = await response.json();
-      if (!json.success) {
-        setNotice(json.error || 'Email delivery details could not be loaded.');
-        return;
-      }
-
-      setEmailDiagnostics(json.data);
-      setNotice('');
-    } catch (error) {
-      console.error('[WebhookDeliveriesWorkspace] email diagnostics failed', error);
-      setNotice('Email delivery details could not be loaded.');
-    } finally {
-      if (showLoading) setEmailInspectingId(null);
-    }
-  }
+  }, [emailPagination.page, loadEmailDeliveries, loadEmailDiagnostics]);
 
   const isInbound = mode === 'inbound';
   const isOutbound = mode === 'outbound';
@@ -650,9 +650,14 @@ export default function WebhookDeliveriesWorkspace() {
     ];
   }, [
     emailInspectingId,
+    handleReplay,
+    handleResendEmail,
+    handleRetryOutbound,
     inspectingId,
     isEmail,
     isOutbound,
+    loadDiagnostics,
+    loadEmailDiagnostics,
     replayingId,
     resendingEmailId,
     retryingOutboundId,
