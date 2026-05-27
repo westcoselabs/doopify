@@ -1696,6 +1696,30 @@
 }
 
 @media (max-width: 640px) {
+  .page {
+    gap: 0.7rem;
+    padding: 0.68rem;
+  }
+
+  .pageWrap {
+    gap: 0.82rem;
+    padding: 0.78rem;
+  }
+
+  .configStack {
+    gap: 0.82rem;
+    padding: 0.82rem;
+  }
+
+  .configSection {
+    gap: 0.75rem;
+    padding: 0.78rem;
+  }
+
+  .statusBlock {
+    padding: 0.78rem 0.82rem;
+  }
+
   .sectionList {
     grid-template-columns: 1fr;
   }

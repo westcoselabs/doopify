@@ -14,7 +14,9 @@ export default function SettingsWorkspaceNav({
       <div className={styles.navHeader}>
         <p className={styles.eyebrow}>Settings</p>
         <h2 className={styles.title}>Store settings</h2>
-        <p className={styles.navDescription}>Choose a section to configure operations before merchant launch.</p>
+        <p className={styles.navDescription}>
+          Complete setup in this order for pilot launch: General, Payments, Shipping, then Setup diagnostics.
+        </p>
       </div>
       <div className={styles.sectionList}>
         {sections.map((section) => (

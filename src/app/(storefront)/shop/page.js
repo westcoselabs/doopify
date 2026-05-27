@@ -39,6 +39,7 @@ export default function ShopPage() {
       (p.description || '').toLowerCase().includes(q)
     );
   }, [products, search]);
+  const hasSearchQuery = Boolean(search.trim());
 
   const handleAddToCart = (e, product) => {
     e.preventDefault();
@@ -74,6 +75,7 @@ export default function ShopPage() {
         .shop-header { padding:64px 48px 48px;border-bottom:1px solid rgba(255,255,255,0.08); }
         .page-eyebrow { font-size:11px;letter-spacing:0.3em;text-transform:uppercase;color:#4a4540;margin-bottom:12px; }
         .page-title { font-family:var(--font-headline),sans-serif;font-size:52px;font-weight:700;letter-spacing:-0.05em;color:#f2ede4; }
+        .page-subtitle { margin-top:14px;font-size:14px;line-height:1.65;color:rgba(255,255,255,0.54);max-width:620px; }
         .collection-rail { display:flex;gap:10px;overflow-x:auto;padding:0 48px 24px;border-bottom:1px solid rgba(255,255,255,0.08);scrollbar-width:none; }
         .collection-rail::-webkit-scrollbar { display:none; }
         .collection-chip { flex-shrink:0;border-radius:999px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.04);color:#f2ede4;text-decoration:none;padding:10px 16px;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;transition:border-color 0.2s,transform 0.2s; }
@@ -85,6 +87,8 @@ export default function ShopPage() {
         .search-input:focus { border-color:rgba(255,255,255,0.2);background:linear-gradient(180deg,rgba(255,255,255,0.1),rgba(255,255,255,0.04)),rgba(255,255,255,0.05); }
         .search-icon { position:absolute;left:16px;top:50%;transform:translateY(-50%);color:rgba(255,255,255,0.36);font-size:14px; }
         .result-count { font-size:12px;color:rgba(255,255,255,0.4);letter-spacing:0.05em; }
+        .loading-count { color:rgba(255,255,255,0.62); }
+        .loading-toolbar-note { padding:12px 48px;border-bottom:1px solid rgba(255,255,255,0.08);font-size:12px;letter-spacing:0.04em;color:rgba(255,255,255,0.54); }
         .shop-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:24px;padding:32px 48px 80px; }
         .p-card { display:block;text-decoration:none;color:inherit;position:relative;padding:12px;border-radius:24px;border:1px solid rgba(255,255,255,0.1);background:linear-gradient(180deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03)),rgba(255,255,255,0.04);backdrop-filter:blur(24px) saturate(125%);-webkit-backdrop-filter:blur(24px) saturate(125%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.08),0 28px 56px rgba(0,0,0,0.22);overflow:hidden;transition:transform 0.3s ease,border-color 0.3s ease,box-shadow 0.3s ease; }
         .p-card:hover .p-img-inner { transform:scale(1.03); }
@@ -109,20 +113,39 @@ export default function ShopPage() {
         .empty-state { padding:120px 48px;text-align:center; }
         .empty-icon { font-family:var(--font-headline),sans-serif;font-size:80px;font-weight:700;color:rgba(255,255,255,0.16);margin-bottom:24px; }
         .empty-msg { font-size:14px;color:rgba(255,255,255,0.4);letter-spacing:0.05em; }
+        .empty-help { margin:12px auto 0;max-width:420px;font-size:13px;line-height:1.6;color:rgba(255,255,255,0.56); }
+        .empty-actions { margin-top:20px;display:flex;justify-content:center;gap:10px;flex-wrap:wrap; }
+        .empty-action { min-height:42px;padding:0 16px;border-radius:999px;border:1px solid rgba(255,255,255,0.16);background:rgba(255,255,255,0.05);color:#f2ede4;text-decoration:none;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;display:inline-flex;align-items:center;justify-content:center;cursor:pointer; }
+        .empty-action:hover { border-color:rgba(255,255,255,0.24); }
         .skeleton-grid { display:grid;grid-template-columns:repeat(4,1fr);gap:24px;padding:32px 48px 80px; }
         .skeleton-card { padding:12px;border-radius:24px;border:1px solid rgba(255,255,255,0.08);background:linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02)),rgba(255,255,255,0.03);overflow:hidden; }
         .skeleton-img { aspect-ratio:1;border-radius:18px;background:rgba(255,255,255,0.05);animation:shimmer 1.5s infinite; }
         .skeleton-body { padding:20px; }
         .skeleton-line { height:10px;background:rgba(255,255,255,0.06);border-radius:999px;margin-bottom:10px;animation:shimmer 1.5s infinite; }
         .skeleton-line.short { width:40%; }
+        .skeleton-copy { padding:18px 48px 0;color:rgba(255,255,255,0.62);display:flex;flex-direction:column;gap:6px; }
+        .skeleton-copy strong { font-size:13px;letter-spacing:0.06em;text-transform:uppercase;color:rgba(255,255,255,0.74); }
+        .skeleton-copy span { font-size:12px;letter-spacing:0.03em; }
         @keyframes shimmer { 0%,100%{opacity:1}50%{opacity:0.4} }
         @media (max-width:1100px) { .shop-grid,.skeleton-grid { grid-template-columns:repeat(3,1fr); } }
         @media (max-width:768px) {
-          .shop-nav,.shop-header,.shop-toolbar { padding-left:24px;padding-right:24px; }
+          .shop-nav,.shop-header,.shop-toolbar,.loading-toolbar-note,.skeleton-copy { padding-left:24px;padding-right:24px; }
           .shop-grid,.skeleton-grid { grid-template-columns:repeat(2,1fr); }
-          .search-input { width:200px; }
+          .search-input { width:220px; }
+          .nav-right { gap:18px; }
         }
-        @media (max-width:480px) { .shop-grid,.skeleton-grid { grid-template-columns:1fr; } }
+        @media (max-width:480px) {
+          .shop-grid,.skeleton-grid { grid-template-columns:1fr; }
+          .shop-nav { padding:18px 16px; }
+          .shop-header { padding:40px 16px 28px; }
+          .shop-toolbar { padding:14px 16px; flex-direction:column; align-items:stretch; gap:10px; }
+          .search-input { width:100%; }
+          .result-count { font-size:11px; }
+          .collection-rail { padding:0 16px 16px; }
+          .shop-grid,.skeleton-grid,.empty-state { padding-left:16px; padding-right:16px; }
+          .page-title { font-size:40px; }
+          .page-subtitle { font-size:13px; }
+        }
       `}</style>
 
       <CartDrawer />
@@ -143,6 +166,7 @@ export default function ShopPage() {
         <header className="shop-header">
           <p className="page-eyebrow">All products</p>
           <h1 className="page-title">Shop Everything</h1>
+          <p className="page-subtitle">Browse the full catalog, then add items to your bag when you are ready to check out.</p>
         </header>
 
         {collections.length ? (
@@ -159,6 +183,7 @@ export default function ShopPage() {
           <div className="search-wrap">
             <span className="search-icon">⌕</span>
             <input
+              aria-label="Search products"
               className="search-input"
               onChange={e => setSearch(e.target.value)}
               placeholder="Search products..."
@@ -167,27 +192,51 @@ export default function ShopPage() {
             />
           </div>
           <span className="result-count">
-            {loading ? '—' : `${visible.length} product${visible.length !== 1 ? 's' : ''}`}
+            {loading ? <span className="loading-count">Loading products...</span> : `${visible.length} product${visible.length !== 1 ? 's' : ''}`}
           </span>
         </div>
+        {loading ? (
+          <div aria-live="polite" className="loading-toolbar-note" role="status">
+            Syncing live catalog inventory and prices.
+          </div>
+        ) : null}
 
         {loading ? (
-          <div className="skeleton-grid">
-            {Array.from({ length: 8 }).map((_, i) => (
-              <div className="skeleton-card" key={i}>
-                <div className="skeleton-img" />
-                <div className="skeleton-body">
-                  <div className="skeleton-line short" />
-                  <div className="skeleton-line" />
-                  <div className="skeleton-line short" />
+          <>
+            <div className="skeleton-copy">
+              <strong>Loading catalog</strong>
+              <span>Products will appear here as soon as availability checks finish.</span>
+            </div>
+            <div className="skeleton-grid">
+              {Array.from({ length: 8 }).map((_, i) => (
+                <div className="skeleton-card" key={i}>
+                  <div className="skeleton-img" />
+                  <div className="skeleton-body">
+                    <div className="skeleton-line short" />
+                    <div className="skeleton-line" />
+                    <div className="skeleton-line short" />
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          </>
         ) : visible.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">✦</div>
             <p className="empty-msg">No products found</p>
+            <p className="empty-help">
+              {hasSearchQuery
+                ? 'Try a different search term or browse all collections.'
+                : 'We are updating the catalog. Check collections for featured products while we restock.'}
+            </p>
+            <div className="empty-actions">
+              {hasSearchQuery ? (
+                <button className="empty-action" onClick={() => setSearch('')} type="button">
+                  Clear search
+                </button>
+              ) : null}
+              <Link className="empty-action" href="/collections">Browse collections</Link>
+            </div>
           </div>
         ) : (
           <div className="shop-grid">
@@ -239,4 +288,5 @@ export default function ShopPage() {
     </>
   );
 }
+
 
