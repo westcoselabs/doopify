@@ -179,7 +179,6 @@ export default function AdminSelect({
             >
               {options.map((option, index) => (
                 <button
-                  aria-selected={option.value === value}
                   className={buildClassName([
                     'admin-select__option',
                     option.value === value ? 'is-selected' : '',
