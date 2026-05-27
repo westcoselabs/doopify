@@ -6,27 +6,19 @@ const mocks = vi.hoisted(() => ({
   storeCount: vi.fn(),
   userCount: vi.fn(),
   findStore: vi.fn(),
-  disconnect: vi.fn(),
   existsSync: vi.fn(),
 }))
 
-vi.mock('@prisma/adapter-pg', () => ({
-  PrismaPg: class PrismaPg {},
-}))
-
-vi.mock('@prisma/client', () => ({
-  PrismaClient: class PrismaClient {
-    store = {
+vi.mock('@/lib/prisma', () => ({
+  prisma: {
+    $queryRawUnsafe: mocks.queryRaw,
+    store: {
       count: mocks.storeCount,
       findFirst: mocks.findStore,
-    }
-
-    user = {
+    },
+    user: {
       count: mocks.userCount,
-    }
-
-    $queryRawUnsafe = mocks.queryRaw
-    $disconnect = mocks.disconnect
+    },
   },
 }))
 
@@ -58,7 +50,6 @@ describe('GET /api/setup/status', () => {
       name: 'Doopify Store',
       email: 'owner@example.com',
     })
-    mocks.disconnect.mockResolvedValue(undefined)
     mocks.existsSync.mockReturnValue(true)
 
     process.env.DATABASE_URL = 'postgresql://db_user:super-secret-password@localhost:5432/doopify'

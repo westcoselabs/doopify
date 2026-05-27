@@ -96,11 +96,13 @@ export function buildCheckoutMethodStatuses(stripeRuntimeStatus: { source?: stri
 }
 
 type BuildProviderRowsInput = {
-  stripeSetupStatus: { label: string; tone: string }
+  stripeSetupStatus: { label: string; tone: string; lastVerifiedAt?: string | null }
   stripeCheckoutSourceLabel: string
   stripeRuntimeModeLabel: string
   stripeWebhookSourceLabel: string
-  stripeRuntimeReady: boolean
+  stripeVerificationStatus?: string | null
+  stripeSavedStatusLoading?: boolean
+  stripeLastCheckedText?: string | null
   stripeMethodChips: string[]
 }
 
@@ -110,7 +112,9 @@ export function buildPaymentProviderRows(input: BuildProviderRowsInput) {
     stripeCheckoutSourceLabel,
     stripeRuntimeModeLabel,
     stripeWebhookSourceLabel,
-    stripeRuntimeReady,
+    stripeVerificationStatus,
+    stripeSavedStatusLoading,
+    stripeLastCheckedText,
     stripeMethodChips,
   } = input
 
@@ -122,17 +126,17 @@ export function buildPaymentProviderRows(input: BuildProviderRowsInput) {
       name: 'Stripe',
       description:
         'Accept cards and eligible Stripe wallet methods like Apple Pay, Google Pay, Link, and Cash App Pay.',
-      status: {
-        label: stripeSetupStatus.label,
-        tone: stripeSetupStatus.tone,
-      },
-      sourceMeta: `Checkout active source: ${stripeCheckoutSourceLabel}`,
+      status: stripeSavedStatusLoading
+        ? null
+        : {
+            label: stripeSetupStatus.label,
+            tone: stripeSetupStatus.tone,
+          },
+      statusLoading: stripeSavedStatusLoading,
+      sourceMeta: `Checkout source: ${stripeCheckoutSourceLabel}`,
       statusMeta: `Mode: ${stripeRuntimeModeLabel} • Webhook: ${stripeWebhookSourceLabel}`,
+      lastCheckedMeta: stripeLastCheckedText ? `Last checked: ${stripeLastCheckedText}` : null,
       chips: stripeMethodChips,
-      badges: [
-        { label: 'Official', tone: 'neutral' },
-        stripeRuntimeReady ? { label: 'Checkout active', tone: 'success' } : { label: 'Setup needed', tone: 'warning' },
-      ],
     },
     {
       id: 'PAYPAL',
@@ -141,17 +145,14 @@ export function buildPaymentProviderRows(input: BuildProviderRowsInput) {
       name: 'PayPal',
       description: 'Let customers pay with PayPal, Pay Later, and Venmo where eligible.',
       status: {
-        label: 'Setup needed',
+        label: 'Coming soon',
         tone: 'warning',
       },
+      statusLoading: false,
       sourceMeta: 'Runtime support: unavailable',
       statusMeta:
         'Do not enable checkout visibility until payment creation, webhook verification, refund support, and order finalization are shipped.',
       chips: ['PayPal', 'Pay Later', 'Venmo'],
-      badges: [
-        { label: 'Official', tone: 'neutral' },
-        { label: 'Coming soon', tone: 'warning' },
-      ],
     },
     {
       id: 'MANUAL',
@@ -163,10 +164,10 @@ export function buildPaymentProviderRows(input: BuildProviderRowsInput) {
         label: 'Built-in',
         tone: 'neutral',
       },
+      statusLoading: false,
       sourceMeta: 'Checkout runtime: draft orders and invoices',
       statusMeta: 'Storefront manual checkout should remain disabled unless a server-owned manual flow is implemented.',
       chips: ['Cash', 'Bank transfer', 'Invoice'],
-      badges: [{ label: 'Future-ready', tone: 'neutral' }],
     },
   ]
 }
@@ -229,3 +230,4 @@ export function buildPaymentActivityRowsFromOrders(orders: PaymentOrder[]) {
     return rightTime - leftTime
   })
 }
+

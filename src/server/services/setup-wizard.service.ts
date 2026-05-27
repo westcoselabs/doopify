@@ -35,8 +35,25 @@ export type SetupWizardFacts = {
   shippingCanUseLiveRates: boolean
   emailProviderSource: 'db' | 'env' | 'none'
   activeProductCount: number
+  activePurchasableProductCount: number
   activeProductsWithValidPrice: number
+  activePurchasableProductsWithValidPrice: number
+  activeProductsMissingValidPrice: number
   activeProductsWithInventory: number
+  activeProductsSellableOnBackorder: number
+  activeProductsInventoryReady: number
+  activeProductsWithoutSellableInventory: number
+  activeComingSoonProductCount: number
+  activePresaleProductCount: number
+  activePresaleNotSellableProductCount: number
+  activePhysicalProductsMissingWeight: number
+  samples: {
+    missingPrice: Array<{ id: string; title: string }>
+    missingWeight: Array<{ id: string; title: string }>
+    unsellableInventory: Array<{ id: string; title: string }>
+    comingSoon: Array<{ id: string; title: string }>
+    presaleNotSellable: Array<{ id: string; title: string }>
+  }
   recentPaidOrderExists: boolean
 }
 
@@ -192,24 +209,67 @@ export function buildSetupWizardSteps(facts: SetupWizardFacts): SetupWizardRepor
 
   // Step 7 - Product
   const hasActiveProduct = facts.activeProductCount > 0
-  const hasValidPrice = facts.activeProductsWithValidPrice > 0
-  const hasInventory = facts.activeProductsWithInventory > 0
+  const hasSellableProduct = facts.activePurchasableProductCount > 0
+  const hasValidSellablePrice = facts.activePurchasableProductsWithValidPrice > 0
+  const hasSellableInventory = facts.activeProductsInventoryReady > 0
   let productStatus: WizardStepStatus
   let productReason: string
 
   if (!hasActiveProduct) {
     productStatus = 'needs_setup'
     productReason = 'No active products found. Create and publish at least one product.'
-  } else if (!hasValidPrice) {
+  } else if (!hasSellableProduct) {
     productStatus = 'needs_setup'
-    productReason = 'Active products exist but none have a non-zero price set.'
-  } else if (!hasInventory) {
+    productReason =
+      facts.activeComingSoonProductCount > 0
+        ? `Active products exist, but ${facts.activeComingSoonProductCount} are coming soon and not currently purchasable.`
+        : facts.activePresaleNotSellableProductCount > 0
+          ? `Active products exist, but ${facts.activePresaleNotSellableProductCount} presale product(s) are not yet purchasable.`
+          : 'Active products exist, but none are currently purchasable.'
+  } else if (!hasValidSellablePrice) {
     productStatus = 'needs_setup'
-    productReason = 'Active products exist but all variants have zero inventory.'
+    productReason = 'Purchasable products exist but none have a non-zero variant price.'
+  } else if (!hasSellableInventory) {
+    productStatus = 'needs_setup'
+    productReason =
+      'Purchasable products exist, but all variants are at 0 inventory with continue-selling disabled.'
   } else {
     productStatus = 'ready'
-    productReason = `${facts.activeProductCount} active product(s) with valid price and inventory.`
+    const notes: string[] = []
+
+    if (facts.activeProductsSellableOnBackorder > 0) {
+      notes.push(
+        `${facts.activeProductsSellableOnBackorder} product(s) are backorder-enabled (sellable with zero inventory).`
+      )
+    }
+    if (facts.activeProductsMissingValidPrice > 0) {
+      notes.push(
+        `${facts.activeProductsMissingValidPrice} active product(s) still have missing/zero prices.`
+      )
+    }
+    if (facts.activePhysicalProductsMissingWeight > 0) {
+      notes.push(
+        `${facts.activePhysicalProductsMissingWeight} active physical product(s) are missing valid variant weight.`
+      )
+    }
+
+    productReason = `${facts.activeProductsInventoryReady} purchasable product(s) are launch-ready with valid inventory/backorder coverage.${
+      notes.length ? ` ${notes.join(' ')}` : ''
+    }`
   }
+
+  const productCtaRoute =
+    productStatus === 'ready'
+      ? undefined
+      : !hasActiveProduct
+        ? '/products'
+        : !hasSellableProduct
+          ? '/products?readiness=coming_soon'
+          : !hasValidSellablePrice
+            ? '/products?readiness=needs_price'
+            : !hasSellableInventory
+              ? '/products?readiness=needs_inventory'
+              : '/products'
 
   steps.push({
     id: 'product',
@@ -218,7 +278,7 @@ export function buildSetupWizardSteps(facts: SetupWizardFacts): SetupWizardRepor
     isRequired: true,
     status: productStatus,
     reason: productReason,
-    ctaRoute: productStatus !== 'ready' ? '/products' : undefined,
+    ctaRoute: productCtaRoute,
     ctaLabel: productStatus !== 'ready' ? 'Go to products' : undefined,
     docsLink: '/docs/quickstart',
   })
@@ -235,7 +295,7 @@ export function buildSetupWizardSteps(facts: SetupWizardFacts): SetupWizardRepor
       : 'No recent paid order found. Run a test checkout using Stripe card 4242 4242 4242 4242.',
     ctaRoute: facts.recentPaidOrderExists ? '/orders' : undefined,
     ctaLabel: facts.recentPaidOrderExists ? 'View orders' : undefined,
-    docsLink: '/docs/operations/pilot-smoke-checklist',
+    docsLink: '/docs/operations/merchant-launch-guide',
   })
 
   // Step 9 - Pilot readiness (aggregate)
@@ -252,7 +312,7 @@ export function buildSetupWizardSteps(facts: SetupWizardFacts): SetupWizardRepor
     reason: pilotReady
       ? 'All required setup steps are complete. The store is ready for a private beta pilot.'
       : `${failingRequired.length} required step(s) still need setup before the store is ready.`,
-    docsLink: '/docs/operations/pilot-smoke-checklist',
+    docsLink: '/docs/operations/merchant-launch-guide',
   })
 
   const completedCount = steps.filter((s) => s.status === 'ready').length

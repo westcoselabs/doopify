@@ -9,13 +9,16 @@ function read(relativePath: string) {
 describe('settings skeleton integration', () => {
   it('uses shared settings skeleton primitives in workspace', () => {
     const source = read('src/components/settings/SettingsWorkspace.js')
+    const loadStateSource = read('src/components/settings/SettingsWorkspaceLoadState.js')
 
-    expect(source).toContain("import SettingsPageSkeleton")
-    expect(source).toContain("from './SettingsSkeletons'")
+    expect(source).toContain("import SettingsWorkspaceLoadState")
     expect(source).toContain('SettingsProviderRowsSkeleton')
     expect(source).toContain('isSettingsTabLoadingState')
     expect(source).toContain('activeTabLoading')
-    expect(source).toContain('<SettingsPageSkeleton section={activeSection} />')
+    expect(source).toContain('<SettingsWorkspaceLoadState')
+
+    expect(loadStateSource).toContain("import SettingsPageSkeleton from './SettingsSkeletons'")
+    expect(loadStateSource).toContain('<SettingsPageSkeleton section={activeSection} />')
   })
 
   it('keeps header save action disabled while active tab skeleton is visible', () => {
@@ -25,11 +28,12 @@ describe('settings skeleton integration', () => {
 
   it('replaces shipping loading text with a shipping skeleton', () => {
     const source = read('src/components/settings/ShippingSettingsWorkspace.js')
-    expect(source).toContain('function ShippingWorkspaceSkeleton()')
-    expect(source).toContain('<ShippingWorkspaceSkeleton />')
-    expect(source).toContain('data-testid="shipping-settings-skeleton"')
-    expect(source).toContain('SettingsProviderRowsSkeleton rows={3}')
-    expect(source).not.toContain('Loading shipping settings...')
+    const skeleton = read('src/components/settings/ShippingSettingsWorkspaceSkeleton.js')
+    expect(source).toContain("import ShippingSettingsWorkspaceSkeleton")
+    expect(source).toContain('<ShippingSettingsWorkspaceSkeleton />')
+    expect(skeleton).toContain('data-testid="shipping-settings-skeleton"')
+    expect(skeleton).toContain('SettingsProviderRowsSkeleton rows={3}')
+    expect(skeleton).not.toContain('Loading shipping settings...')
   })
 
   it('replaces team loading text with a team skeleton', () => {
@@ -42,10 +46,9 @@ describe('settings skeleton integration', () => {
     const source = read('src/components/settings/SettingsWorkspace.js')
     expect(source).toContain('showPaymentsProviderRowsSkeleton')
     expect(source).toContain('<SettingsProviderRowsSkeleton rows={3} />')
-    expect(source).toContain('showStripeRuntimeChecking')
-    expect(source).toContain('Checking Stripe runtime status...')
-    expect(source).toContain('Checking Stripe runtime, webhook, and account status...')
-    expect(source).toContain('Refreshing provider statuses...')
+    expect(source).not.toContain('showStripeRuntimeChecking')
+    expect(source).not.toContain('Checking Stripe runtime status...')
+    expect(source).not.toContain('Checking Stripe runtime, webhook, and account status...')
     expect(source).not.toContain('SettingsCardSkeleton actions={1} chips={3} rows={3}')
   })
 
@@ -53,8 +56,16 @@ describe('settings skeleton integration', () => {
     const source = read('src/components/settings/SettingsWorkspace.js')
     expect(source).toContain("activeSection === 'payments' ? (")
     expect(source).toContain('<AdminCard as="section" className={`${styles.paymentSectionCard} ${styles.compactSettingsCard}`} variant="card">')
-    expect(source).toContain('showStripeRuntimeChecking')
+    expect(source).not.toContain('showStripeRuntimeChecking')
     expect(source).not.toContain('showPaymentsInitialProviderSkeleton')
+  })
+
+  it('loads Stripe status from the fast endpoint and defers full provider matrix outside initial payments render', () => {
+    const source = read('src/components/settings/SettingsWorkspace.js')
+    expect(source).toContain("if (activeSection !== 'payments' || stripeRuntimeLoaded)")
+    expect(source).toContain("fetch('/api/settings/payments/stripe/status'")
+    expect(source).toContain("const shouldLoadProviderMatrix = ['shipping', 'email'].includes(activeSection);")
+    expect(source).toContain("refreshProviderStatuses({ includeRuntime: false })")
   })
 
   it('uses webhooks skeleton in integrations panel loading states', () => {
@@ -67,8 +78,20 @@ describe('settings skeleton integration', () => {
   it('keeps shipping shell visible while provider readiness checks finish', () => {
     const source = read('src/components/settings/ShippingSettingsWorkspace.js')
     expect(source).toContain('setSetupStatusLoading(true)')
-    expect(source).toContain('Checking shipping provider readiness...')
-    expect(source).toContain('hasProviderConnection == null ? "Checking"')
+    expect(source).toContain('Loading saved status...')
+    expect(source).toContain('providerVerificationPresentation')
+    expect(source).toContain('const setupStatusPending = setupStatusLoading && !setupStatus;')
+    expect(source).toContain('label: "Loading saved status..."')
+  })
+
+  it('keeps Stripe and email provider badges neutral until saved status snapshots load', () => {
+    const source = read('src/components/settings/SettingsWorkspace.js')
+    expect(source).toContain("const stripeSavedStatusPending =")
+    expect(source).toContain("!stripeRuntimeStatus && !stripeProviderStatus && (stripeRuntimeLoading || !stripeRuntimeLoaded);")
+    expect(source).toContain("label: 'Loading saved status...'")
+    expect(source).toContain("detail: 'Loading saved Stripe status.'")
+    expect(source).toContain("const emailProviderStatusPending = !emailStatus && !providerStatusLoaded && (providerStatusLoading || activeSection === 'email');")
+    expect(source).toContain("detail: 'Loading saved provider verification status.'")
   })
 
   it('defines provider-row skeleton structure that matches payments row layout', () => {

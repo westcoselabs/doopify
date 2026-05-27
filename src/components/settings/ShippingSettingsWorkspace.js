@@ -18,7 +18,9 @@ import {
   isCheckoutMethodEqual,
   providerSelectionToLegacyUsage,
 } from "./shipping-checkout-method.helpers";
-import { SettingsProviderRowsSkeleton } from "./SettingsSkeletons";
+import ShippingSettingsWorkspaceHeader from "./ShippingSettingsWorkspaceHeader";
+import ShippingSettingsWorkspaceSkeleton from "./ShippingSettingsWorkspaceSkeleton";
+import ShippingSettingsWorkspaceStatusStack from "./ShippingSettingsWorkspaceStatusStack";
 import styles from "./SettingsWorkspace.module.css";
 
 const PROVIDER_OPTIONS = [
@@ -235,45 +237,14 @@ function formatShippingProviderName(provider) {
   return "Provider";
 }
 
-function ShippingWorkspaceSkeleton() {
+function isVerificationTemporarilyUnavailable(message) {
+  const normalized = String(message || "").trim().toLowerCase();
+  if (!normalized) return false;
   return (
-    <div className={styles.configStack} data-testid="shipping-settings-skeleton">
-      <section className={styles.configSection}>
-        <div className={styles.sectionHeading}>
-          <div className={styles.loadingLine} style={{ width: "10rem" }} />
-        </div>
-        <div className={styles.statusBlock}>
-          <div className={styles.loadingLine} />
-          <div className={styles.loadingLine} style={{ width: "82%" }} />
-        </div>
-        <div className={styles.methodChipRow}>
-          <span className={styles.settingsSkeletonChip} />
-          <span className={styles.settingsSkeletonChip} />
-          <span className={styles.settingsSkeletonChip} />
-        </div>
-      </section>
-
-      <section className={styles.configSection}>
-        <div className={styles.sectionHeading}>
-          <div className={styles.loadingLine} style={{ width: "13rem" }} />
-        </div>
-        <SettingsProviderRowsSkeleton rows={3} />
-      </section>
-
-      <section className={styles.configSection}>
-        <div className={styles.sectionHeading}>
-          <div className={styles.loadingLine} style={{ width: "14rem" }} />
-        </div>
-        <SettingsProviderRowsSkeleton rows={3} />
-      </section>
-
-      <section className={styles.configSection}>
-        <div className={styles.sectionHeading}>
-          <div className={styles.loadingLine} style={{ width: "12rem" }} />
-        </div>
-        <SettingsProviderRowsSkeleton rows={4} />
-      </section>
-    </div>
+    normalized.includes("timeout") ||
+    normalized.includes("timed out") ||
+    normalized.includes("network") ||
+    normalized.includes("temporarily unavailable")
   );
 }
 
@@ -303,6 +274,7 @@ export default function ShippingSettingsWorkspace({
   const [providerDrawerOpen, setProviderDrawerOpen] = useState(false);
   const [providerForm, setProviderForm] = useState(DEFAULT_PROVIDER_FORM);
   const [providerTestMessage, setProviderTestMessage] = useState("");
+  const [providerVerifyLoading, setProviderVerifyLoading] = useState(false);
 
   const [packageDrawerOpen, setPackageDrawerOpen] = useState(false);
   const [locationDrawerOpen, setLocationDrawerOpen] = useState(false);
@@ -351,13 +323,17 @@ export default function ShippingSettingsWorkspace({
     () => packages.find((entry) => entry.isDefault && entry.isActive) || packages[0] || null,
     [packages]
   );
-  const hasProviderConnection = setupStatusLoading
+  const setupStatusPending = setupStatusLoading && !setupStatus;
+  const hasProviderConnection = setupStatusPending
     ? null
     : Boolean(setupStatus?.liveProviderConnected ?? setupStatus?.providerConnected);
-  const hasLabelProviderConnection = setupStatusLoading
+  const hasLabelProviderConnection = setupStatusPending
     ? null
     : Boolean(setupStatus?.labelProviderConnected ?? setupStatus?.providerConnected);
-  const hasFallbackRate = useMemo(() => fallbackRates.some((entry) => entry.isActive), [fallbackRates]);
+  const hasFallbackRate = useMemo(
+    () => Boolean(setupStatus?.hasFallbackRate ?? fallbackRates.some((entry) => entry.isActive)),
+    [fallbackRates, setupStatus?.hasFallbackRate]
+  );
   const shippoInUse = activeRateProvider === "SHIPPO" || labelProvider === "SHIPPO";
   const easypostInUse = activeRateProvider === "EASYPOST" || labelProvider === "EASYPOST";
   const manualFulfillmentConfigured = Boolean(
@@ -388,6 +364,57 @@ export default function ShippingSettingsWorkspace({
     () => !isCheckoutMethodEqual(checkoutMethodDraft, savedCheckoutMethod),
     [checkoutMethodDraft, savedCheckoutMethod]
   );
+  const providerVerificationPresentation = useMemo(() => {
+    if (setupStatusPending) {
+      return {
+        tone: "neutral",
+        label: "Loading saved status...",
+        detail: "Loading saved verification state.",
+      };
+    }
+
+    const status = String(setupStatus?.providerVerificationStatus || "").trim().toLowerCase();
+    if (status === "verified") {
+      return {
+        tone: "success",
+        label: "Verified",
+        detail: "Live provider verification passed.",
+      };
+    }
+    if (status === "configured") {
+      return {
+        tone: "warning",
+        label: "Configured",
+        detail: "Saved config is ready. Run verification to confirm live connectivity.",
+      };
+    }
+    if (status === "verification_unavailable") {
+      return {
+        tone: "warning",
+        label: "Verification unavailable",
+        detail: "Saved configuration is present, but verification metadata is unavailable.",
+      };
+    }
+    if (status === "needs_attention" && isVerificationTemporarilyUnavailable(setupStatus?.providerLastError)) {
+      return {
+        tone: "warning",
+        label: "Verification unavailable",
+        detail: "Saved configuration is present, but live verification is temporarily unavailable.",
+      };
+    }
+    if (status === "needs_attention") {
+      return {
+        tone: "danger",
+        label: "Needs attention",
+        detail: setupStatus?.providerLastError || "Provider verification failed. Review credentials and retry.",
+      };
+    }
+    return {
+      tone: "warning",
+      label: "Needs setup",
+      detail: "Provider setup is incomplete for the selected checkout mode.",
+    };
+  }, [setupStatus?.providerLastError, setupStatus?.providerVerificationStatus, setupStatusPending]);
   const drawerProviderConnectionState = useMemo(() => {
     if (providerForm.provider === "NONE") {
       return {
@@ -404,10 +431,10 @@ export default function ShippingSettingsWorkspace({
       (matchesLabelProvider && Boolean(hasLabelProviderConnection));
     const providerName = formatShippingProviderName(providerForm.provider);
 
-    if (setupStatusLoading) {
+    if (setupStatusPending) {
       return {
         tone: "neutral",
-        label: "Checking",
+        label: "Loading saved status...",
         detail: `${providerName} connection status is still loading.`,
       };
     }
@@ -431,7 +458,7 @@ export default function ShippingSettingsWorkspace({
     labelProvider,
     hasProviderConnection,
     hasLabelProviderConnection,
-    setupStatusLoading,
+    setupStatusPending,
   ]);
 
   const load = useCallback(async () => {
@@ -504,7 +531,8 @@ export default function ShippingSettingsWorkspace({
           setSetupStatus(setup);
         } catch {
           if (requestId !== loadRequestIdRef.current) return;
-          setSetupStatus(null);
+          // Preserve the previous saved snapshot on transient load failures
+          // so the UI does not regress to setup-missing while status refreshes.
         } finally {
           if (requestId !== loadRequestIdRef.current) return;
           setSetupStatusLoading(false);
@@ -672,7 +700,7 @@ export default function ShippingSettingsWorkspace({
       return;
     }
 
-    setSaving(true);
+    setProviderVerifyLoading(true);
     setError("");
     try {
       const data = await fetch("/api/settings/shipping/test-provider", {
@@ -686,7 +714,7 @@ export default function ShippingSettingsWorkspace({
     } catch (providerError) {
       setError(providerError instanceof Error ? providerError.message : "Failed to verify provider");
     } finally {
-      setSaving(false);
+      setProviderVerifyLoading(false);
     }
   }
 
@@ -1097,34 +1125,15 @@ export default function ShippingSettingsWorkspace({
   const content = (
     <>
       <div className={styles.pageWrap}>
-        <div className={styles.pageHeader}>
-          <div>
-            <h2>Shipping & delivery</h2>
-            <p>
-              Choose what customers pay at checkout, how labels are created, and what happens if live rates fail.
-            </p>
-          </div>
-          <AdminButton onClick={load} size="sm" variant="secondary">
-            Refresh
-          </AdminButton>
-        </div>
+        <ShippingSettingsWorkspaceHeader onRefresh={load} />
 
-        {loading ? <ShippingWorkspaceSkeleton /> : null}
-        {error ? (
-          <div className={styles.statusBlock}>
-            <p className={styles.statusText}>{error}</p>
-          </div>
-        ) : null}
-        {!loading && setupStatusLoading ? (
-          <div className={styles.statusBlock}>
-            <p className={styles.statusText}>Checking shipping provider readiness...</p>
-          </div>
-        ) : null}
-        {notice ? (
-          <div className={styles.statusBlock}>
-            <p className={styles.statusText}>{notice}</p>
-          </div>
-        ) : null}
+        {loading ? <ShippingSettingsWorkspaceSkeleton /> : null}
+        <ShippingSettingsWorkspaceStatusStack
+          error={error}
+          notice={notice}
+          setupStatusPending={!loading && setupStatusPending}
+          setupStatusPendingMessage="Loading saved status..."
+        />
 
         {!loading ? (
           <div className={styles.configStack}>
@@ -1243,6 +1252,107 @@ export default function ShippingSettingsWorkspace({
 
             <section className={styles.configSection}>
               <div className={styles.sectionHeading}>
+                <h3>Saved configuration status</h3>
+              </div>
+              <div className={styles.requirementsList}>
+                <div className={styles.requirementRow}>
+                  <div className={styles.requirementMain}>
+                    <p className={styles.compactRowTitle}>Shipping mode</p>
+                    <p className={styles.compactRowDescription}>
+                      {setupStatus?.shippingMode || mode}
+                    </p>
+                  </div>
+                  <div className={styles.shippingProviderActions}>
+                    <AdminStatusChip tone="success">Configured</AdminStatusChip>
+                  </div>
+                </div>
+                <div className={styles.requirementRow}>
+                  <div className={styles.requirementMain}>
+                    <p className={styles.compactRowTitle}>Live provider</p>
+                    <p className={styles.compactRowDescription}>
+                      {setupStatus?.shippingLiveProvider || "Not selected"}
+                    </p>
+                  </div>
+                  <div className={styles.shippingProviderActions}>
+                    <AdminStatusChip
+                      tone={
+                        setupStatusPending
+                          ? "neutral"
+                          : setupStatus?.shippingMode === "MANUAL" || setupStatus?.shippingLiveProvider
+                            ? "success"
+                            : "warning"
+                      }
+                    >
+                      {setupStatusPending
+                        ? "Loading"
+                        : setupStatus?.shippingMode === "MANUAL"
+                          ? "Optional"
+                          : setupStatus?.shippingLiveProvider
+                            ? "Configured"
+                            : "Needs setup"}
+                    </AdminStatusChip>
+                  </div>
+                </div>
+                <div className={styles.requirementRow}>
+                  <div className={styles.requirementMain}>
+                    <p className={styles.compactRowTitle}>Provider usage</p>
+                    <p className={styles.compactRowDescription}>
+                      {setupStatus?.shippingProviderUsage || providerForm.usage}
+                    </p>
+                  </div>
+                  <div className={styles.shippingProviderActions}>
+                    <AdminStatusChip tone="success">Configured</AdminStatusChip>
+                  </div>
+                </div>
+                <div className={styles.requirementRow}>
+                  <div className={styles.requirementMain}>
+                    <p className={styles.compactRowTitle}>Origin address</p>
+                    <p className={styles.compactRowDescription}>Required for rates and labels.</p>
+                  </div>
+                  <div className={styles.shippingProviderActions}>
+                    <AdminStatusChip tone={setupStatusPending ? "neutral" : setupStatus?.hasOriginAddress ? "success" : "warning"}>
+                      {setupStatusPending ? "Loading" : setupStatus?.hasOriginAddress ? "Configured" : "Needs setup"}
+                    </AdminStatusChip>
+                  </div>
+                </div>
+                <div className={styles.requirementRow}>
+                  <div className={styles.requirementMain}>
+                    <p className={styles.compactRowTitle}>Default package</p>
+                    <p className={styles.compactRowDescription}>Required for live quotes and label estimates.</p>
+                  </div>
+                  <div className={styles.shippingProviderActions}>
+                    <AdminStatusChip tone={setupStatusPending ? "neutral" : setupStatus?.hasDefaultPackage ? "success" : "warning"}>
+                      {setupStatusPending ? "Loading" : setupStatus?.hasDefaultPackage ? "Configured" : "Needs setup"}
+                    </AdminStatusChip>
+                  </div>
+                </div>
+                <div className={styles.requirementRow}>
+                  <div className={styles.requirementMain}>
+                    <p className={styles.compactRowTitle}>Manual rates</p>
+                    <p className={styles.compactRowDescription}>Used for manual mode and hybrid fallback.</p>
+                  </div>
+                  <div className={styles.shippingProviderActions}>
+                    <AdminStatusChip tone={setupStatusPending ? "neutral" : setupStatus?.hasManualRates ? "success" : "warning"}>
+                      {setupStatusPending ? "Loading" : setupStatus?.hasManualRates ? "Configured" : "Needs setup"}
+                    </AdminStatusChip>
+                  </div>
+                </div>
+                <div className={styles.requirementRow}>
+                  <div className={styles.requirementMain}>
+                    <p className={styles.compactRowTitle}>Fallback rate</p>
+                    <p className={styles.compactRowDescription}>Shown only when live rate requests fail.</p>
+                  </div>
+                  <div className={styles.shippingProviderActions}>
+                    <AdminStatusChip tone={setupStatusPending ? "neutral" : hasFallbackRate ? "success" : "warning"}>
+                      {setupStatusPending ? "Loading" : hasFallbackRate ? "Configured" : "Needs setup"}
+                    </AdminStatusChip>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className={styles.configSection}>
+              <div className={styles.sectionHeading}>
                 <h3>Live-rate requirements</h3>
               </div>
               <div className={styles.requirementsList}>
@@ -1288,13 +1398,28 @@ export default function ShippingSettingsWorkspace({
                     <p className={styles.compactRowDescription}>
                       Live rates need a verified live-rate provider. Labels need a verified label provider.
                     </p>
+                    <p className={styles.compactMeta}>
+                      {providerVerificationPresentation.detail}
+                      {setupStatus?.providerLastVerifiedAt
+                        ? ` Last verified: ${new Date(setupStatus.providerLastVerifiedAt).toLocaleString()}.`
+                        : ""}
+                    </p>
+                    {setupStatus?.providerLastError ? (
+                      <p className={styles.compactMeta}>Last error: {setupStatus.providerLastError}</p>
+                    ) : null}
                   </div>
                   <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip
-                      tone={hasProviderConnection == null ? "neutral" : hasProviderConnection ? "success" : "warning"}
-                    >
-                      {hasProviderConnection == null ? "Checking" : hasProviderConnection ? "Ready" : "Missing"}
+                    <AdminStatusChip tone={providerVerificationPresentation.tone}>
+                      {providerVerificationPresentation.label}
                     </AdminStatusChip>
+                    <AdminButton
+                      size="sm"
+                      variant="ghost"
+                      disabled={providerVerifyLoading || providerForm.provider === "NONE"}
+                      onClick={verifyProvider}
+                    >
+                      {providerVerifyLoading ? "Verifying..." : "Verify provider"}
+                    </AdminButton>
                     <AdminButton
                       size="sm"
                       variant="secondary"
@@ -1603,8 +1728,13 @@ export default function ShippingSettingsWorkspace({
               <AdminButton disabled={saving} size="sm" variant="secondary" onClick={saveProviderSettings}>
                 Save credentials
               </AdminButton>
-              <AdminButton disabled={saving} size="sm" variant="secondary" onClick={verifyProvider}>
-                Verify connection
+              <AdminButton
+                disabled={providerVerifyLoading || providerForm.provider === "NONE"}
+                size="sm"
+                variant="secondary"
+                onClick={verifyProvider}
+              >
+                {providerVerifyLoading ? "Verifying..." : "Verify provider"}
               </AdminButton>
             </div>
           </AdminCard>

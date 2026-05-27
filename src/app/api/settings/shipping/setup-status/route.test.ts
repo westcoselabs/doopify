@@ -40,12 +40,19 @@ describe('settings shipping setup-status route', () => {
     })
     mocks.getShippingSetupStore.mockResolvedValue({ id: 'store_1' })
     mocks.buildShippingSetupStatus.mockResolvedValue({
+      shippingMode: 'HYBRID',
+      shippingLiveProvider: 'SHIPPO',
+      shippingProviderUsage: 'LIVE_AND_LABELS',
       mode: 'HYBRID',
       hasOriginAddress: false,
       hasDefaultPackage: false,
       hasManualRates: true,
+      hasFallbackRate: false,
       hasProvider: true,
       providerConnected: false,
+      providerLastVerifiedAt: null,
+      providerLastError: null,
+      providerVerificationStatus: 'needs_setup',
       canUseManualRates: true,
       canUseLiveRates: false,
       canBuyLabels: false,
@@ -59,10 +66,15 @@ describe('settings shipping setup-status route', () => {
     expect(payload).toMatchObject({
       success: true,
       data: {
+        shippingMode: 'HYBRID',
+        shippingLiveProvider: 'SHIPPO',
+        shippingProviderUsage: 'LIVE_AND_LABELS',
         hasOriginAddress: false,
         hasDefaultPackage: false,
+        hasFallbackRate: false,
         hasProvider: true,
         providerConnected: false,
+        providerVerificationStatus: 'needs_setup',
       },
     })
   })

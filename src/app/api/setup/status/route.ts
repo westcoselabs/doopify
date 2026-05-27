@@ -1,10 +1,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-import { PrismaPg } from '@prisma/adapter-pg'
-import { PrismaClient } from '@prisma/client'
-
 import { ok, err } from '@/lib/api'
+import { prisma } from '@/lib/prisma'
 import { requireOwner } from '@/server/auth/require-auth'
 import {
   buildSetupDoctorReport,
@@ -43,22 +41,6 @@ function parseNodeMajor(version: string) {
   return match ? Number(match[1]) : null
 }
 
-function normalizeDatabaseUrl(connectionString: string) {
-  try {
-    const url = new URL(connectionString)
-    const sslmode = url.searchParams.get('sslmode')
-
-    if (sslmode && ['prefer', 'require', 'verify-ca'].includes(sslmode)) {
-      url.searchParams.set('sslmode', 'verify-full')
-      return url.toString()
-    }
-  } catch {
-    return connectionString
-  }
-
-  return connectionString
-}
-
 function sanitizeErrorMessage(error: unknown) {
   const raw = error instanceof Error ? error.message : String(error)
   return raw
@@ -79,14 +61,7 @@ async function gatherDatabaseFacts(databaseUrl: string | undefined) {
     }
   }
 
-  let prisma: PrismaClient | null = null
   try {
-    prisma = new PrismaClient({
-      adapter: new PrismaPg({
-        connectionString: normalizeDatabaseUrl(databaseUrl),
-      }),
-    })
-
     await prisma.$queryRawUnsafe('SELECT 1')
 
     const [storeCount, ownerCount, firstStore] = await Promise.all([
@@ -117,10 +92,6 @@ async function gatherDatabaseFacts(databaseUrl: string | undefined) {
       ownerCount: null,
       storeConfigured: null,
       storeContactConfigured: null,
-    }
-  } finally {
-    if (prisma) {
-      await prisma.$disconnect().catch(() => {})
     }
   }
 }

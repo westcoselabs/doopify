@@ -56,7 +56,21 @@ describe('GET /api/setup/wizard', () => {
     mocks.prisma.product.findMany.mockResolvedValue([
       {
         id: 'prod_1',
-        variants: [{ priceCents: 2500, inventory: 2 }],
+        title: 'Test Product',
+        salesMode: 'STANDARD',
+        presaleStartsAt: null,
+        presaleEndsAt: null,
+        availableForPurchaseAt: null,
+        fulfillmentType: 'PHYSICAL',
+        media: [],
+        variants: [
+          {
+            priceCents: 2500,
+            inventory: 2,
+            continueSellingWhenOutOfStock: false,
+            weight: 1,
+          },
+        ],
       },
     ])
     mocks.prisma.webhookDelivery.count.mockResolvedValue(1)

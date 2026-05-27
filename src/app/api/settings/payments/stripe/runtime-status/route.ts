@@ -1,13 +1,13 @@
 import { err, ok } from '@/lib/api'
 import { resolveStripeWebhookEndpoint } from '@/lib/public-store-url'
 import {
-  getStripeProviderStatus,
-  getStripeRuntimeConnection,
+  getStripeRuntimeStatusBundle,
   getStripeWebhookSecretSelection,
 } from '@/server/payments/stripe-runtime.service'
 import { requireOwner } from '@/server/auth/require-auth'
 
 export const runtime = 'nodejs'
+const PROVIDER_STATUS_TIMEOUT_MS = 350
 
 function buildMessage(source: 'db' | 'env' | 'none') {
   if (source === 'db') return 'Checkout active source: DB verified connection.'
@@ -20,10 +20,13 @@ export async function GET(req: Request) {
   if (!auth.ok) return auth.response
 
   try {
-    const [stripeRuntime, stripeProviderStatus] = await Promise.all([
-      getStripeRuntimeConnection(),
-      getStripeProviderStatus(),
-    ])
+    const {
+      runtime: stripeRuntime,
+      providerStatus: stripeProviderStatus,
+      providerStatusUnavailable,
+    } = await getStripeRuntimeStatusBundle({
+      providerStatusTimeoutMs: PROVIDER_STATUS_TIMEOUT_MS,
+    })
     const webhookSecretSelection = await getStripeWebhookSecretSelection(stripeRuntime)
     const requestOrigin = (() => {
       try {
@@ -55,6 +58,7 @@ export async function GET(req: Request) {
       webhookEndpointIssue: webhookEndpoint.issue,
       webhookEndpointMessage: webhookEndpoint.message,
       providerStatus: stripeProviderStatus,
+      providerStatusUnavailable,
       message: buildMessage(stripeRuntime.source),
     })
   } catch (error) {

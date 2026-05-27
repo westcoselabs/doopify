@@ -10,7 +10,7 @@ export function getShippingHeaderSaveButtonState({
 
   return {
     disabled,
-    label: isSaving ? "Saving..." : "Save changes",
+    label: isSaving ? "Saving..." : shippingModeDirty ? "Save changes" : "Saved",
   };
 }
 

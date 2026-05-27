@@ -34,17 +34,38 @@ describe('SettingsWorkspace payment helpers', () => {
       stripeCheckoutSourceLabel: 'DB verified connection',
       stripeRuntimeModeLabel: 'live',
       stripeWebhookSourceLabel: 'DB verified webhook secret',
-      stripeRuntimeReady: true,
+      stripeSavedStatusLoading: false,
+      stripeLastCheckedText: '16 minutes ago',
       stripeMethodChips: ['Cards'],
     })
 
+    const stripe = rows.find((entry) => entry.id === 'STRIPE')
     const paypal = rows.find((entry) => entry.id === 'PAYPAL')
     const manual = rows.find((entry) => entry.id === 'MANUAL')
 
-    expect(paypal?.status.label).toBe('Setup needed')
+    expect(stripe?.status).toEqual(expect.objectContaining({ label: 'Verified', tone: 'success' }))
+    expect(stripe?.sourceMeta).toContain('Checkout source')
+    expect(stripe?.lastCheckedMeta).toContain('Last checked')
+    expect(paypal?.status?.label).toBe('Coming soon')
     expect(paypal?.sourceMeta).toContain('unavailable')
-    expect(manual?.status.label).toBe('Built-in')
+    expect(manual?.status?.label).toBe('Built-in')
     expect(manual?.statusMeta).toContain('Storefront manual checkout should remain disabled')
+  })
+
+  it('keeps Stripe provider row neutral while saved status is still loading', () => {
+    const rows = buildPaymentProviderRows({
+      stripeSetupStatus: { label: 'Loading saved status...', tone: 'neutral' },
+      stripeCheckoutSourceLabel: 'Not configured',
+      stripeRuntimeModeLabel: 'unknown',
+      stripeWebhookSourceLabel: 'missing',
+      stripeSavedStatusLoading: true,
+      stripeLastCheckedText: null,
+      stripeMethodChips: ['Cards'],
+    })
+
+    const stripe = rows.find((entry) => entry.id === 'STRIPE')
+    expect(stripe?.status).toBeNull()
+    expect(stripe?.statusLoading).toBe(true)
   })
 
   it('builds payment activity rows from order payment records and sorts newest first', () => {
