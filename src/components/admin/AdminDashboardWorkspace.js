@@ -200,8 +200,8 @@ export default function AdminDashboardWorkspace() {
           <AdminCard className={styles.setupPanel} variant="card">
             <div className={styles.setupPanelHeader}>
               <div>
-                <h2 className="font-headline">Finish setup</h2>
-                <p>Complete the required steps before running a checkout test.</p>
+                <h2 className="font-headline">Pilot readiness checklist</h2>
+                <p>Complete the required steps, then run a test checkout and confirm it appears in Orders.</p>
               </div>
               <AdminStatusChip tone="warning">In progress</AdminStatusChip>
             </div>
@@ -253,10 +253,10 @@ export default function AdminDashboardWorkspace() {
             ) : !recentActivity.length ? (
               <div className={styles.activityEmptyState}>
                 <h3>No activity yet</h3>
-                <p>Create your first product or complete a test checkout to start building the activity feed.</p>
+                <p>Create your first product, then run setup checks before placing a test checkout.</p>
                 <div className={styles.activityEmptyActions}>
-                  <Link href="/products">Add product</Link>
-                  <Link href="/settings?section=setup">Open setup</Link>
+                  <Link className={styles.activityPrimaryAction} href="/settings?section=setup">Open setup</Link>
+                  <Link className={styles.activitySecondaryAction} href="/products">Add product</Link>
                 </div>
               </div>
             ) : (
@@ -294,7 +294,7 @@ export default function AdminDashboardWorkspace() {
               <div className={styles.linkList}>
                 <Link href="/orders">Review orders</Link>
                 <Link href="/products">Add product</Link>
-                <Link href="/settings?section=shipping">Open shipping settings</Link>
+                <Link href="/settings?section=shipping">Review shipping and rates</Link>
                 <Link href="/admin/webhooks">Open delivery logs</Link>
               </div>
             </AdminCard>

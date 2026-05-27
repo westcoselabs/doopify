@@ -309,6 +309,17 @@
   color: var(--on-surface);
 }
 
+.activityPrimaryAction {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 34%, var(--glass-border));
+  color: var(--on-surface);
+  font-weight: 700;
+}
+
+.activitySecondaryAction {
+  background: transparent;
+}
+
 .stepMeta {
   display: grid;
   gap: 0.08rem;

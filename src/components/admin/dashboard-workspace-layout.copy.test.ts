@@ -28,7 +28,7 @@ describe('AdminDashboardWorkspace layout and empty-state contract', () => {
     const source = fs.readFileSync(sourcePath, 'utf8')
 
     expect(source).toContain('No activity yet')
-    expect(source).toContain('Create your first product or complete a test checkout to start building the activity feed.')
+    expect(source).toContain('Create your first product, then run setup checks before placing a test checkout.')
     expect(source).toContain('Add product')
     expect(source).toContain('Open setup')
   })

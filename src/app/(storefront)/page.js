@@ -67,7 +67,7 @@ export default async function LandingPage() {
 
         .nav-links {
           display: flex;
-          gap: 36px;
+          gap: 30px;
           list-style: none;
         }
 
@@ -212,6 +212,22 @@ export default async function LandingPage() {
           display: grid;
           grid-template-columns: repeat(3, 1fr);
           gap: 24px;
+        }
+
+        .featured-empty {
+          border-radius: 20px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: rgba(255, 255, 255, 0.03);
+          padding: 28px;
+          color: rgba(255, 255, 255, 0.74);
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
+        }
+
+        .featured-empty p {
+          font-size: 14px;
+          line-height: 1.6;
         }
 
         .product-card {
@@ -473,6 +489,14 @@ export default async function LandingPage() {
         }
 
         @media (max-width: 600px) {
+          .nav-links {
+            gap: 16px;
+          }
+
+          .nav-links a {
+            font-size: 11px;
+          }
+
           .product-grid {
             grid-template-columns: 1fr;
           }
@@ -490,7 +514,7 @@ export default async function LandingPage() {
           <ul className="nav-links">
             <li><Link href="/shop">Shop</Link></li>
             <li><Link href="/collections">Collections</Link></li>
-            <li><Link href="/shop">About</Link></li>
+            <li><Link href="/checkout">Checkout</Link></li>
           </ul>
         </nav>
 
@@ -554,40 +578,49 @@ export default async function LandingPage() {
             <Link className="section-link" href="/shop">View all</Link>
           </div>
 
-          <div className="product-grid">
-            {featured.map(product => {
-              const image = product.media?.[0]?.url;
-              const price = product.variants?.[0]?.price;
-              const badgeLabel = getStorefrontBadgeText(product);
+          {featured.length ? (
+            <div className="product-grid">
+              {featured.map(product => {
+                const image = product.media?.[0]?.url;
+                const price = product.variants?.[0]?.price;
+                const badgeLabel = getStorefrontBadgeText(product);
 
-              return (
-                <Link className="product-card" href={`/shop/${product.handle}`} key={product.id}>
-                  <div className="card-img">
-                    <div className="card-img-inner">
-                      {image ? (
-                        <img alt={product.title} src={image} />
-                      ) : (
-                        <div className="card-placeholder">
-                          <span className="placeholder-icon">[]</span>
-                        </div>
-                      )}
+                return (
+                  <Link className="product-card" href={`/shop/${product.handle}`} key={product.id}>
+                    <div className="card-img">
+                      <div className="card-img-inner">
+                        {image ? (
+                          <img alt={product.title} src={image} />
+                        ) : (
+                          <div className="card-placeholder">
+                            <span className="placeholder-icon">[]</span>
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="card-body">
-                    {product.vendor ? <p className="card-vendor">{product.vendor}</p> : null}
-                    <h3 className="card-title">{product.title}</h3>
-                    <div className="card-meta">
-                      {price != null ? (
-                        <p className="card-price">${Number(price).toFixed(2)}</p>
-                      ) : <span />}
-                      <span className="card-chip">{badgeLabel || 'View Product'}</span>
+                    <div className="card-body">
+                      {product.vendor ? <p className="card-vendor">{product.vendor}</p> : null}
+                      <h3 className="card-title">{product.title}</h3>
+                      <div className="card-meta">
+                        {price != null ? (
+                          <p className="card-price">${Number(price).toFixed(2)}</p>
+                        ) : <span />}
+                        <span className="card-chip">{badgeLabel || 'View Product'}</span>
+                      </div>
                     </div>
-                  </div>
-                </Link>
-              );
-            })}
-          </div>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="featured-empty" role="status" aria-live="polite">
+              <p>Featured products are being updated right now.</p>
+              <Link className="section-link" href="/shop" style={{ alignSelf: 'flex-start' }}>
+                Browse full catalog
+              </Link>
+            </div>
+          )}
         </section>
 
         <footer className="footer">

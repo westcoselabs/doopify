@@ -891,10 +891,13 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
         .summary-divider{height:1px;background:color-mix(in srgb, var(--checkout-text) 8%, transparent);margin:22px 0}
         .summary-row{display:flex;align-items:center;justify-content:space-between;font-size:14px;color:var(--checkout-muted);margin-bottom:12px}
         .summary-row.total{font-size:18px;color:var(--checkout-text);font-weight:600;margin-top:12px}
-        .empty-state{display:flex;flex-direction:column;align-items:flex-start;gap:14px}
-        .empty-state a{color:var(--checkout-text)}
+        .empty-state{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:18px;border-radius:18px;border:1px solid color-mix(in srgb, var(--checkout-text) 12%, transparent);background:color-mix(in srgb, var(--checkout-surface-strong) 68%, transparent)}
+        .empty-title{margin:0;font-size:28px;line-height:1;font-family:var(--font-headline),sans-serif;letter-spacing:-0.03em;color:var(--checkout-text)}
+        .empty-copy{margin:0;font-size:14px;line-height:1.65;color:var(--checkout-muted)}
+        .empty-cta{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 16px;border-radius:999px;border:1px solid var(--checkout-button-border);background:var(--checkout-button-bg);color:var(--checkout-button-text);font-size:11px;font-weight:600;letter-spacing:0.15em;text-transform:uppercase;text-decoration:none}
+        .empty-cta:hover{filter:brightness(1.05)}
         @media (max-width:960px){.checkout-shell{grid-template-columns:1fr}.checkout-card.summary{order:-1}}
-        @media (max-width:640px){.checkout-shell{padding:28px 18px 64px}.checkout-nav{padding:20px 18px}.grid{grid-template-columns:1fr}.title{font-size:36px}}
+        @media (max-width:640px){.checkout-shell{padding:28px 18px 64px;gap:18px}.checkout-nav{padding:20px 18px}.checkout-card{padding:22px;border-radius:22px}.grid{grid-template-columns:1fr;gap:14px}.title{font-size:36px}.lede{margin-bottom:24px;line-height:1.62}.section{margin-top:22px}.summary-list{gap:14px}.summary-item{gap:10px}.empty-state{padding:14px;gap:10px}.empty-title{font-size:24px}.empty-cta{width:100%}.cta-row{flex-direction:column}.cta-row .primary-btn,.cta-row .secondary-btn{width:100%}}
       `}</style>
 
       <div className="checkout-root">
@@ -925,8 +928,9 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
 
             {!items.length ? (
               <div className="empty-state">
-                <p>Your cart is empty right now.</p>
-                <Link href="/shop">Return to the shop</Link>
+                <h2 className="empty-title">Your cart is empty.</h2>
+                <p className="empty-copy">Add at least one item to continue through secure checkout.</p>
+                <Link className="empty-cta" href="/shop">Return to shop</Link>
               </div>
             ) : (
               <>

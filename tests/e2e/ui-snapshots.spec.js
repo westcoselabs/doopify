@@ -20,8 +20,8 @@ const snapshotTargets = [
     key: 'checkout-empty',
     path: '/checkout',
     assertReady: async (page) => {
-      await expect(page.getByText('Your cart is empty right now.')).toBeVisible()
-      await expect(page.getByRole('link', { name: 'Return to the shop' })).toBeVisible()
+      await expect(page.getByText('Your cart is empty.')).toBeVisible()
+      await expect(page.getByRole('link', { name: 'Return to shop' })).toBeVisible()
     },
   },
   {

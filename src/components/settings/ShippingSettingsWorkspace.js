@@ -1144,6 +1144,9 @@ export default function ShippingSettingsWorkspace({
               <p className={styles.statusText}>
                 Checkout rates decide what customers pay. Label providers create postage after the order is placed.
               </p>
+              <p className={styles.compactMeta}>
+                Keep these configured separately so pilot checkout totals stay predictable while fulfillment stays flexible.
+              </p>
               <div className={styles.methodChipRow}>
                 <span className={styles.methodChip}>Checkout rates</span>
                 <span className={styles.methodChip}>Label buying</span>
@@ -1198,6 +1201,17 @@ export default function ShippingSettingsWorkspace({
                   {saving ? "Saving..." : "Save checkout method"}
                 </AdminButton>
               </div>
+              <p className={styles.compactMeta}>
+                {modeSaveState === "saving"
+                  ? "Saving checkout method..."
+                  : modeSaveState === "saved_just_now"
+                    ? "Saved just now. Run a checkout rate quote to confirm expected customer-facing options."
+                    : modeSaveState === "dirty"
+                      ? "Unsaved changes. Save checkout method before leaving this section."
+                      : modeSaveState === "error"
+                        ? modeSaveError || "Save failed. Review the current selection and retry."
+                        : "No unsaved checkout-method changes."}
+              </p>
             </section>
 
             <section className={styles.configSection}>
@@ -1252,8 +1266,11 @@ export default function ShippingSettingsWorkspace({
 
             <section className={styles.configSection}>
               <div className={styles.sectionHeading}>
-                <h3>Saved configuration status</h3>
+                <h3>Saved setup status</h3>
               </div>
+              <p className={styles.compactMeta}>
+                These checks read your saved settings and help confirm pilot readiness before first live traffic.
+              </p>
               <div className={styles.requirementsList}>
                 <div className={styles.requirementRow}>
                   <div className={styles.requirementMain}>
@@ -1353,8 +1370,11 @@ export default function ShippingSettingsWorkspace({
 
             <section className={styles.configSection}>
               <div className={styles.sectionHeading}>
-                <h3>Live-rate requirements</h3>
+                <h3>Pilot launch checklist</h3>
               </div>
+              <p className={styles.compactMeta}>
+                Complete these items before enabling live-rate checkout for customers.
+              </p>
               <div className={styles.requirementsList}>
                 <div className={styles.requirementRow}>
                   <div className={styles.requirementMain}>

@@ -31,6 +31,14 @@ describe('checkout button copy and state', () => {
     expect(source).toContain("'Placing order...'")
   })
 
+  it('uses explicit empty-cart recovery copy and a prominent return CTA', () => {
+    const source = read(PAGE)
+    expect(source).toContain('Your cart is empty.')
+    expect(source).toContain('Add at least one item to continue through secure checkout.')
+    expect(source).toContain('Return to shop')
+    expect(source).toContain('className="empty-cta"')
+  })
+
   it('uses "Edit details" to let the customer return from payment step to address step', () => {
     const source = read(PAGE)
     expect(source).toContain('Edit details')

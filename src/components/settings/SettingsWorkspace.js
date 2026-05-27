@@ -166,6 +166,8 @@ const STRIPE_OWNER_REQUIRED_LABEL = 'Owner required';
 const STRIPE_VIEW_ONLY_LABEL = 'View only';
 const STRIPE_OWNER_REQUIRED_HELPER_COPY =
   'Only owners can save, replace, or verify Stripe credentials. You can view the current connection status, but credential actions are restricted.';
+const STRIPE_OWNER_REQUIRED_NEXT_STEP_COPY =
+  'Need to run credential actions? Ask an owner to open this drawer and complete save + verify from the same screen.';
 const STRIPE_OWNER_PERMISSION_ERROR_COPY = 'Owner permission required';
 
 const PAYMENT_PROVIDER_DRAWER = {
@@ -3817,7 +3819,7 @@ export default function SettingsWorkspace() {
                   <div className={styles.sectionHeading}>
                     <h3>Payments</h3>
                     <p className={styles.cardSubtext}>
-                      Manage processors, checkout methods, and payment visibility without exposing private credentials on the main page.
+                      Manage processors, checkout methods, and payment visibility. For pilot launch: save Stripe credentials, run Verify now, confirm webhook endpoint readiness, then run a checkout smoke test.
                     </p>
                   </div>
                 </section>
@@ -3844,7 +3846,7 @@ export default function SettingsWorkspace() {
                     <h4>Payment providers</h4>
                     <AdminTooltip content="Provider credentials are managed in drawers to keep this page compact and secret-safe." />
                   </div>
-                  <p className={styles.cardSubtext}>Connect gateways and manage payment runtime status by provider.</p>
+                  <p className={styles.cardSubtext}>Connect gateways and check runtime status by provider. Stripe should be green before first paid pilot checkout.</p>
                   {showPaymentsProviderRowsSkeleton ? (
                     <SettingsProviderRowsSkeleton rows={3} />
                   ) : (
@@ -4796,7 +4798,7 @@ export default function SettingsWorkspace() {
         open={Boolean(activePaymentDrawer)}
         subtitle={
           activePaymentDrawer === PAYMENT_PROVIDER_DRAWER.STRIPE
-            ? 'Connect Stripe and manage checkout credentials.'
+            ? 'Connect Stripe and manage checkout credentials. Pilot order: Save credentials -> Verify now -> Confirm webhook endpoint.'
             : activePaymentDrawer === PAYMENT_PROVIDER_DRAWER.PAYPAL
               ? 'Status and rollout notes for PayPal checkout support.'
               : activePaymentDrawer === PAYMENT_PROVIDER_DRAWER.MANUAL
@@ -4850,6 +4852,13 @@ export default function SettingsWorkspace() {
                   ? STRIPE_OWNER_REQUIRED_HELPER_COPY
                   : 'Save API keys and webhook secret, then verify Stripe API and add the webhook endpoint in Stripe.'}
               </p>
+              {stripeActionsRestricted ? (
+                <p className={styles.compactMeta}>{STRIPE_OWNER_REQUIRED_NEXT_STEP_COPY}</p>
+              ) : (
+                <p className={styles.compactMeta}>
+                  Recommended pilot sequence: save keys, verify Stripe, copy webhook endpoint, then confirm runtime status is using the verified source.
+                </p>
+              )}
               <p className={styles.compactMeta}>
                 Credentials are saved securely. Secret values are encrypted and hidden. Use Replace only when changing keys.
               </p>
@@ -5005,7 +5014,7 @@ export default function SettingsWorkspace() {
               </div>
               {!stripeActionsRestricted && !stripeWebhookEndpointReady ? (
                 <p className={styles.setupFixText}>
-                  Store URL needs setup. {stripeWebhookEndpointMessage} Set NEXT_PUBLIC_STORE_URL to the deployed domain and redeploy before relying on webhook readiness.
+                  Store URL needs setup. {stripeWebhookEndpointMessage} Set NEXT_PUBLIC_STORE_URL to the deployed domain and redeploy before relying on webhook readiness for pilot traffic.
                 </p>
               ) : null}
               {!stripeActionsRestricted && stripeWebhookEndpointIssue === 'placeholder' ? (
