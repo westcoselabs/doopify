@@ -162,6 +162,12 @@ const STRIPE_WEBHOOK_SOURCE_LABEL = {
   none: 'missing',
 };
 
+const STRIPE_OWNER_REQUIRED_LABEL = 'Owner required';
+const STRIPE_VIEW_ONLY_LABEL = 'View only';
+const STRIPE_OWNER_REQUIRED_HELPER_COPY =
+  'Only owners can save, replace, or verify Stripe credentials. You can view the current connection status, but credential actions are restricted.';
+const STRIPE_OWNER_PERMISSION_ERROR_COPY = 'Owner permission required';
+
 const PAYMENT_PROVIDER_DRAWER = {
   STRIPE: 'STRIPE',
   PAYPAL: 'PAYPAL',
@@ -425,10 +431,53 @@ function toTaxForm(rule) {
   };
 }
 
+function createApiError(message, status) {
+  const error = new Error(message || 'Request failed');
+  if (typeof status === 'number') {
+    error.status = status;
+  }
+  return error;
+}
+
+function getApiErrorStatus(error) {
+  return typeof error?.status === 'number' ? error.status : null;
+}
+
+function isPermissionRestrictedStatus(status) {
+  return status === 401 || status === 403;
+}
+
+function isPermissionRestrictedError(error) {
+  const status = getApiErrorStatus(error);
+  if (isPermissionRestrictedStatus(status)) return true;
+
+  const message = String(error?.message || '').trim().toLowerCase();
+  return (
+    message === 'forbidden' ||
+    message === 'unauthorized' ||
+    message.includes('forbidden') ||
+    message.includes('unauthorized')
+  );
+}
+
+function toFriendlyProviderStatusError(errorMessage) {
+  const normalized = String(errorMessage || '').trim().toLowerCase();
+  if (!normalized) return '';
+  if (
+    normalized === 'forbidden' ||
+    normalized === 'unauthorized' ||
+    normalized.includes('forbidden') ||
+    normalized.includes('unauthorized')
+  ) {
+    return STRIPE_OWNER_PERMISSION_ERROR_COPY;
+  }
+  return errorMessage;
+}
+
 async function parseApiJson(response) {
   const payload = await response.json().catch(() => null);
   if (!response.ok || !payload?.success) {
-    throw new Error(payload?.error || 'Request failed');
+    throw createApiError(payload?.error || 'Request failed', response.status);
   }
   return payload.data;
 }
@@ -447,6 +496,24 @@ function buildStripeRuntimeStatusFromProviderSnapshot(stripeProviderSnapshot) {
     chargesEnabled: stripeProviderSnapshot.chargesEnabled,
     payoutsEnabled: stripeProviderSnapshot.payoutsEnabled,
     providerStatus: stripeProviderSnapshot,
+  };
+}
+
+function buildStripeRuntimeStatusFromPublicConfig(publicConfig) {
+  if (!publicConfig) return null;
+
+  return {
+    source: publicConfig.source || 'none',
+    mode: publicConfig.mode || 'unknown',
+    hasPublishableKey: Boolean(publicConfig.publishableKey),
+    hasSecretKey: null,
+    hasWebhookSecret: null,
+    webhookSource: 'none',
+    verified: null,
+    accountId: null,
+    chargesEnabled: null,
+    payoutsEnabled: null,
+    providerStatus: null,
   };
 }
 
@@ -960,6 +1027,8 @@ export default function SettingsWorkspace() {
   const [stripeRuntimeStatus, setStripeRuntimeStatus] = useState(null);
   const [stripeRuntimeLoading, setStripeRuntimeLoading] = useState(false);
   const [stripeRuntimeLoaded, setStripeRuntimeLoaded] = useState(false);
+  const [stripePermissionRestrictedByApi, setStripePermissionRestrictedByApi] = useState(false);
+  const [stripePublicRuntimeStatus, setStripePublicRuntimeStatus] = useState(null);
   const [activePaymentDrawer, setActivePaymentDrawer] = useState(null);
   const [activeEmailDrawer, setActiveEmailDrawer] = useState(null);
   const [activeBrandDrawer, setActiveBrandDrawer] = useState(null);
@@ -1031,6 +1100,25 @@ export default function SettingsWorkspace() {
     () => SETTINGS_SECTIONS.find((section) => section.id === activeSection)?.label || 'Settings',
     [activeSection]
   );
+  const stripeRoleRestricted = Boolean(sessionUser?.role && sessionUser.role !== 'OWNER');
+  const stripePermissionRestricted = stripeRoleRestricted || stripePermissionRestrictedByApi;
+  const stripeActionsRestricted = stripePermissionRestricted;
+  const providerStatusErrorDisplay = useMemo(
+    () => toFriendlyProviderStatusError(providerStatusError),
+    [providerStatusError]
+  );
+
+  const loadStripePublicRuntimeStatus = useCallback(async () => {
+    try {
+      const publicConfig = await fetch('/api/checkout/stripe-config', { cache: 'no-store' }).then(parseApiJson);
+      const mappedStatus = buildStripeRuntimeStatusFromPublicConfig(publicConfig);
+      setStripePublicRuntimeStatus(mappedStatus);
+      return mappedStatus;
+    } catch {
+      setStripePublicRuntimeStatus(null);
+      return null;
+    }
+  }, []);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1299,13 +1387,31 @@ export default function SettingsWorkspace() {
     async function loadStripeRuntimeStatus() {
       setStripeRuntimeLoading(true);
       setProviderStatusError('');
+      if (stripeRoleRestricted) {
+        await loadStripePublicRuntimeStatus();
+        if (cancelled) return;
+        setStripeRuntimeStatus(null);
+        setStripePermissionRestrictedByApi(false);
+        setStripeRuntimeLoading(false);
+        setStripeRuntimeLoaded(true);
+        return;
+      }
       try {
         const runtimePayload = await fetch('/api/settings/payments/stripe/status', { cache: 'no-store' }).then(parseApiJson);
         if (cancelled) return;
         setStripeRuntimeStatus(runtimePayload || null);
-      } catch {
+        setStripePublicRuntimeStatus(null);
+        setStripePermissionRestrictedByApi(false);
+      } catch (loadError) {
         if (cancelled) return;
-        setProviderStatusError('Failed to load Stripe status.');
+        if (isPermissionRestrictedError(loadError)) {
+          setStripePermissionRestrictedByApi(true);
+          setProviderStatusError(STRIPE_OWNER_PERMISSION_ERROR_COPY);
+          setStripeRuntimeStatus(null);
+          await loadStripePublicRuntimeStatus();
+        } else {
+          setProviderStatusError('Failed to load Stripe status.');
+        }
       } finally {
         if (!cancelled) {
           setStripeRuntimeLoading(false);
@@ -1319,7 +1425,7 @@ export default function SettingsWorkspace() {
     return () => {
       cancelled = true;
     };
-  }, [activeSection, stripeRuntimeLoaded]);
+  }, [activeSection, loadStripePublicRuntimeStatus, stripeRoleRestricted, stripeRuntimeLoaded]);
 
   useEffect(() => {
     const shouldLoadProviderMatrix = ['shipping', 'email'].includes(activeSection);
@@ -1540,16 +1646,29 @@ export default function SettingsWorkspace() {
     toProviderGatewayStatusFromStripeSavedStatus(stripeRuntimeStatus) ||
     toProviderGatewayStatusFromStripeSnapshot(stripeRuntimeStatus?.providerStatus) ||
     null;
+  const stripeDisplayedRuntimeStatus = stripeRuntimeStatus || stripePublicRuntimeStatus;
   const resendProviderStatus = providerStatusMap.RESEND || null;
   const smtpProviderStatus = providerStatusMap.SMTP || null;
   const shippoProviderStatus = providerStatusMap.SHIPPO || null;
   const easypostProviderStatus = providerStatusMap.EASYPOST || null;
   const isPaymentsSectionActive = activeSection === 'payments';
   const stripeSavedStatusPending =
-    !stripeRuntimeStatus && !stripeProviderStatus && (stripeRuntimeLoading || !stripeRuntimeLoaded);
+    !stripeDisplayedRuntimeStatus && !stripeProviderStatus && (stripeRuntimeLoading || !stripeRuntimeLoaded);
   const showPaymentsProviderRowsSkeleton = false;
   const stripeSetupStatus = useMemo(
     () => {
+      if (stripePermissionRestricted) {
+        return {
+          label: STRIPE_OWNER_REQUIRED_LABEL,
+          tone: 'neutral',
+          detail: stripePublicRuntimeStatus
+            ? STRIPE_OWNER_REQUIRED_HELPER_COPY
+            : `${STRIPE_OWNER_REQUIRED_HELPER_COPY} Detailed verification status is restricted.`,
+          sourceLabel: STRIPE_VIEW_ONLY_LABEL,
+          lastVerifiedAt: null,
+        };
+      }
+
       if (stripeSavedStatusPending) {
         return {
           label: 'Loading saved status...',
@@ -1560,11 +1679,11 @@ export default function SettingsWorkspace() {
         };
       }
 
-      if (stripeProviderStatus && !stripeRuntimeStatus) {
+      if (stripeProviderStatus && !stripeDisplayedRuntimeStatus) {
         return describeProviderGatewayStatus(stripeProviderStatus, describeStripeSetup(setupCheckById));
       }
 
-      if (!stripeRuntimeStatus) {
+      if (!stripeDisplayedRuntimeStatus) {
         return {
           label: 'Verification unavailable',
           tone: 'warning',
@@ -1575,14 +1694,14 @@ export default function SettingsWorkspace() {
       }
 
       const resolved = describeStripeSavedStatus(
-        stripeRuntimeStatus,
+        stripeDisplayedRuntimeStatus,
         stripeProviderStatus,
         describeStripeSetup(setupCheckById)
       );
 
       if (
         resolved.label === 'Needs attention' &&
-        isLikelyVerificationTimeout(stripeRuntimeStatus?.lastError || resolved.detail)
+        isLikelyVerificationTimeout(stripeDisplayedRuntimeStatus?.lastError || resolved.detail)
       ) {
         return {
           ...resolved,
@@ -1594,32 +1713,46 @@ export default function SettingsWorkspace() {
 
       return resolved;
     },
-    [stripeProviderStatus, setupCheckById, stripeRuntimeStatus, stripeSavedStatusPending]
+    [
+      stripeDisplayedRuntimeStatus,
+      stripePermissionRestricted,
+      stripeProviderStatus,
+      stripePublicRuntimeStatus,
+      setupCheckById,
+      stripeSavedStatusPending,
+    ]
   );
   const stripeCheckoutSourceLabel =
-    STRIPE_CHECKOUT_SOURCE_LABEL[stripeRuntimeStatus?.source] || STRIPE_CHECKOUT_SOURCE_LABEL.none;
+    STRIPE_CHECKOUT_SOURCE_LABEL[stripeDisplayedRuntimeStatus?.source] || STRIPE_CHECKOUT_SOURCE_LABEL.none;
   const stripeResolvedWebhookSource =
-    stripeRuntimeStatus?.hasWebhookSecret
-      ? stripeRuntimeStatus?.source || 'db'
+    stripeDisplayedRuntimeStatus?.hasWebhookSecret
+      ? stripeDisplayedRuntimeStatus?.source || 'db'
       : 'none';
   const stripeWebhookSourceLabel =
     STRIPE_WEBHOOK_SOURCE_LABEL[stripeResolvedWebhookSource] || STRIPE_WEBHOOK_SOURCE_LABEL.none;
   const stripeRuntimeModeLabel =
-    stripeRuntimeStatus?.mode || stripeRuntimeStatus?.providerStatus?.mode || 'unknown';
-  const stripeWebhookEndpoint = stripeRuntimeStatus?.webhookEndpoint || '';
-  const stripeWebhookEndpointReady = Boolean(stripeRuntimeStatus?.webhookEndpointReady);
-  const stripeWebhookEndpointIssue = stripeRuntimeStatus?.webhookEndpointIssue || null;
-  const stripeWebhookEndpointMessage = stripeRuntimeStatus?.webhookEndpointMessage || '';
-  const stripeWebhookEndpointStatusLabel = stripeWebhookEndpointReady ? 'Ready' : 'Store URL needs setup';
+    stripeDisplayedRuntimeStatus?.mode || stripeDisplayedRuntimeStatus?.providerStatus?.mode || 'unknown';
+  const stripeWebhookEndpoint = stripeDisplayedRuntimeStatus?.webhookEndpoint || '';
+  const stripeWebhookEndpointReady = Boolean(stripeDisplayedRuntimeStatus?.webhookEndpointReady);
+  const stripeWebhookEndpointIssue = stripeDisplayedRuntimeStatus?.webhookEndpointIssue || null;
+  const stripeWebhookEndpointMessage = stripeDisplayedRuntimeStatus?.webhookEndpointMessage || '';
+  const stripeWebhookEndpointStatusLabel =
+    stripeActionsRestricted && !stripeWebhookEndpoint
+      ? STRIPE_VIEW_ONLY_LABEL
+      : stripeWebhookEndpointReady
+        ? 'Ready'
+        : 'Store URL needs setup';
   const stripeLastCheckedText = stripeSetupStatus?.lastVerifiedAt
     ? formatDateTimeForDisplay(stripeSetupStatus.lastVerifiedAt, { timeZone: settings.timezone, fallbackText: '' })
     : null;
-  const stripeMethodChips = useMemo(() => getStripeMethodChips(stripeRuntimeStatus), [stripeRuntimeStatus]);
+  const stripeMethodChips = useMemo(() => getStripeMethodChips(stripeDisplayedRuntimeStatus), [stripeDisplayedRuntimeStatus]);
   const showStripeRuntimeMismatchWarning =
-    stripeProviderStatus?.state === 'VERIFIED' && stripeRuntimeStatus?.source && stripeRuntimeStatus.source !== 'db';
+    stripeProviderStatus?.state === 'VERIFIED' &&
+    stripeDisplayedRuntimeStatus?.source &&
+    stripeDisplayedRuntimeStatus.source !== 'db';
   const checkoutMethodStatuses = useMemo(
-    () => buildCheckoutMethodStatuses(stripeRuntimeStatus),
-    [stripeRuntimeStatus]
+    () => buildCheckoutMethodStatuses(stripeDisplayedRuntimeStatus),
+    [stripeDisplayedRuntimeStatus]
   );
   const paymentProviderRows = useMemo(
     () =>
@@ -1723,10 +1856,10 @@ export default function SettingsWorkspace() {
     () =>
       buildStripeMaskedCredentialMap({
         credentialMeta: stripeSavedCredentialMeta,
-        runtimeStatus: stripeRuntimeStatus || null,
-        runtimeMode: stripeRuntimeStatus?.mode || null,
+        runtimeStatus: stripeDisplayedRuntimeStatus || null,
+        runtimeMode: stripeDisplayedRuntimeStatus?.mode || null,
       }),
-    [providerStatusMap.STRIPE?.credentialMeta, stripeRuntimeStatus]
+    [providerStatusMap.STRIPE?.credentialMeta, stripeDisplayedRuntimeStatus]
   );
   const stripeSavedCredentialEntries = useMemo(() => {
     const entries = [];
@@ -1760,11 +1893,16 @@ export default function SettingsWorkspace() {
     isReplacing: stripeCredentialReplaceByField.webhookSecret,
   });
   const stripeSavedMode = useMemo(() => {
-    const raw = String(stripeCredentialMaskMap.MODE || stripeRuntimeStatus?.providerStatus?.mode || stripeRuntimeStatus?.mode || '')
+    const raw = String(
+      stripeCredentialMaskMap.MODE ||
+        stripeDisplayedRuntimeStatus?.providerStatus?.mode ||
+        stripeDisplayedRuntimeStatus?.mode ||
+        ''
+    )
       .trim()
       .toLowerCase();
     return raw === 'live' ? 'live' : 'test';
-  }, [stripeCredentialMaskMap.MODE, stripeRuntimeStatus?.mode, stripeRuntimeStatus?.providerStatus?.mode]);
+  }, [stripeCredentialMaskMap.MODE, stripeDisplayedRuntimeStatus?.mode, stripeDisplayedRuntimeStatus?.providerStatus?.mode]);
   const stripeHasSavedRequiredKeys = Boolean(
     stripeCredentialMaskMap.PUBLISHABLE_KEY && stripeCredentialMaskMap.SECRET_KEY
   );
@@ -1783,6 +1921,15 @@ export default function SettingsWorkspace() {
   const stripeConnectionPresentation = useMemo(() => {
     const statusLabel = String(stripeSetupStatus.label || '').trim();
     const normalizedStatusLabel = normalizeStatusLabel(statusLabel);
+
+    if (normalizedStatusLabel === normalizeStatusLabel(STRIPE_OWNER_REQUIRED_LABEL)) {
+      return {
+        heading: 'Stripe connection (view only)',
+        badgeLabel: STRIPE_OWNER_REQUIRED_LABEL,
+        badgeTone: 'neutral',
+        copy: stripeSetupStatus.detail,
+      };
+    }
 
     if (normalizedStatusLabel === 'loading saved status...') {
       return {
@@ -1836,21 +1983,27 @@ export default function SettingsWorkspace() {
       copy: stripeSetupStatus.detail,
     };
   }, [stripeSetupStatus.detail, stripeSetupStatus.label]);
+  const stripeApiKeysSummary = stripePermissionRestricted
+    ? STRIPE_VIEW_ONLY_LABEL
+    : stripeHasSavedRequiredKeys
+      ? 'Saved'
+      : 'Missing required keys';
+  const stripeWebhookSummaryLabel = stripePermissionRestricted ? STRIPE_VIEW_ONLY_LABEL : stripeWebhookSourceLabel;
   const stripeConnectionSummaryRows = useMemo(
     () => [
       { label: 'Status', value: stripeConnectionPresentation.badgeLabel },
       { label: 'Mode', value: stripeRuntimeModeLabel },
       { label: 'Credentials source', value: stripeCheckoutSourceLabel },
-      { label: 'API keys', value: stripeHasSavedRequiredKeys ? 'Saved' : 'Missing required keys' },
-      { label: 'Webhook', value: stripeWebhookSourceLabel },
+      { label: 'API keys', value: stripeApiKeysSummary },
+      { label: 'Webhook', value: stripeWebhookSummaryLabel },
       { label: 'Last verified', value: formatDateTime(stripeSetupStatus.lastVerifiedAt, settings.timezone) },
     ],
     [
+      stripeApiKeysSummary,
       stripeConnectionPresentation.badgeLabel,
       stripeRuntimeModeLabel,
       stripeCheckoutSourceLabel,
-      stripeHasSavedRequiredKeys,
-      stripeWebhookSourceLabel,
+      stripeWebhookSummaryLabel,
       stripeSetupStatus.lastVerifiedAt,
     ]
   );
@@ -2491,8 +2644,9 @@ export default function SettingsWorkspace() {
     setProviderNotice('');
     setActivePaymentDrawer(providerId);
     if (providerId === PAYMENT_PROVIDER_DRAWER.STRIPE) {
+      setShowStripeAdvanced(false);
       setStripeCredentialReplaceByField({ ...EMPTY_STRIPE_REPLACE_STATE });
-      if (!providerStatusLoaded) {
+      if (!providerStatusLoaded && !stripeActionsRestricted) {
         void refreshProviderStatuses({ includeRuntime: false });
       }
     }
@@ -2651,6 +2805,10 @@ export default function SettingsWorkspace() {
   }
 
   async function handleCopyStripeWebhookEndpoint() {
+    if (stripeActionsRestricted) {
+      setProviderStatusError(STRIPE_OWNER_PERMISSION_ERROR_COPY);
+      return;
+    }
     if (typeof window === 'undefined') return;
     const endpoint = stripeWebhookEndpoint || `${window.location.origin}/api/webhooks/stripe`;
     await handleCopyCommand('stripe-webhook-endpoint', endpoint);
@@ -2751,10 +2909,19 @@ export default function SettingsWorkspace() {
           .then(parseApiJson)
           .then((runtimePayload) => {
             setStripeRuntimeStatus(runtimePayload || null);
+            setStripePublicRuntimeStatus(null);
+            setStripePermissionRestrictedByApi(false);
             setStripeRuntimeLoaded(true);
           })
-          .catch(() => {
-            setProviderStatusError('Failed to refresh Stripe status.');
+          .catch(async (runtimeError) => {
+            if (isPermissionRestrictedError(runtimeError)) {
+              setStripePermissionRestrictedByApi(true);
+              setProviderStatusError(STRIPE_OWNER_PERMISSION_ERROR_COPY);
+              setStripeRuntimeStatus(null);
+              await loadStripePublicRuntimeStatus();
+            } else {
+              setProviderStatusError('Failed to refresh Stripe status.');
+            }
           })
           .finally(() => {
             setStripeRuntimeLoading(false);
@@ -2771,9 +2938,18 @@ export default function SettingsWorkspace() {
       const stripeProviderSnapshot = providerPayload?.stripeProviderStatus || null;
       setProviderStatusMap(nextMap);
       setStripeRuntimeStatus((current) => current || buildStripeRuntimeStatusFromProviderSnapshot(stripeProviderSnapshot));
+      setStripePermissionRestrictedByApi(false);
       setProviderStatusLoaded(true);
     } catch (refreshError) {
-      setProviderStatusError(refreshError instanceof Error ? refreshError.message : 'Failed to refresh provider statuses');
+      if (isPermissionRestrictedError(refreshError)) {
+        setStripePermissionRestrictedByApi(true);
+        setProviderStatusError(STRIPE_OWNER_PERMISSION_ERROR_COPY);
+        await loadStripePublicRuntimeStatus();
+      } else {
+        setProviderStatusError(
+          refreshError instanceof Error ? refreshError.message : 'Failed to refresh provider statuses'
+        );
+      }
     } finally {
       setProviderStatusLoading(false);
     }
@@ -2827,6 +3003,10 @@ export default function SettingsWorkspace() {
   }
 
   function startStripeCredentialReplace(field) {
+    if (stripeActionsRestricted) {
+      setProviderStatusError(STRIPE_OWNER_PERMISSION_ERROR_COPY);
+      return;
+    }
     setStripeCredentialReplaceByField((current) => ({
       ...current,
       [field]: true,
@@ -2834,6 +3014,7 @@ export default function SettingsWorkspace() {
   }
 
   function cancelStripeCredentialReplace(field) {
+    if (stripeActionsRestricted) return;
     setStripeCredentialReplaceByField((current) => ({
       ...current,
       [field]: false,
@@ -2853,6 +3034,10 @@ export default function SettingsWorkspace() {
   }
 
   async function handleSaveProviderCredentials(provider, payload) {
+    if (provider === 'STRIPE' && stripeActionsRestricted) {
+      setProviderStatusError(STRIPE_OWNER_PERMISSION_ERROR_COPY);
+      return;
+    }
     setProviderActionById((current) => ({ ...current, [provider]: 'saving' }));
     setProviderNotice('');
     setProviderStatusError('');
@@ -2876,13 +3061,23 @@ export default function SettingsWorkspace() {
           : `${provider} credentials saved. Run verification to confirm connectivity.`
       );
     } catch (saveError) {
-      setProviderStatusError(saveError instanceof Error ? saveError.message : 'Failed to save provider credentials');
+      if (provider === 'STRIPE' && isPermissionRestrictedError(saveError)) {
+        setStripePermissionRestrictedByApi(true);
+        setProviderStatusError(STRIPE_OWNER_PERMISSION_ERROR_COPY);
+        await loadStripePublicRuntimeStatus();
+      } else {
+        setProviderStatusError(saveError instanceof Error ? saveError.message : 'Failed to save provider credentials');
+      }
     } finally {
       setProviderActionById((current) => ({ ...current, [provider]: '' }));
     }
   }
 
   async function handleVerifyProvider(provider) {
+    if (provider === 'STRIPE' && stripeActionsRestricted) {
+      setProviderStatusError(STRIPE_OWNER_PERMISSION_ERROR_COPY);
+      return;
+    }
     setProviderActionById((current) => ({ ...current, [provider]: 'verifying' }));
     setProviderNotice('');
     setProviderStatusError('');
@@ -2903,13 +3098,23 @@ export default function SettingsWorkspace() {
         setProviderStatusError(data?.verification?.message || `${provider} verification failed.`);
       }
     } catch (verifyError) {
-      setProviderStatusError(verifyError instanceof Error ? verifyError.message : 'Provider verification failed');
+      if (provider === 'STRIPE' && isPermissionRestrictedError(verifyError)) {
+        setStripePermissionRestrictedByApi(true);
+        setProviderStatusError(STRIPE_OWNER_PERMISSION_ERROR_COPY);
+        await loadStripePublicRuntimeStatus();
+      } else {
+        setProviderStatusError(verifyError instanceof Error ? verifyError.message : 'Provider verification failed');
+      }
     } finally {
       setProviderActionById((current) => ({ ...current, [provider]: '' }));
     }
   }
 
   async function handleDisconnectProvider(provider) {
+    if (provider === 'STRIPE' && stripeActionsRestricted) {
+      setProviderStatusError(STRIPE_OWNER_PERMISSION_ERROR_COPY);
+      return;
+    }
     setProviderActionById((current) => ({ ...current, [provider]: 'disconnecting' }));
     setProviderNotice('');
     setProviderStatusError('');
@@ -2927,9 +3132,15 @@ export default function SettingsWorkspace() {
       resetProviderForm(provider);
       setProviderNotice(`${provider} credentials disconnected.`);
     } catch (disconnectError) {
-      setProviderStatusError(
-        disconnectError instanceof Error ? disconnectError.message : 'Failed to disconnect provider credentials'
-      );
+      if (provider === 'STRIPE' && isPermissionRestrictedError(disconnectError)) {
+        setStripePermissionRestrictedByApi(true);
+        setProviderStatusError(STRIPE_OWNER_PERMISSION_ERROR_COPY);
+        await loadStripePublicRuntimeStatus();
+      } else {
+        setProviderStatusError(
+          disconnectError instanceof Error ? disconnectError.message : 'Failed to disconnect provider credentials'
+        );
+      }
     } finally {
       setProviderActionById((current) => ({ ...current, [provider]: '' }));
     }
@@ -3610,10 +3821,10 @@ export default function SettingsWorkspace() {
                     </p>
                   </div>
                 </section>
-                {providerStatusError ? (
+                {providerStatusErrorDisplay ? (
                   <div className={styles.statusBlock}>
                     <p className={styles.statusTitle}>Provider action error</p>
-                    <p className={styles.statusText}>{providerStatusError}</p>
+                    <p className={styles.statusText}>{providerStatusErrorDisplay}</p>
                   </div>
                 ) : null}
                 {emailStatusError ? (
@@ -3672,7 +3883,7 @@ export default function SettingsWorkspace() {
                               {providerRow.id === PAYMENT_PROVIDER_DRAWER.STRIPE ? (
                                 <AdminButton
                                   aria-label="Verify Stripe now"
-                                  disabled={providerActionById.STRIPE === 'verifying'}
+                                  disabled={stripeActionsRestricted || providerActionById.STRIPE === 'verifying'}
                                   onClick={() => handleVerifyProvider('STRIPE')}
                                   size="sm"
                                   variant="ghost"
@@ -3754,10 +3965,10 @@ export default function SettingsWorkspace() {
                     </p>
                   </div>
                 </section>
-                {providerStatusError ? (
+                {providerStatusErrorDisplay ? (
                   <div className={styles.statusBlock}>
                     <p className={styles.statusTitle}>Provider action error</p>
-                    <p className={styles.statusText}>{providerStatusError}</p>
+                    <p className={styles.statusText}>{providerStatusErrorDisplay}</p>
                   </div>
                 ) : null}
                 {providerNotice ? (
@@ -3992,10 +4203,10 @@ export default function SettingsWorkspace() {
                     <p className={styles.cardSubtext}>Configure transactional email providers and webhook verification. Provider setup now lives here.</p>
                   </div>
                 </section>
-                {providerStatusError ? (
+                {providerStatusErrorDisplay ? (
                   <div className={styles.statusBlock}>
                     <p className={styles.statusTitle}>Provider action error</p>
-                    <p className={styles.statusText}>{providerStatusError}</p>
+                    <p className={styles.statusText}>{providerStatusErrorDisplay}</p>
                   </div>
                 ) : null}
                 {providerNotice ? (
@@ -4635,7 +4846,9 @@ export default function SettingsWorkspace() {
                 <AdminTooltip content="Credentials are encrypted at rest. Inputs clear after save and show masked placeholders from saved metadata." />
               </div>
               <p className={styles.compactMeta}>
-                Save API keys and webhook secret, then verify Stripe API and add the webhook endpoint in Stripe.
+                {stripeActionsRestricted
+                  ? STRIPE_OWNER_REQUIRED_HELPER_COPY
+                  : 'Save API keys and webhook secret, then verify Stripe API and add the webhook endpoint in Stripe.'}
               </p>
               <p className={styles.compactMeta}>
                 Credentials are saved securely. Secret values are encrypted and hidden. Use Replace only when changing keys.
@@ -4645,13 +4858,19 @@ export default function SettingsWorkspace() {
                   {stripeShowPublishableInput ? (
                     <div className={styles.credentialInputStack}>
                       <AdminInput
+                        disabled={stripeActionsRestricted}
                         onChange={(event) => patchProviderForm('STRIPE', { publishableKey: event.target.value })}
                         placeholder="pk_test_..."
                         type="text"
                         value={providerForms.STRIPE.publishableKey}
                       />
                       {stripeCredentialMaskMap.PUBLISHABLE_KEY ? (
-                        <AdminButton onClick={() => cancelStripeCredentialReplace('publishableKey')} size="sm" variant="ghost">
+                        <AdminButton
+                          disabled={stripeActionsRestricted}
+                          onClick={() => cancelStripeCredentialReplace('publishableKey')}
+                          size="sm"
+                          variant="ghost"
+                        >
                           Cancel replacement
                         </AdminButton>
                       ) : null}
@@ -4659,7 +4878,12 @@ export default function SettingsWorkspace() {
                   ) : (
                     <div className={styles.savedCredentialRow}>
                       <span className={styles.savedCredentialValue}>Saved credential • {stripeCredentialMaskMap.PUBLISHABLE_KEY}</span>
-                      <AdminButton onClick={() => startStripeCredentialReplace('publishableKey')} size="sm" variant="ghost">
+                      <AdminButton
+                        disabled={stripeActionsRestricted}
+                        onClick={() => startStripeCredentialReplace('publishableKey')}
+                        size="sm"
+                        variant="ghost"
+                      >
                         Replace
                       </AdminButton>
                     </div>
@@ -4669,13 +4893,19 @@ export default function SettingsWorkspace() {
                   {stripeShowSecretInput ? (
                     <div className={styles.credentialInputStack}>
                       <AdminInput
+                        disabled={stripeActionsRestricted}
                         onChange={(event) => patchProviderForm('STRIPE', { secretKey: event.target.value })}
                         placeholder="sk_test_..."
                         type="password"
                         value={providerForms.STRIPE.secretKey}
                       />
                       {stripeCredentialMaskMap.SECRET_KEY ? (
-                        <AdminButton onClick={() => cancelStripeCredentialReplace('secretKey')} size="sm" variant="ghost">
+                        <AdminButton
+                          disabled={stripeActionsRestricted}
+                          onClick={() => cancelStripeCredentialReplace('secretKey')}
+                          size="sm"
+                          variant="ghost"
+                        >
                           Cancel replacement
                         </AdminButton>
                       ) : null}
@@ -4683,7 +4913,12 @@ export default function SettingsWorkspace() {
                   ) : (
                     <div className={styles.savedCredentialRow}>
                       <span className={styles.savedCredentialValue}>Saved credential • {stripeCredentialMaskMap.SECRET_KEY}</span>
-                      <AdminButton onClick={() => startStripeCredentialReplace('secretKey')} size="sm" variant="ghost">
+                      <AdminButton
+                        disabled={stripeActionsRestricted}
+                        onClick={() => startStripeCredentialReplace('secretKey')}
+                        size="sm"
+                        variant="ghost"
+                      >
                         Replace
                       </AdminButton>
                     </div>
@@ -4693,13 +4928,19 @@ export default function SettingsWorkspace() {
                   {stripeShowWebhookInput ? (
                     <div className={styles.credentialInputStack}>
                       <AdminInput
+                        disabled={stripeActionsRestricted}
                         onChange={(event) => patchProviderForm('STRIPE', { webhookSecret: event.target.value })}
                         placeholder="whsec_..."
                         type="password"
                         value={providerForms.STRIPE.webhookSecret}
                       />
                       {stripeCredentialMaskMap.WEBHOOK_SECRET ? (
-                        <AdminButton onClick={() => cancelStripeCredentialReplace('webhookSecret')} size="sm" variant="ghost">
+                        <AdminButton
+                          disabled={stripeActionsRestricted}
+                          onClick={() => cancelStripeCredentialReplace('webhookSecret')}
+                          size="sm"
+                          variant="ghost"
+                        >
                           Cancel replacement
                         </AdminButton>
                       ) : null}
@@ -4707,7 +4948,12 @@ export default function SettingsWorkspace() {
                   ) : (
                     <div className={styles.savedCredentialRow}>
                       <span className={styles.savedCredentialValue}>Saved credential • {stripeCredentialMaskMap.WEBHOOK_SECRET}</span>
-                      <AdminButton onClick={() => startStripeCredentialReplace('webhookSecret')} size="sm" variant="ghost">
+                      <AdminButton
+                        disabled={stripeActionsRestricted}
+                        onClick={() => startStripeCredentialReplace('webhookSecret')}
+                        size="sm"
+                        variant="ghost"
+                      >
                         Replace
                       </AdminButton>
                     </div>
@@ -4717,6 +4963,7 @@ export default function SettingsWorkspace() {
                   <span>Mode</span>
                   <AdminSelect
                     className={styles.input}
+                    disabled={stripeActionsRestricted}
                     onChange={(nextValue) => patchProviderForm('STRIPE', { mode: nextValue })}
                     options={STRIPE_MODE_OPTIONS}
                     value={providerForms.STRIPE.mode}
@@ -4726,6 +4973,7 @@ export default function SettingsWorkspace() {
               <div className={styles.compactActionRow}>
                 <AdminButton
                   disabled={
+                    stripeActionsRestricted ||
                     providerActionById.STRIPE === 'saving' ||
                     (!stripeHasSavedRequiredKeys &&
                       (!providerForms.STRIPE.publishableKey.trim() ||
@@ -4738,14 +4986,14 @@ export default function SettingsWorkspace() {
                   {providerActionById.STRIPE === 'saving' ? 'Saving...' : 'Save Stripe settings'}
                 </AdminButton>
                 <AdminButton
-                  disabled={providerActionById.STRIPE === 'verifying'}
+                  disabled={stripeActionsRestricted || providerActionById.STRIPE === 'verifying'}
                   onClick={() => handleVerifyProvider('STRIPE')}
                   size="sm"
                   variant="secondary"
                 >
                   {providerActionById.STRIPE === 'verifying' ? 'Verifying...' : 'Verify now'}
                 </AdminButton>
-                <AdminButton onClick={handleCopyStripeWebhookEndpoint} size="sm" variant="ghost">
+                <AdminButton disabled={stripeActionsRestricted} onClick={handleCopyStripeWebhookEndpoint} size="sm" variant="ghost">
                   {setupCopiedCommandId === 'stripe-webhook-endpoint' ? 'Copied endpoint' : 'Copy webhook endpoint'}
                 </AdminButton>
               </div>
@@ -4755,12 +5003,12 @@ export default function SettingsWorkspace() {
                   {stripeWebhookEndpoint || 'Unavailable until this page has a valid origin'}
                 </span>
               </div>
-              {!stripeWebhookEndpointReady ? (
+              {!stripeActionsRestricted && !stripeWebhookEndpointReady ? (
                 <p className={styles.setupFixText}>
                   Store URL needs setup. {stripeWebhookEndpointMessage} Set NEXT_PUBLIC_STORE_URL to the deployed domain and redeploy before relying on webhook readiness.
                 </p>
               ) : null}
-              {stripeWebhookEndpointIssue === 'placeholder' ? (
+              {!stripeActionsRestricted && stripeWebhookEndpointIssue === 'placeholder' ? (
                 <p className={styles.setupFixText}>
                   Placeholder domains are not accepted for webhook readiness.
                 </p>
@@ -4800,12 +5048,16 @@ export default function SettingsWorkspace() {
               <p className={styles.compactMeta}>Developer tooling and destructive actions.</p>
               <AdminButton
                 className={styles.advancedToggle}
+                disabled={stripeActionsRestricted}
                 onClick={() => setShowStripeAdvanced((current) => !current)}
                 size="sm"
                 variant="secondary"
               >
                 {showStripeAdvanced ? 'Hide advanced options' : 'Show advanced options'}
               </AdminButton>
+              {stripeActionsRestricted ? (
+                <p className={styles.compactMeta}>{STRIPE_OWNER_REQUIRED_HELPER_COPY}</p>
+              ) : null}
               {showStripeAdvanced ? (
                 <div className={styles.compactDrawerGrid}>
                   <p className={styles.compactMeta}>
@@ -4813,14 +5065,19 @@ export default function SettingsWorkspace() {
                   </p>
                   <div className={styles.compactActionRow}>
                     <AdminButton
-                      disabled={providerActionById.STRIPE === 'disconnecting'}
+                      disabled={stripeActionsRestricted || providerActionById.STRIPE === 'disconnecting'}
                       onClick={() => handleDisconnectProvider('STRIPE')}
                       size="sm"
                       variant="ghost"
                     >
                       {providerActionById.STRIPE === 'disconnecting' ? 'Disconnecting...' : 'Disconnect Stripe'}
                     </AdminButton>
-                    <AdminButton onClick={() => handleCopyCommand('stripe-webhook-cli', 'npm run doopify:stripe:webhook')} size="sm" variant="ghost">
+                    <AdminButton
+                      disabled={stripeActionsRestricted}
+                      onClick={() => handleCopyCommand('stripe-webhook-cli', 'npm run doopify:stripe:webhook')}
+                      size="sm"
+                      variant="ghost"
+                    >
                       {setupCopiedCommandId === 'stripe-webhook-cli' ? 'Copied CLI command' : 'Copy webhook CLI command'}
                     </AdminButton>
                   </div>

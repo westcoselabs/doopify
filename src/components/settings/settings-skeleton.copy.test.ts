@@ -87,7 +87,7 @@ describe('settings skeleton integration', () => {
   it('keeps Stripe and email provider badges neutral until saved status snapshots load', () => {
     const source = read('src/components/settings/SettingsWorkspace.js')
     expect(source).toContain("const stripeSavedStatusPending =")
-    expect(source).toContain("!stripeRuntimeStatus && !stripeProviderStatus && (stripeRuntimeLoading || !stripeRuntimeLoaded);")
+    expect(source).toContain("!stripeDisplayedRuntimeStatus && !stripeProviderStatus && (stripeRuntimeLoading || !stripeRuntimeLoaded);")
     expect(source).toContain("label: 'Loading saved status...'")
     expect(source).toContain("detail: 'Loading saved Stripe status.'")
     expect(source).toContain("const emailProviderStatusPending = !emailStatus && !providerStatusLoaded && (providerStatusLoading || activeSection === 'email');")
