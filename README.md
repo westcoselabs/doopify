@@ -131,6 +131,19 @@ DATABASE_URL_TEST="postgresql://..." npm run test:integration
 
 Never point `DATABASE_URL_TEST` at your development or production database.
 
+E2E smoke tests (safe-by-default, local only):
+
+```bash
+npm run test:e2e:install
+npm run test:e2e
+```
+
+- `npm run test:e2e` requires Playwright browser binaries; run `npm run test:e2e:install` (or `npx playwright install`) first.
+- Defaults to `http://127.0.0.1:3000` and starts a local dev server automatically.
+- Refuses non-local base URLs unless `E2E_ALLOW_REMOTE=1` is set.
+- Stripe-specific smoke checks are skipped unless all required Stripe env vars are present **and** `E2E_STRIPE_SMOKE=1`.
+- To target an existing local server, set `E2E_BASE_URL` and optionally `E2E_SKIP_WEBSERVER=1`.
+
 ---
 
 ## Tech stack
