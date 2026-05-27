@@ -2,12 +2,18 @@
   "name": "doopify",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium",
     "test:integration": "node scripts/run-integration-tests.mjs",
     "media:migrate-object-storage": "node scripts/migrate-media-to-object-storage.mjs",
     "doopify:doctor": "node scripts/doopify-cli.mjs doctor",
@@ -37,7 +43,7 @@
     "framer-motion": "^12.38.0",
     "jsonwebtoken": "^9.0.2",
     "minio": "^8.0.7",
-    "next": "16.2.2",
+    "next": "16.2.6",
     "nodemailer": "^7.0.10",
     "pg": "^8.20.0",
     "react": "19.2.4",
@@ -48,14 +54,16 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.9",
     "@types/node": "^22.14.1",
     "@types/nodemailer": "^8.0.0",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
+    "@vitest/coverage-v8": "^4.1.7",
     "eslint": "^9",
-    "eslint-config-next": "16.2.2",
+    "eslint-config-next": "16.2.6",
     "prisma": "^7.6.0",
     "typescript": "^5.9.3",
     "vitest": "^4.1.5"
