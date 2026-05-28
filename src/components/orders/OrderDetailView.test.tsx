@@ -53,6 +53,12 @@ function buildOrder(overrides: Record<string, unknown> = {}) {
       hasCustomerEmail: true,
       providerConfigured: true,
     },
+    digitalDelivery: {
+      hasDigitalItems: false,
+      pending: false,
+      grants: [],
+    },
+    digitalDeliveryLoaded: true,
     discounts: [
       {
         id: 'disc_1',
@@ -278,6 +284,115 @@ describe('OrderDetailView', () => {
     expect(html).toContain('Shipping address')
     expect(html).toContain('Billing address')
     expect(html).toContain('OrderAdjustmentsCardStub')
+  })
+
+  it('renders digital delivery card with statuses and action copy for digital grants', () => {
+    const html = renderToStaticMarkup(
+      <OrderDetailView
+        order={buildOrder({
+          digitalDelivery: {
+            hasDigitalItems: true,
+            pending: false,
+            grants: [
+              {
+                grantId: 'grant_active',
+                title: 'Active file',
+                fileName: 'active.pdf',
+                status: 'ACTIVE',
+                downloadCount: 1,
+                downloadLimit: 5,
+                expiresAt: '2099-01-01T00:00:00.000Z',
+                lastDownloadedAt: '2026-05-28T09:00:00.000Z',
+                deliveryEmailStatus: 'SENT',
+                deliveryTokenAvailable: true,
+                events: [],
+              },
+              {
+                grantId: 'grant_revoked',
+                title: 'Revoked file',
+                fileName: 'revoked.pdf',
+                status: 'REVOKED',
+                downloadCount: 2,
+                downloadLimit: 5,
+                expiresAt: '2099-01-01T00:00:00.000Z',
+                lastDownloadedAt: null,
+                deliveryEmailStatus: null,
+                deliveryTokenAvailable: true,
+                events: [],
+              },
+              {
+                grantId: 'grant_expired',
+                title: 'Expired file',
+                fileName: 'expired.pdf',
+                status: 'EXPIRED',
+                downloadCount: 0,
+                downloadLimit: 5,
+                expiresAt: '2026-01-01T00:00:00.000Z',
+                lastDownloadedAt: null,
+                deliveryEmailStatus: null,
+                deliveryTokenAvailable: true,
+                events: [],
+              },
+              {
+                grantId: 'grant_exhausted',
+                title: 'Exhausted file',
+                fileName: 'exhausted.pdf',
+                status: 'EXHAUSTED',
+                downloadCount: 5,
+                downloadLimit: 5,
+                expiresAt: '2099-01-01T00:00:00.000Z',
+                lastDownloadedAt: null,
+                deliveryEmailStatus: null,
+                deliveryTokenAvailable: true,
+                events: [],
+              },
+              {
+                grantId: 'grant_pending',
+                title: 'Pending file',
+                fileName: 'pending.pdf',
+                status: 'PENDING',
+                downloadCount: 0,
+                downloadLimit: 5,
+                expiresAt: '2099-01-01T00:00:00.000Z',
+                lastDownloadedAt: null,
+                deliveryEmailStatus: null,
+                deliveryTokenAvailable: false,
+                events: [],
+              },
+            ],
+          },
+        })}
+      />
+    )
+
+    expect(html).toContain('Digital delivery')
+    expect(html).toContain('Download access for this order.')
+    expect(html).toContain('Active')
+    expect(html).toContain('Revoked')
+    expect(html).toContain('Expired')
+    expect(html).toContain('Download limit reached')
+    expect(html).toContain('Pending')
+    expect(html).toContain('Copy link')
+    expect(html).toContain('Resend email')
+    expect(html).toContain('Revoke access')
+    expect(html).toContain('Regenerate link')
+    expect(html).toContain('Regenerating this link will invalidate the previous download URL.')
+  })
+
+  it('does not render digital delivery card for physical-only orders', () => {
+    const html = renderToStaticMarkup(
+      <OrderDetailView
+        order={buildOrder({
+          digitalDelivery: {
+            hasDigitalItems: false,
+            pending: false,
+            grants: [],
+          },
+        })}
+      />
+    )
+
+    expect(html).not.toContain('Digital delivery')
   })
 
   it('maps status chip tones correctly', () => {

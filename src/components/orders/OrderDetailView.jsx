@@ -26,6 +26,23 @@ export function orderStatusChipTone(status) {
   return "neutral";
 }
 
+function digitalDeliveryStatusLabel(status) {
+  const normalized = String(status || "").toUpperCase();
+  if (normalized === "ACTIVE") return "Active";
+  if (normalized === "REVOKED") return "Revoked";
+  if (normalized === "EXPIRED") return "Expired";
+  if (normalized === "EXHAUSTED") return "Download limit reached";
+  return "Pending";
+}
+
+function digitalDeliveryStatusTone(status) {
+  const normalized = String(status || "").toUpperCase();
+  if (normalized === "ACTIVE") return "success";
+  if (normalized === "REVOKED" || normalized === "EXHAUSTED") return "danger";
+  if (normalized === "EXPIRED" || normalized === "PENDING") return "warning";
+  return "neutral";
+}
+
 function formatMoney(value, currency = "USD") {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -149,6 +166,12 @@ function hasPrefetchedFulfillmentData(order) {
     return true;
   }
   return false;
+}
+
+function hasPrefetchedDigitalDeliveryData(order) {
+  if (!order) return false;
+  if (order.digitalDeliveryLoaded === false) return false;
+  return Boolean(order.digitalDelivery && typeof order.digitalDelivery === "object");
 }
 
 function normalizeConnectedProviders(input) {
@@ -315,6 +338,13 @@ export default function OrderDetailView({
   const [fulfillmentLoading, setFulfillmentLoading] = useState(
     () => Boolean(order) && !hasPrefetchedFulfillmentData(order)
   );
+  const [digitalDeliveryLoaded, setDigitalDeliveryLoaded] = useState(() =>
+    hasPrefetchedDigitalDeliveryData(order)
+  );
+  const [digitalDeliveryLoading, setDigitalDeliveryLoading] = useState(
+    () => Boolean(order) && !hasPrefetchedDigitalDeliveryData(order)
+  );
+  const [digitalDeliveryActionLoading, setDigitalDeliveryActionLoading] = useState("");
   const [secondaryReloadKey, setSecondaryReloadKey] = useState(0);
 
   useEffect(() => {
@@ -322,10 +352,13 @@ export default function OrderDetailView({
     setLiveOrder(order);
     const timelinePrefetched = hasPrefetchedTimelineData(order);
     const fulfillmentPrefetched = hasPrefetchedFulfillmentData(order);
+    const digitalDeliveryPrefetched = hasPrefetchedDigitalDeliveryData(order);
     setTimelineLoaded(timelinePrefetched);
     setTimelineLoading(Boolean(order) && !timelinePrefetched);
     setFulfillmentLoaded(fulfillmentPrefetched);
     setFulfillmentLoading(Boolean(order) && !fulfillmentPrefetched);
+    setDigitalDeliveryLoaded(digitalDeliveryPrefetched);
+    setDigitalDeliveryLoading(Boolean(order) && !digitalDeliveryPrefetched);
     setSecondaryReloadKey((current) => current + 1);
   }, [order]);
 
@@ -361,6 +394,9 @@ export default function OrderDetailView({
   const hasCustomerEmail =
     currentOrder?.emailCapabilities?.hasCustomerEmail ??
     Boolean(currentOrder?.email || currentOrder?.customer?.email);
+  const digitalDelivery = currentOrder?.digitalDelivery || null;
+  const hasDigitalDelivery = Boolean(digitalDelivery?.hasDigitalItems);
+  const digitalDeliveryPanelReady = digitalDeliveryLoaded && !digitalDeliveryLoading;
   const emailProviderConfigured = Boolean(currentOrder?.emailCapabilities?.providerConfigured);
   const fulfillmentPanelReady = fulfillmentLoaded && !fulfillmentLoading;
   const timelinePanelReady = timelineLoaded && !timelineLoading;
@@ -552,7 +588,35 @@ export default function OrderDetailView({
       }
     }
 
-    void Promise.all([loadTimelinePanel(), loadFulfillmentPanel()]);
+    async function loadDigitalDeliveryPanel() {
+      setDigitalDeliveryLoading(true);
+      try {
+        const response = await fetch(`/api/orders/${normalizedOrderNumber}/digital-delivery`, {
+          cache: "no-store",
+        });
+        const json = await response.json();
+        if (!response.ok || !json?.success) {
+          throw new Error(parseErrorMessage(json, "Failed to load digital delivery details."));
+        }
+        if (!cancelled) {
+          mergeSecondaryPayload({
+            digitalDelivery: json.data || null,
+            digitalDeliveryLoaded: true,
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          showToast("Digital delivery details could not be loaded right now.", "error");
+        }
+      } finally {
+        if (!cancelled) {
+          setDigitalDeliveryLoaded(true);
+          setDigitalDeliveryLoading(false);
+        }
+      }
+    }
+
+    void Promise.all([loadTimelinePanel(), loadFulfillmentPanel(), loadDigitalDeliveryPanel()]);
 
     return () => {
       cancelled = true;
@@ -606,6 +670,8 @@ export default function OrderDetailView({
         setTimelineLoading(true);
         setFulfillmentLoaded(false);
         setFulfillmentLoading(true);
+        setDigitalDeliveryLoaded(false);
+        setDigitalDeliveryLoading(true);
         setSecondaryReloadKey((current) => current + 1);
         if (typeof onOrderRefreshed === "function") {
           await onOrderRefreshed();
@@ -839,6 +905,113 @@ export default function OrderDetailView({
       showToast("Tracking copied.", "success");
     } catch {
       showToast("Could not copy tracking number.", "error");
+    }
+  }
+
+  async function copyDigitalDownloadLink(grantId) {
+    if (!grantId) return;
+    setDigitalDeliveryActionLoading(`copy:${grantId}`);
+    try {
+      const response = await fetch(`/api/digital-download-grants/${grantId}/link`, { cache: "no-store" });
+      const json = await response.json();
+      if (!response.ok || !json?.success) {
+        throw new Error(parseErrorMessage(json, "Could not resolve download link."));
+      }
+      const rawPath = String(json.data?.downloadUrl || "").trim();
+      if (!rawPath) {
+        throw new Error("Could not resolve download link.");
+      }
+      const urlToCopy = rawPath.startsWith("http")
+        ? rawPath
+        : `${window.location.origin}${rawPath}`;
+      await navigator.clipboard.writeText(urlToCopy);
+      showToast("Download link copied.", "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Could not copy download link.", "error");
+    } finally {
+      setDigitalDeliveryActionLoading("");
+    }
+  }
+
+  async function resendDigitalDeliveryEmail() {
+    if (!currentOrder?.orderNumberValue) return;
+    setDigitalDeliveryActionLoading("resend");
+    try {
+      const response = await fetch(
+        `/api/orders/${normalizeOrderNumber(currentOrder.orderNumber)}/digital-delivery/resend`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+      const json = await response.json();
+      if (!response.ok || !json?.success) {
+        throw new Error(parseErrorMessage(json, "Could not resend digital download email."));
+      }
+      showToast("Digital download email queued.", "success");
+      await refreshOrder();
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Could not resend digital download email.",
+        "error"
+      );
+    } finally {
+      setDigitalDeliveryActionLoading("");
+    }
+  }
+
+  async function revokeDigitalGrant(grantId) {
+    if (!grantId) return;
+    const confirmed = window.confirm(
+      "Revoke access for this download? Existing links will stop working immediately."
+    );
+    if (!confirmed) return;
+
+    setDigitalDeliveryActionLoading(`revoke:${grantId}`);
+    try {
+      const response = await fetch(`/api/digital-download-grants/${grantId}/revoke`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const json = await response.json();
+      if (!response.ok || !json?.success) {
+        throw new Error(parseErrorMessage(json, "Could not revoke digital download access."));
+      }
+      showToast("Digital download access revoked.", "success");
+      await refreshOrder();
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Could not revoke digital download access.",
+        "error"
+      );
+    } finally {
+      setDigitalDeliveryActionLoading("");
+    }
+  }
+
+  async function regenerateDigitalGrant(grantId) {
+    if (!grantId) return;
+    const confirmed = window.confirm(
+      "Regenerating this link will invalidate the previous download URL. Continue?"
+    );
+    if (!confirmed) return;
+
+    setDigitalDeliveryActionLoading(`regenerate:${grantId}`);
+    try {
+      const response = await fetch(`/api/digital-download-grants/${grantId}/regenerate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const json = await response.json();
+      if (!response.ok || !json?.success) {
+        throw new Error(parseErrorMessage(json, "Could not regenerate download link."));
+      }
+      showToast("Digital download link regenerated.", "success");
+      await refreshOrder();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Could not regenerate download link.", "error");
+    } finally {
+      setDigitalDeliveryActionLoading("");
     }
   }
 
@@ -1568,6 +1741,114 @@ export default function OrderDetailView({
               for queued tracking emails.
             </p>
           </AdminCard>
+
+          {digitalDeliveryPanelReady && hasDigitalDelivery ? (
+            <AdminCard className={styles.sideCard} variant="panel">
+              <div className={styles.digitalDeliveryHeader}>
+                <div>
+                  <h3 className={styles.cardTitle}>Digital delivery</h3>
+                  <p className={styles.metaText}>Download access for this order.</p>
+                </div>
+                <AdminButton
+                  loading={digitalDeliveryActionLoading === "resend"}
+                  onClick={resendDigitalDeliveryEmail}
+                  size="sm"
+                  variant="secondary"
+                >
+                  Resend email
+                </AdminButton>
+              </div>
+              {digitalDelivery?.pending && !digitalDelivery?.grants?.length ? (
+                <AdminEmptyState
+                  description="Digital items were purchased, but download grants are still pending."
+                  icon="download"
+                  title="Pending digital delivery"
+                />
+              ) : (
+                <div className={styles.digitalDeliveryList}>
+                  {(digitalDelivery?.grants || []).map((grant) => (
+                    <div className={styles.digitalDeliveryRow} key={grant.grantId}>
+                      <div className={styles.digitalDeliveryTitleRow}>
+                        <strong>{grant.title || grant.fileName || "Digital download"}</strong>
+                        <AdminStatusChip
+                          tone={digitalDeliveryStatusTone(grant.status)}
+                        >
+                          {digitalDeliveryStatusLabel(grant.status)}
+                        </AdminStatusChip>
+                      </div>
+                      {grant.fileName ? <p className={styles.metaText}>{grant.fileName}</p> : null}
+                      <p className={styles.metaText}>
+                        Downloads used: {grant.downloadCount} of {grant.downloadLimit}
+                      </p>
+                      <p className={styles.metaText}>
+                        Expires:{" "}
+                        {formatDateTimeForDisplay(grant.expiresAt, {
+                          timeZone: storeTimeZone,
+                          fallbackText: "Unknown",
+                        })}
+                      </p>
+                      {grant.lastDownloadedAt ? (
+                        <p className={styles.metaText}>
+                          Last downloaded:{" "}
+                          {formatDateTimeForDisplay(grant.lastDownloadedAt, {
+                            timeZone: storeTimeZone,
+                            fallbackText: "Unknown",
+                          })}
+                        </p>
+                      ) : null}
+                      {grant.deliveryEmailStatus ? (
+                        <p className={styles.metaText}>Delivery email: {grant.deliveryEmailStatus}</p>
+                      ) : null}
+                      {Array.isArray(grant.events) && grant.events.length ? (
+                        <div className={styles.digitalEventList}>
+                          {grant.events.slice(0, 3).map((event) => (
+                            <p className={styles.metaText} key={event.id}>
+                              {event.label} ·{" "}
+                              {formatDateTimeForDisplay(event.occurredAt, {
+                                timeZone: storeTimeZone,
+                                fallbackText: "Unknown",
+                              })}
+                            </p>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className={styles.digitalActionRow}>
+                        <button
+                          className={styles.textActionButton}
+                          disabled={digitalDeliveryActionLoading === `copy:${grant.grantId}` || !grant.deliveryTokenAvailable}
+                          onClick={() => copyDigitalDownloadLink(grant.grantId)}
+                          type="button"
+                        >
+                          {digitalDeliveryActionLoading === `copy:${grant.grantId}` ? "Copying..." : "Copy link"}
+                        </button>
+                        <button
+                          className={styles.textActionButton}
+                          disabled={digitalDeliveryActionLoading === `revoke:${grant.grantId}`}
+                          onClick={() => revokeDigitalGrant(grant.grantId)}
+                          type="button"
+                        >
+                          {digitalDeliveryActionLoading === `revoke:${grant.grantId}` ? "Revoking..." : "Revoke access"}
+                        </button>
+                        <button
+                          className={styles.textActionButton}
+                          disabled={digitalDeliveryActionLoading === `regenerate:${grant.grantId}`}
+                          onClick={() => regenerateDigitalGrant(grant.grantId)}
+                          type="button"
+                        >
+                          {digitalDeliveryActionLoading === `regenerate:${grant.grantId}`
+                            ? "Regenerating..."
+                            : "Regenerate link"}
+                        </button>
+                      </div>
+                      <p className={styles.metaText}>
+                        Regenerating this link will invalidate the previous download URL.
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </AdminCard>
+          ) : null}
 
           {/* â”€â”€ Notes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <AdminCard className={styles.sideCard} variant="panel">

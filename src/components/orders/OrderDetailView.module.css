@@ -855,6 +855,46 @@
   gap: 0.7rem;
 }
 
+.digitalDeliveryHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.digitalDeliveryList {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.digitalDeliveryRow {
+  border: 1px solid var(--glass-border);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--surface-container-low) 72%, transparent);
+  padding: 0.75rem 0.8rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.digitalDeliveryTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.digitalActionRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.digitalEventList {
+  display: grid;
+  gap: 0.2rem;
+}
+
 .textActionButton {
   border: none;
   background: transparent;
@@ -864,6 +904,11 @@
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 0.15rem;
+}
+
+.textActionButton:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .toastViewport {
