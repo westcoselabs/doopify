@@ -95,7 +95,8 @@ export async function POST(req: Request) {
       return err(error.message, 400)
     }
 
-    console.error('[POST /api/digital-assets/upload]', error)
+    const errorName = error instanceof Error ? error.name : 'UnknownError'
+    console.error('[POST /api/digital-assets/upload] Upload failed', { errorName })
     return err('Failed to upload digital asset', 500)
   }
 }

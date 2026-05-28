@@ -1,3 +1,6 @@
+import { mkdtemp, readFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -6,6 +9,7 @@ import {
   hashDigitalAssetBufferSha256,
   resolveValidatedDigitalAssetContentType,
   sanitizeDigitalAssetFileName,
+  storePrivateDigitalAssetFile,
 } from './digital-asset-upload.service'
 
 describe('digital-asset-upload.service', () => {
@@ -44,5 +48,69 @@ describe('digital-asset-upload.service', () => {
     const hash = hashDigitalAssetBufferSha256(Buffer.from('abc', 'utf8'))
     expect(hash).toHaveLength(64)
     expect(hash).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad')
+  })
+
+  it('keeps local private storage writes contained to configured base directory', async () => {
+    const previousProvider = process.env.MEDIA_STORAGE_PROVIDER
+    const previousLocalDir = process.env.DIGITAL_ASSET_LOCAL_DIR
+    const privateRoot = await mkdtemp(path.join(tmpdir(), 'doopify-digital-private-'))
+
+    process.env.MEDIA_STORAGE_PROVIDER = 'postgres'
+    process.env.DIGITAL_ASSET_LOCAL_DIR = privateRoot
+
+    try {
+      const stored = await storePrivateDigitalAssetFile({
+        storeId: '../unsafe\\scope',
+        fileName: '../my-guide.pdf',
+        contentType: 'application/pdf',
+        buffer: Buffer.from('%PDF-1.7 local', 'utf8'),
+      })
+
+      expect(stored.storageProvider).toBe('local-private')
+      expect(stored.storageKey).not.toContain('..')
+
+      const storedFilePath = path.resolve(privateRoot, ...stored.storageKey.split('/'))
+      expect(storedFilePath.startsWith(path.resolve(privateRoot))).toBe(true)
+
+      const savedBytes = await readFile(storedFilePath)
+      expect(savedBytes.length).toBeGreaterThan(0)
+    } finally {
+      if (previousProvider == null) {
+        delete process.env.MEDIA_STORAGE_PROVIDER
+      } else {
+        process.env.MEDIA_STORAGE_PROVIDER = previousProvider
+      }
+
+      if (previousLocalDir == null) {
+        delete process.env.DIGITAL_ASSET_LOCAL_DIR
+      } else {
+        process.env.DIGITAL_ASSET_LOCAL_DIR = previousLocalDir
+      }
+    }
+  })
+
+  it('rejects vercel blob provider for private digital uploads', async () => {
+    const previousProvider = process.env.MEDIA_STORAGE_PROVIDER
+
+    process.env.MEDIA_STORAGE_PROVIDER = 'vercel-blob'
+
+    try {
+      await expect(
+        storePrivateDigitalAssetFile({
+          storeId: 'store_1',
+          fileName: 'guide.pdf',
+          contentType: 'application/pdf',
+          buffer: Buffer.from('%PDF-1.7 local', 'utf8'),
+        })
+      ).rejects.toThrow(
+        'Private digital uploads are not supported with MEDIA_STORAGE_PROVIDER=vercel-blob because blob objects are public.'
+      )
+    } finally {
+      if (previousProvider == null) {
+        delete process.env.MEDIA_STORAGE_PROVIDER
+      } else {
+        process.env.MEDIA_STORAGE_PROVIDER = previousProvider
+      }
+    }
   })
 })

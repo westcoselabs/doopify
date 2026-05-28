@@ -27,6 +27,17 @@ type PrivateDigitalAssetStorageResult = {
   storageKey: string
 }
 
+function sanitizeStorageScopeSegment(value: string, fallback = 'store') {
+  const safe = (value || '')
+    .replace(/[\u0000-\u001f\u007f]+/g, '')
+    .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^\.+/, '')
+    .trim()
+
+  return (safe || fallback).slice(0, 120)
+}
+
 function normalizeUploadedContentType(contentType: string | null | undefined) {
   return (contentType || '')
     .split(';')[0]
@@ -196,8 +207,9 @@ async function storePrivateDigitalFileInS3(params: {
   buffer: Buffer
 }) {
   const { bucket, client } = buildS3Client()
+  const safeStoreScope = sanitizeStorageScopeSegment(params.storeId, 'store')
   const storageFileName = buildSanitizedStorageFileName(params.fileName)
-  const storageKey = `digital-private/${params.storeId}/${randomUUID()}-${storageFileName}`
+  const storageKey = `digital-private/${safeStoreScope}/${randomUUID()}-${storageFileName}`
 
   await client.putObject(bucket, storageKey, params.buffer, params.buffer.length, {
     'Content-Type': params.contentType,
@@ -217,12 +229,19 @@ async function storePrivateDigitalFileInLocalDisk(params: {
 }) {
   const baseDirectory =
     process.env.DIGITAL_ASSET_LOCAL_DIR?.trim() || path.join(process.cwd(), '.private-digital-assets')
+  const resolvedBaseDirectory = path.resolve(baseDirectory)
+  const safeStoreScope = sanitizeStorageScopeSegment(params.storeId, 'store')
   const storageFileName = buildSanitizedStorageFileName(params.fileName)
-  const storageKey = `${params.storeId}/${randomUUID()}-${storageFileName}`
-  const absoluteTargetPath = path.join(baseDirectory, ...storageKey.split('/'))
+  const storageKey = `${safeStoreScope}/${randomUUID()}-${storageFileName}`
+  const absoluteTargetPath = path.resolve(resolvedBaseDirectory, storageKey)
+  const normalizedBasePath = `${resolvedBaseDirectory}${path.sep}`
 
-  await mkdir(path.dirname(absoluteTargetPath), { recursive: true })
-  await writeFile(absoluteTargetPath, params.buffer)
+  if (absoluteTargetPath !== resolvedBaseDirectory && !absoluteTargetPath.startsWith(normalizedBasePath)) {
+    throw new PrivateDigitalAssetStorageConfigError('Invalid private digital asset storage path target.')
+  }
+
+  await mkdir(path.dirname(absoluteTargetPath), { recursive: true, mode: 0o700 })
+  await writeFile(absoluteTargetPath, params.buffer, { mode: 0o600 })
 
   return {
     storageProvider: 'local-private',
