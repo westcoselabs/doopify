@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
 import { useCart } from '@/context/CartContext';
+import { classifyCartFulfillment } from '@/lib/checkout/cart-fulfillment';
 import {
   isCheckoutEmailValid,
   normalizeCheckoutEmail,
@@ -46,6 +47,7 @@ type CartItem = {
   quantity: number
   price: number
   image?: string
+  fulfillmentType?: string
 }
 
 type ShippingQuote = {
@@ -161,6 +163,8 @@ type CheckoutClientPageProps = {
   store: CheckoutStoreSettings | null
   recoveryToken: string
 }
+
+const MIXED_CART_UNSUPPORTED_MESSAGE = 'Mixed physical and digital carts are not supported yet.'
 
 function loadStripeJs(): Promise<StripeConstructor> {
   if (typeof window === 'undefined') {
@@ -359,6 +363,10 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
   const currency = checkout?.currency || store?.currency || 'USD';
   const checkoutLogo = resolveCheckoutLogo(store);
   const brandButtonBaseStyle = CHECKOUT_BUTTON_BASE_STYLE;
+  const cartFulfillment = useMemo(() => classifyCartFulfillment(items), [items]);
+  const isMixedCart = cartFulfillment === 'MIXED';
+  const isDigitalOnlyCart = cartFulfillment === 'DIGITAL_ONLY';
+  const requiresShipping = cartFulfillment === 'PHYSICAL_ONLY';
   const lineCount = useMemo(
     () => items.reduce((sum, item) => sum + item.quantity, 0),
     [items]
@@ -370,10 +378,15 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
     [shippingQuotes, selectedShippingQuoteId]
   );
   const previewSubtotal = checkout?.subtotal ?? cartSubtotal;
-  const previewShipping = checkout?.shippingAmount ?? selectedShippingQuote?.amount ?? null;
-  const previewTotal = checkout?.total ?? (previewSubtotal + (selectedShippingQuote?.amount || 0));
+  const previewShipping =
+    checkout?.shippingAmount ?? (requiresShipping ? selectedShippingQuote?.amount ?? null : 0);
+  const previewTotal =
+    checkout?.total ?? (previewSubtotal + (requiresShipping ? selectedShippingQuote?.amount || 0 : 0));
   const shippingAddressValid = isAddressComplete(shippingAddress);
-  const billingAddressValid = billingSameAsShipping || isAddressComplete(billingAddress);
+  const shippingAddressSatisfied = !requiresShipping || shippingAddressValid;
+  const billingAddressValid = billingSameAsShipping
+    ? shippingAddressSatisfied
+    : isAddressComplete(billingAddress);
   const cartSignature = useMemo(
     () =>
       JSON.stringify(
@@ -400,12 +413,13 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
   const reviewPaymentDisabledReason = (() => {
     if (creatingIntent) return 'Preparing secure payment form...';
     if (!items.length) return 'Your cart is empty.';
+    if (isMixedCart) return MIXED_CART_UNSUPPORTED_MESSAGE;
     if (!normalizedEmail) return 'Enter your email before continuing.';
     if (!emailIsValid) return 'Enter a valid email address before continuing.';
-    if (!shippingAddressValid || !billingAddressValid) {
+    if (!shippingAddressSatisfied || !billingAddressValid) {
       return 'Enter a valid shipping and billing address before continuing.';
     }
-    if (!selectedShippingQuoteId) return 'Select a shipping method before continuing.';
+    if (requiresShipping && !selectedShippingQuoteId) return 'Select a shipping method before continuing.';
     if (checkoutInitializationFailed) return 'Checkout initialization failed. Fix the error above and try again.';
     if (checkout && !paymentReady) return 'Payment form is still loading. Please wait a moment.';
     return '';
@@ -459,6 +473,7 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
             variantTitle: item.variantTitle,
             quantity: item.quantity,
             price: item.price,
+            fulfillmentType: item.fulfillmentType,
           }))
         );
         setRecoveryNotice('Your abandoned checkout has been restored. Review details and continue to payment.');
@@ -573,6 +588,11 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
 
     if (!items.length) {
       setShippingRatesError('Your cart is empty.');
+      return;
+    }
+
+    if (!requiresShipping) {
+      setShippingRatesError('No shipping required for digital-only carts.');
       return;
     }
 
@@ -711,6 +731,11 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
       return;
     }
 
+    if (isMixedCart) {
+      setError(MIXED_CART_UNSUPPORTED_MESSAGE);
+      return;
+    }
+
     if (!resolvedEmail) {
       setError('Email is required.');
       return;
@@ -725,7 +750,7 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
       setEmail(resolvedEmail);
     }
 
-    if (!isAddressComplete(shippingAddress)) {
+    if (requiresShipping && !isAddressComplete(shippingAddress)) {
       setError('Please complete the shipping address before continuing.');
       return;
     }
@@ -735,7 +760,7 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
       return;
     }
 
-    if (!selectedShippingQuoteId) {
+    if (requiresShipping && !selectedShippingQuoteId) {
       setError('Select a shipping option before continuing to payment.');
       return;
     }
@@ -743,19 +768,41 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
     setCreatingIntent(true);
 
     try {
+      const checkoutPayload: {
+        email: string
+        items: Array<{ variantId: string; quantity: number }>
+        shippingAddress?: AddressPayload
+        billingAddress?: AddressPayload
+        discountCode?: string
+        selectedShippingQuoteId?: string
+      } = {
+        email: resolvedEmail,
+        items: buildCheckoutItemsPayload(items),
+        ...(showDiscount && discountCode.trim() ? { discountCode: discountCode.trim() } : {}),
+      };
+
+      if (requiresShipping && isAddressComplete(shippingAddress)) {
+        const normalizedShippingAddress = buildAddressPayload(shippingAddress);
+        checkoutPayload.shippingAddress = normalizedShippingAddress;
+        if (billingSameAsShipping) {
+          checkoutPayload.billingAddress = normalizedShippingAddress;
+        }
+      }
+
+      if (!billingSameAsShipping && isAddressComplete(billingAddress)) {
+        checkoutPayload.billingAddress = buildAddressPayload(billingAddress);
+      }
+
+      if (requiresShipping) {
+        checkoutPayload.selectedShippingQuoteId = selectedShippingQuoteId;
+      }
+
       const response = await fetch('/api/checkout/create', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          email: resolvedEmail,
-          items: buildCheckoutItemsPayload(items),
-          shippingAddress: buildAddressPayload(shippingAddress),
-          billingAddress: billingSameAsShipping ? buildAddressPayload(shippingAddress) : buildAddressPayload(billingAddress),
-          ...(showDiscount && discountCode.trim() ? { discountCode: discountCode.trim() } : {}),
-          selectedShippingQuoteId,
-        }),
+        body: JSON.stringify(checkoutPayload),
       });
 
       const payload = (await response.json().catch(() => null)) as ApiResponse<CheckoutData> | null;
@@ -964,130 +1011,146 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
                   </div>
                 </div>
 
-                <div className="section">
-                  <div className="section-title">Shipping address</div>
-                  <div className="grid">
-                    <label className="field">
-                      <span>First name</span>
-                      <input value={shippingAddress.firstName} onChange={(event) => updateShippingField('firstName', event.target.value)} />
-                    </label>
-                    <label className="field">
-                      <span>Last name</span>
-                      <input value={shippingAddress.lastName} onChange={(event) => updateShippingField('lastName', event.target.value)} />
-                    </label>
-                    <label className="field full">
-                      <span>Company</span>
-                      <input value={shippingAddress.company} onChange={(event) => updateShippingField('company', event.target.value)} />
-                    </label>
-                    <label className="field full">
-                      <span>Address line 1</span>
-                      <input value={shippingAddress.address1} onChange={(event) => updateShippingField('address1', event.target.value)} />
-                    </label>
-                    <label className="field full">
-                      <span>Address line 2</span>
-                      <input value={shippingAddress.address2} onChange={(event) => updateShippingField('address2', event.target.value)} />
-                    </label>
-                    <label className="field">
-                      <span>City</span>
-                      <input value={shippingAddress.city} onChange={(event) => updateShippingField('city', event.target.value)} />
-                    </label>
-                    <label className="field">
-                      <span>State / Province</span>
-                      <input value={shippingAddress.province} onChange={(event) => updateShippingField('province', event.target.value)} />
-                    </label>
-                    <label className="field">
-                      <span>Postal code</span>
-                      <input value={shippingAddress.postalCode} onChange={(event) => updateShippingField('postalCode', event.target.value)} />
-                    </label>
-                    <label className="field">
-                      <span>Country</span>
-                      <input value={shippingAddress.country} onChange={(event) => updateShippingField('country', event.target.value)} />
-                    </label>
-                    <label className="field full">
-                      <span>Phone</span>
-                      <input value={shippingAddress.phone} onChange={(event) => updateShippingField('phone', event.target.value)} />
-                    </label>
-                  </div>
-
-                  <label className="checkbox">
-                    <input
-                      checked={billingSameAsShipping}
-                      onChange={(event) => {
-                        if (checkout) resetPaymentStep();
-                        setBillingSameAsShipping(event.target.checked);
-                      }}
-                      type="checkbox"
-                    />
-                    Billing address is the same as shipping
-                  </label>
-                </div>
-
-                <div className="section">
-                  <div className="section-title">Shipping method</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    <button
-                      className="secondary-btn"
-                      disabled={shippingRatesLoading || !isAddressComplete(shippingAddress)}
-                      onClick={loadShippingRates}
-                      style={{ ...brandButtonBaseStyle, alignSelf: 'flex-start', minHeight: 40, padding: '0 16px' }}
-                      type="button"
-                    >
-                      {shippingRatesLoading ? 'Loading shipping options...' : shippingQuotes.length ? 'Refresh shipping options' : 'Load shipping options'}
-                    </button>
-                    {shippingRatesError ? (
-                      <div style={{ padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(239,68,68,0.35)', background: 'rgba(127,29,29,0.2)', color: '#fca5a5', fontSize: 13 }}>
-                        {shippingRatesError}
+                {requiresShipping ? (
+                  <>
+                    <div className="section">
+                      <div className="section-title">Shipping address</div>
+                      <div className="grid">
+                        <label className="field">
+                          <span>First name</span>
+                          <input value={shippingAddress.firstName} onChange={(event) => updateShippingField('firstName', event.target.value)} />
+                        </label>
+                        <label className="field">
+                          <span>Last name</span>
+                          <input value={shippingAddress.lastName} onChange={(event) => updateShippingField('lastName', event.target.value)} />
+                        </label>
+                        <label className="field full">
+                          <span>Company</span>
+                          <input value={shippingAddress.company} onChange={(event) => updateShippingField('company', event.target.value)} />
+                        </label>
+                        <label className="field full">
+                          <span>Address line 1</span>
+                          <input value={shippingAddress.address1} onChange={(event) => updateShippingField('address1', event.target.value)} />
+                        </label>
+                        <label className="field full">
+                          <span>Address line 2</span>
+                          <input value={shippingAddress.address2} onChange={(event) => updateShippingField('address2', event.target.value)} />
+                        </label>
+                        <label className="field">
+                          <span>City</span>
+                          <input value={shippingAddress.city} onChange={(event) => updateShippingField('city', event.target.value)} />
+                        </label>
+                        <label className="field">
+                          <span>State / Province</span>
+                          <input value={shippingAddress.province} onChange={(event) => updateShippingField('province', event.target.value)} />
+                        </label>
+                        <label className="field">
+                          <span>Postal code</span>
+                          <input value={shippingAddress.postalCode} onChange={(event) => updateShippingField('postalCode', event.target.value)} />
+                        </label>
+                        <label className="field">
+                          <span>Country</span>
+                          <input value={shippingAddress.country} onChange={(event) => updateShippingField('country', event.target.value)} />
+                        </label>
+                        <label className="field full">
+                          <span>Phone</span>
+                          <input value={shippingAddress.phone} onChange={(event) => updateShippingField('phone', event.target.value)} />
+                        </label>
                       </div>
-                    ) : null}
-                    {shippingQuotes.length ? (
+
+                      <label className="checkbox">
+                        <input
+                          checked={billingSameAsShipping}
+                          onChange={(event) => {
+                            if (checkout) resetPaymentStep();
+                            setBillingSameAsShipping(event.target.checked);
+                          }}
+                          type="checkbox"
+                        />
+                        Billing address is the same as shipping
+                      </label>
+                    </div>
+
+                    <div className="section">
+                      <div className="section-title">Shipping method</div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        {shippingQuotes.map((quote) => {
-                          const quoteSelectionId = quote.selectedShippingQuoteId || quote.id;
-                          return (
-                            <label
-                              key={quote.id}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                gap: 10,
-                                border: quoteSelectionId === selectedShippingQuoteId ? '1px solid rgba(110,231,183,0.75)' : '1px solid rgba(255,255,255,0.12)',
-                                borderRadius: 14,
-                                padding: '10px 12px',
-                                background: quoteSelectionId === selectedShippingQuoteId ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.02)',
-                              }}
-                            >
-                              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                <input
-                                  checked={quoteSelectionId === selectedShippingQuoteId}
-                                  name="shipping-rate"
-                                  onChange={() => {
-                                    if (checkout) resetPaymentStep();
-                                    setSelectedShippingQuoteId(quoteSelectionId);
+                        <button
+                          className="secondary-btn"
+                          disabled={shippingRatesLoading || !isAddressComplete(shippingAddress)}
+                          onClick={loadShippingRates}
+                          style={{ ...brandButtonBaseStyle, alignSelf: 'flex-start', minHeight: 40, padding: '0 16px' }}
+                          type="button"
+                        >
+                          {shippingRatesLoading ? 'Loading shipping options...' : shippingQuotes.length ? 'Refresh shipping options' : 'Load shipping options'}
+                        </button>
+                        {shippingRatesError ? (
+                          <div style={{ padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(239,68,68,0.35)', background: 'rgba(127,29,29,0.2)', color: '#fca5a5', fontSize: 13 }}>
+                            {shippingRatesError}
+                          </div>
+                        ) : null}
+                        {shippingQuotes.length ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {shippingQuotes.map((quote) => {
+                              const quoteSelectionId = quote.selectedShippingQuoteId || quote.id;
+                              return (
+                                <label
+                                  key={quote.id}
+                                  style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between',
+                                    gap: 10,
+                                    border: quoteSelectionId === selectedShippingQuoteId ? '1px solid rgba(110,231,183,0.75)' : '1px solid rgba(255,255,255,0.12)',
+                                    borderRadius: 14,
+                                    padding: '10px 12px',
+                                    background: quoteSelectionId === selectedShippingQuoteId ? 'rgba(16,185,129,0.1)' : 'rgba(255,255,255,0.02)',
                                   }}
-                                  type="radio"
-                                  value={quoteSelectionId}
-                                />
-                                <span style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                                  <span style={{ fontSize: 14, color: '#f3efe7' }}>{quote.displayName}</span>
-                                  <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>
-                                    {quote.carrier || quote.source}{quote.service ? ` - ${quote.service}` : ''}
-                                    {Number.isFinite(quote.estimatedDays) ? ` - ${quote.estimatedDays} day${quote.estimatedDays === 1 ? '' : 's'}` : ''}
+                                >
+                                  <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                    <input
+                                      checked={quoteSelectionId === selectedShippingQuoteId}
+                                      name="shipping-rate"
+                                      onChange={() => {
+                                        if (checkout) resetPaymentStep();
+                                        setSelectedShippingQuoteId(quoteSelectionId);
+                                      }}
+                                      type="radio"
+                                      value={quoteSelectionId}
+                                    />
+                                    <span style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                      <span style={{ fontSize: 14, color: '#f3efe7' }}>{quote.displayName}</span>
+                                      <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>
+                                        {quote.carrier || quote.source}{quote.service ? ` - ${quote.service}` : ''}
+                                        {Number.isFinite(quote.estimatedDays) ? ` - ${quote.estimatedDays} day${quote.estimatedDays === 1 ? '' : 's'}` : ''}
+                                      </span>
+                                    </span>
                                   </span>
-                                </span>
-                              </span>
-                              <strong style={{ fontSize: 14, color: '#f3efe7' }}>{formatMoney(quote.amount, quote.currency || currency)}</strong>
-                            </label>
-                          );
-                        })}
+                                  <strong style={{ fontSize: 14, color: '#f3efe7' }}>{formatMoney(quote.amount, quote.currency || currency)}</strong>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,0.52)' }}>
+                            Load shipping options after entering the address.
+                          </p>
+                        )}
                       </div>
-                    ) : (
-                      <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,0.52)' }}>
-                        Load shipping options after entering the address.
-                      </p>
-                    )}
+                    </div>
+                  </>
+                ) : isDigitalOnlyCart ? (
+                  <div className="section">
+                    <div style={{ padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(16,185,129,0.35)', background: 'rgba(6,78,59,0.2)', color: '#86efac', fontSize: 13 }}>
+                      No shipping required. Digital delivery will be available after payment.
+                    </div>
                   </div>
-                </div>
+                ) : isMixedCart ? (
+                  <div className="section">
+                    <div style={{ padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(239,68,68,0.35)', background: 'rgba(127,29,29,0.2)', color: '#fca5a5', fontSize: 13 }}>
+                      {MIXED_CART_UNSUPPORTED_MESSAGE}
+                    </div>
+                  </div>
+                ) : null}
 
                 {!billingSameAsShipping && (
                   <div className="section">
@@ -1312,7 +1375,9 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
             <div className="summary-row">
               <span>Shipping</span>
               <span>
-                {previewShipping == null
+                {isMixedCart
+                  ? 'Blocked for mixed cart'
+                  : previewShipping == null
                   ? 'Select shipping option'
                   : formatMoney(previewShipping, checkout?.selectedShippingRate?.currency || selectedShippingQuote?.currency || currency)}
               </span>

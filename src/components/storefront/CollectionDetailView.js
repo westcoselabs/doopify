@@ -361,6 +361,7 @@ export default function CollectionDetailView({ collection, peerCollections = [] 
       variantTitle,
       price: variant.price,
       image: product.media?.[0]?.url || null,
+      fulfillmentType: String(product.fulfillmentType || 'PHYSICAL').toUpperCase(),
     });
 
     setAdded((current) => ({ ...current, [product.id]: true }));

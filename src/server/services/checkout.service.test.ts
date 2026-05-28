@@ -195,6 +195,157 @@ describe('checkout service', () => {
     })
   })
 
+  it('requires shipping address for physical carts', async () => {
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_physical',
+        productId: 'product_physical',
+        title: 'Default',
+        sku: 'SKU-P',
+        price: 25,
+        inventory: 3,
+        product: {
+          id: 'product_physical',
+          title: 'Physical Product',
+          fulfillmentType: 'PHYSICAL',
+        },
+      },
+    ])
+
+    await expect(
+      createCheckoutPaymentIntent({
+        email: 'ada@example.com',
+        items: [{ variantId: 'variant_physical', quantity: 1 }],
+      })
+    ).rejects.toThrow('Shipping address is required for physical products.')
+
+    expect(mocks.createStripePaymentIntent).not.toHaveBeenCalled()
+  })
+
+  it('creates digital-only checkout without shipping address and uses zero shipping', async () => {
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_digital',
+        productId: 'product_digital',
+        title: 'Default',
+        sku: 'SKU-D',
+        price: 25,
+        inventory: 3,
+        product: {
+          id: 'product_digital',
+          title: 'Digital Product',
+          fulfillmentType: 'DIGITAL',
+        },
+      },
+    ])
+    mocks.createStripePaymentIntent.mockResolvedValue({
+      id: 'pi_digital_only',
+      client_secret: 'secret_digital_only',
+      amount: 2500,
+      currency: 'usd',
+      status: 'requires_payment_method',
+    })
+    mocks.prisma.checkoutSession.create.mockResolvedValue({
+      id: 'checkout_digital_only',
+    })
+
+    const checkout = await createCheckoutPaymentIntent({
+      email: 'ada@example.com',
+      items: [{ variantId: 'variant_digital', quantity: 1 }],
+    })
+
+    expect(mocks.getShippingRatesForCheckout).not.toHaveBeenCalled()
+    expect(mocks.createStripePaymentIntent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount: 2500,
+      })
+    )
+    expect(mocks.prisma.checkoutSession.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        shippingAmountCents: 0,
+        totalCents: 2500,
+      }),
+    })
+    expect(checkout).toMatchObject({
+      shippingAmount: 0,
+      shippingAmountCents: 0,
+      total: 25,
+      totalCents: 2500,
+      selectedShippingRate: {
+        id: 'digital:no-shipping',
+      },
+    })
+  })
+
+  it('rejects mixed physical and digital carts', async () => {
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_physical',
+        productId: 'product_physical',
+        title: 'Default',
+        sku: 'SKU-P',
+        price: 20,
+        inventory: 5,
+        product: {
+          id: 'product_physical',
+          title: 'Physical Product',
+          fulfillmentType: 'PHYSICAL',
+        },
+      },
+      {
+        id: 'variant_digital',
+        productId: 'product_digital',
+        title: 'Default',
+        sku: 'SKU-D',
+        price: 10,
+        inventory: 5,
+        product: {
+          id: 'product_digital',
+          title: 'Digital Product',
+          fulfillmentType: 'DIGITAL',
+        },
+      },
+    ])
+
+    await expect(
+      createCheckoutPaymentIntent({
+        email: 'ada@example.com',
+        items: [
+          { variantId: 'variant_physical', quantity: 1 },
+          { variantId: 'variant_digital', quantity: 1 },
+        ],
+        shippingAddress: address,
+      })
+    ).rejects.toThrow('Mixed physical and digital carts are not supported yet.')
+
+    expect(mocks.createStripePaymentIntent).not.toHaveBeenCalled()
+  })
+
+  it('defaults unknown fulfillment type to physical safety policy', async () => {
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_unknown',
+        productId: 'product_unknown',
+        title: 'Default',
+        sku: 'SKU-U',
+        price: 20,
+        inventory: 5,
+        product: {
+          id: 'product_unknown',
+          title: 'Unknown Product',
+          fulfillmentType: 'UNKNOWN_TYPE',
+        },
+      },
+    ])
+
+    await expect(
+      createCheckoutPaymentIntent({
+        email: 'ada@example.com',
+        items: [{ variantId: 'variant_unknown', quantity: 1 }],
+      })
+    ).rejects.toThrow('Shipping address is required for physical products.')
+  })
+
   it('uses verified DB Stripe runtime secret key when available', async () => {
     mocks.getStripeRuntimeConnection.mockResolvedValueOnce({
       source: 'db',

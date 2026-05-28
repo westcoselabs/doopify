@@ -20,6 +20,7 @@ describe('createCheckoutWorkflow', () => {
     expect(createCheckoutWorkflow.steps.map((step) => step.id)).toEqual([
       'validate_request_payload',
       'load_live_cart_items',
+      'classify_cart_fulfillment',
       'calculate_pricing',
       'resolve_shipping_selection',
       'create_or_update_checkout_session',

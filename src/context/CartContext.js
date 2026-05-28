@@ -20,12 +20,23 @@ function saveCart(items) {
   } catch {}
 }
 
+function normalizeFulfillmentType(value) {
+  return String(value || '').trim().toUpperCase() === 'DIGITAL' ? 'DIGITAL' : 'PHYSICAL';
+}
+
+function normalizeCartItem(item) {
+  return {
+    ...item,
+    fulfillmentType: normalizeFulfillmentType(item?.fulfillmentType),
+  };
+}
+
 export function CartProvider({ children }) {
   const [items, setItems] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
 
 // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional effect-driven state sync for existing async/load flow
-  useEffect(() => { setItems(loadCart()); }, []);
+  useEffect(() => { setItems(loadCart().map(normalizeCartItem)); }, []);
 
   const updateItems = useCallback(next => {
     setItems(next);
@@ -34,10 +45,11 @@ export function CartProvider({ children }) {
 
   const addItem = useCallback(item => {
     setItems(current => {
-      const existing = current.find(i => i.variantId === item.variantId);
+      const normalizedItem = normalizeCartItem(item);
+      const existing = current.find(i => i.variantId === normalizedItem.variantId);
       const next = existing
-        ? current.map(i => i.variantId === item.variantId ? { ...i, quantity: i.quantity + (item.quantity || 1) } : i)
-        : [...current, { ...item, quantity: item.quantity || 1 }];
+        ? current.map(i => i.variantId === normalizedItem.variantId ? { ...i, quantity: i.quantity + (normalizedItem.quantity || 1) } : i)
+        : [...current, { ...normalizedItem, quantity: normalizedItem.quantity || 1 }];
       saveCart(next);
       return next;
     });
@@ -66,7 +78,7 @@ export function CartProvider({ children }) {
     const normalized = Array.isArray(nextItems)
       ? nextItems
           .filter(item => item && item.variantId && Number(item.quantity) > 0)
-          .map(item => ({ ...item, quantity: Math.max(1, Math.floor(Number(item.quantity) || 1)) }))
+          .map(item => normalizeCartItem({ ...item, quantity: Math.max(1, Math.floor(Number(item.quantity) || 1)) }))
       : [];
     updateItems(normalized);
   }, [updateItems]);

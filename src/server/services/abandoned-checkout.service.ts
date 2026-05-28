@@ -51,9 +51,10 @@ const checkoutPayloadSchema = z.object({
       quantity: z.number().int().min(1),
       priceCents: z.number().int().nonnegative().optional(),
       price: z.number().nonnegative().optional(),
+      fulfillmentType: z.enum(['PHYSICAL', 'DIGITAL']).optional(),
     })
   ),
-  shippingAddress: checkoutAddressSchema,
+  shippingAddress: checkoutAddressSchema.optional(),
   billingAddress: checkoutAddressSchema.optional(),
 })
 
@@ -143,8 +144,8 @@ export type RecoveryPayloadResult =
           price: number
           priceCents: number
         }>
-        shippingAddress: CheckoutAddress
-        billingAddress: CheckoutAddress
+        shippingAddress?: CheckoutAddress
+        billingAddress?: CheckoutAddress
         pricing: {
           subtotal: number
           shippingAmount: number

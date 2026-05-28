@@ -14,6 +14,7 @@ export const createCheckoutWorkflow = defineWorkflow<
   steps: [
     { id: 'validate_request_payload', description: 'Validate checkout create payload before running workflow.' },
     { id: 'load_live_cart_items', description: 'Load live variants from DB and validate stock availability.' },
+    { id: 'classify_cart_fulfillment', description: 'Classify cart fulfillment mode and enforce v1 policy rules.' },
     { id: 'calculate_pricing', description: 'Calculate authoritative totals using server-owned pricing service.' },
     { id: 'resolve_shipping_selection', description: 'Resolve and revalidate selected shipping quote.' },
     { id: 'create_or_update_checkout_session', description: 'Persist checkout session using current checkout service behavior.' },

@@ -542,6 +542,7 @@ export default function ProductDetail({ product }) {
       price,
       image: images[0]?.url || null,
       quantity: qty,
+      fulfillmentType: String(product.fulfillmentType || 'PHYSICAL').toUpperCase(),
     });
 
     setAdded(true);

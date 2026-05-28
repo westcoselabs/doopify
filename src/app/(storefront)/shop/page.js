@@ -54,6 +54,7 @@ export default function ShopPage() {
       variantTitle,
       price: variant.price,
       image: product.media?.[0]?.url || null,
+      fulfillmentType: String(product.fulfillmentType || 'PHYSICAL').toUpperCase(),
     });
     setAdded(prev => ({ ...prev, [product.id]: true }));
     setTimeout(() => setAdded(prev => ({ ...prev, [product.id]: false })), 1800);

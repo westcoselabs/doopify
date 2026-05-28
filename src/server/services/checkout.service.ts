@@ -4,6 +4,10 @@ import { centsToDollars, dollarsToCents } from '@/lib/money'
 import { prisma } from '@/lib/prisma'
 import { createStripePaymentIntent, type StripePaymentIntent } from '@/lib/stripe'
 import {
+  classifyCartFulfillment,
+  normalizeCartFulfillmentType,
+} from '@/lib/checkout/cart-fulfillment'
+import {
   buildCheckoutPricingWithDecisionsCents,
   type CheckoutAppliedDiscount,
   type CheckoutPricingShippingDecision,
@@ -57,9 +61,10 @@ type CheckoutPayload = {
     sku?: string
     priceCents: number
     quantity: number
+    fulfillmentType: 'PHYSICAL' | 'DIGITAL'
   }>
-  shippingAddress: CheckoutAddress
-  billingAddress: CheckoutAddress
+  shippingAddress?: CheckoutAddress
+  billingAddress?: CheckoutAddress
   discountApplications?: CheckoutAppliedDiscount[]
   pricingSnapshot?: {
     computedAt: string
@@ -87,6 +92,8 @@ type CheckoutPayload = {
     providerRateId?: string
   }
 }
+
+const MIXED_CART_UNSUPPORTED_MESSAGE = 'Mixed physical and digital carts are not supported yet.'
 
 function allowCheckoutFallbackDefaults() {
   return process.env.NODE_ENV !== 'production' || process.env.CHECKOUT_ALLOW_DEV_FALLBACKS === 'true'
@@ -168,6 +175,18 @@ function mapShippingQuoteForSnapshot(quote: ShippingRateQuote) {
     estimatedDeliveryText: quote.estimatedDeliveryText,
     providerShipmentId: quote.providerShipmentId,
     providerRateId: quote.providerRateId,
+  }
+}
+
+function buildDigitalNoShippingSnapshot(currency: string) {
+  return {
+    id: 'digital:no-shipping',
+    source: 'MANUAL' as const,
+    rateType: 'FREE' as const,
+    displayName: 'No shipping required (digital delivery pending)',
+    amountCents: 0,
+    currency,
+    estimatedDeliveryText: 'Digital delivery pending',
   }
 }
 
@@ -302,6 +321,7 @@ async function resolveLineItems(items: CheckoutItemInput[]) {
       priceCents: variant.priceCents ?? dollarsToCents((variant as { price?: number }).price ?? 0),
       weightOz: convertVariantWeightToOz(variant.weight, variant.weightUnit),
       quantity: item.quantity,
+      fulfillmentType: normalizeCartFulfillmentType(variant.product.fulfillmentType),
     }
   })
 }
@@ -434,14 +454,15 @@ async function resolveDiscountCode(discountCode?: string) {
 
 async function resolveCheckoutCustomer(payload: CheckoutPayload) {
   let customer = await getCustomerByEmail(payload.email)
+  const primaryAddress = payload.shippingAddress ?? payload.billingAddress
 
   if (!customer) {
     try {
       customer = await createCustomer({
         email: payload.email,
-        firstName: payload.shippingAddress.firstName,
-        lastName: payload.shippingAddress.lastName,
-        phone: payload.shippingAddress.phone,
+        firstName: primaryAddress?.firstName,
+        lastName: primaryAddress?.lastName,
+        phone: primaryAddress?.phone,
       })
     } catch (error) {
       if (!isUniqueConstraintError(error)) {
@@ -455,18 +476,25 @@ async function resolveCheckoutCustomer(payload: CheckoutPayload) {
     }
   }
 
-  if (customer && customer.addresses.length === 0) {
+  if (
+    customer &&
+    customer.addresses.length === 0 &&
+    primaryAddress?.address1 &&
+    primaryAddress?.city &&
+    primaryAddress?.postalCode &&
+    primaryAddress?.country
+  ) {
     await addCustomerAddress(customer.id, {
-      firstName: payload.shippingAddress.firstName,
-      lastName: payload.shippingAddress.lastName,
-      company: payload.shippingAddress.company,
-      address1: payload.shippingAddress.address1,
-      address2: payload.shippingAddress.address2,
-      city: payload.shippingAddress.city,
-      province: payload.shippingAddress.province,
-      postalCode: payload.shippingAddress.postalCode,
-      country: payload.shippingAddress.country,
-      phone: payload.shippingAddress.phone,
+      firstName: primaryAddress.firstName,
+      lastName: primaryAddress.lastName,
+      company: primaryAddress.company,
+      address1: primaryAddress.address1,
+      address2: primaryAddress.address2,
+      city: primaryAddress.city,
+      province: primaryAddress.province,
+      postalCode: primaryAddress.postalCode,
+      country: primaryAddress.country,
+      phone: primaryAddress.phone,
       isDefault: true,
     })
   }
@@ -477,7 +505,7 @@ async function resolveCheckoutCustomer(payload: CheckoutPayload) {
 export async function createCheckoutPaymentIntent(input: {
   email: string
   items: CheckoutItemInput[]
-  shippingAddress: CheckoutAddress
+  shippingAddress?: CheckoutAddress
   billingAddress?: CheckoutAddress
   discountCode?: string
   selectedShippingQuoteId?: string
@@ -485,17 +513,31 @@ export async function createCheckoutPaymentIntent(input: {
   const store = await getStoreSettings()
   const normalizedEmail = normalizeEmail(input.email)
   const lineItems = await resolveLineItems(input.items)
-  const shippingAddress = normalizeAddress(input.shippingAddress)
-  const billingAddress = normalizeAddress(input.billingAddress ?? input.shippingAddress)
+  const cartFulfillment = classifyCartFulfillment(lineItems)
+  if (cartFulfillment === 'MIXED') {
+    throw new Error(MIXED_CART_UNSUPPORTED_MESSAGE)
+  }
+
+  const requiresShipping = cartFulfillment === 'PHYSICAL_ONLY'
+  if (requiresShipping && !input.shippingAddress) {
+    throw new Error('Shipping address is required for physical products.')
+  }
+
+  const shippingAddress = input.shippingAddress ? normalizeAddress(input.shippingAddress) : undefined
+  const billingAddress = input.billingAddress
+    ? normalizeAddress(input.billingAddress)
+    : shippingAddress
   const discount = await resolveDiscountCode(input.discountCode)
   const currency = (store?.currency || 'USD').toUpperCase()
-  const shippingResolution = await resolveSelectedShippingQuote({
-    shippingMode: store?.shippingMode,
-    storeId: store?.id,
-    lineItems,
-    shippingAddress,
-    selectedShippingQuoteId: input.selectedShippingQuoteId,
-  })
+  const shippingResolution = requiresShipping
+    ? await resolveSelectedShippingQuote({
+        shippingMode: store?.shippingMode,
+        storeId: store?.id,
+        lineItems,
+        shippingAddress: shippingAddress as CheckoutAddress,
+        selectedShippingQuoteId: input.selectedShippingQuoteId,
+      })
+    : null
 
   const allowFallbacks = allowCheckoutFallbackDefaults()
   const pricingOptions = {
@@ -508,15 +550,18 @@ export async function createCheckoutPaymentIntent(input: {
     shippingAddress,
     storeCountry: store?.country,
     currency,
-    ...(allowFallbacks
+    ...(requiresShipping && allowFallbacks
       ? {
           shippingRates: {
             domesticCents: Number(store?.shippingDomesticRateCents ?? 999),
             internationalCents: Number(store?.shippingInternationalRateCents ?? 1999),
           },
         }
+      : !requiresShipping
+        ? { shippingRates: null }
       : {}),
-    shippingZones: store?.shippingZones?.map((zone) => ({
+    shippingZones: requiresShipping
+      ? store?.shippingZones?.map((zone) => ({
       id: zone.id,
       name: zone.name,
       countryCode: zone.countryCode,
@@ -533,7 +578,8 @@ export async function createCheckoutPaymentIntent(input: {
         isActive: rate.isActive,
         priority: rate.priority,
       })),
-    })),
+    }))
+      : [],
     taxRules: store?.taxRules?.map((rule) => ({
       id: rule.id,
       name: rule.name,
@@ -564,16 +610,16 @@ export async function createCheckoutPaymentIntent(input: {
     store?.shippingThresholdCents,
     pricingOptions
   )
-  const selectedShippingRate = mapShippingQuoteForSnapshot(shippingResolution.selectedQuote)
-  const pricingWithSelectedShipping = buildCheckoutPricingWithDecisionsCents(
-    lineItems,
-    store?.shippingThresholdCents,
-    {
-      ...pricingOptions,
-      selectedShippingAmountCents: selectedShippingRate.amountCents,
-      selectedShippingRateId: selectedShippingRate.id,
-    }
-  )
+  const selectedShippingRate = requiresShipping
+    ? mapShippingQuoteForSnapshot((shippingResolution as { selectedQuote: ShippingRateQuote }).selectedQuote)
+    : buildDigitalNoShippingSnapshot(currency)
+  const pricingWithSelectedShipping = requiresShipping
+    ? buildCheckoutPricingWithDecisionsCents(lineItems, store?.shippingThresholdCents, {
+        ...pricingOptions,
+        selectedShippingAmountCents: selectedShippingRate.amountCents,
+        selectedShippingRateId: selectedShippingRate.id,
+      })
+    : pricing
   const shippingAmountCents = pricingWithSelectedShipping.shippingAmountCents
   const discountAmountCents = pricingWithSelectedShipping.discountAmountCents ?? 0
   const taxAmountCents = pricingWithSelectedShipping.taxAmountCents ?? 0
@@ -625,9 +671,12 @@ export async function createCheckoutPaymentIntent(input: {
 
   const payload: CheckoutPayload = {
     email: normalizedEmail,
-    items: lineItems,
-    shippingAddress,
-    billingAddress,
+    items: lineItems.map((item) => ({
+      ...item,
+      fulfillmentType: normalizeCartFulfillmentType(item.fulfillmentType),
+    })),
+    ...(shippingAddress ? { shippingAddress } : {}),
+    ...(billingAddress ? { billingAddress } : {}),
     pricingSnapshot: {
       computedAt: new Date().toISOString(),
       currency,
@@ -636,7 +685,12 @@ export async function createCheckoutPaymentIntent(input: {
       taxAmountCents,
       discountAmountCents,
       totalCents,
-      shippingDecision: pricingWithSelectedShipping.shippingDecision,
+      shippingDecision: requiresShipping
+        ? pricingWithSelectedShipping.shippingDecision
+        : {
+            ...pricingWithSelectedShipping.shippingDecision,
+            warning: 'No shipping required for digital-only checkout.',
+          },
       taxDecision: pricingWithSelectedShipping.taxDecision,
     },
     selectedShippingRate,
@@ -678,7 +732,9 @@ export async function createCheckoutPaymentIntent(input: {
     shippingAmount: centsToDollars(shippingAmountCents),
     discountAmount: centsToDollars(discountAmountCents),
     total: centsToDollars(totalCents),
-    availableShippingRates: shippingResolution.quotes.map(mapShippingQuoteForSnapshot),
+    availableShippingRates: requiresShipping
+      ? (shippingResolution as { quotes: ShippingRateQuote[] }).quotes.map(mapShippingQuoteForSnapshot)
+      : [selectedShippingRate],
     selectedShippingRate,
     items: payload.items.map((item) => ({
       ...item,

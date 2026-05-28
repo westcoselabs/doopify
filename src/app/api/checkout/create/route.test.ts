@@ -177,6 +177,37 @@ describe('POST /api/checkout/create', () => {
     )
   })
 
+  it('allows requests without shipping address for digital-only checkout paths', async () => {
+    mocks.runCreateCheckoutWorkflow.mockResolvedValue({
+      checkoutSessionId: 'checkout_3',
+      paymentIntentId: 'pi_test_3',
+      clientSecret: 'secret_test_3',
+      currency: 'USD',
+      subtotal: 50,
+      shippingAmount: 0,
+      taxAmount: 0,
+      discountAmount: 0,
+      total: 50,
+      items: [],
+    })
+
+    const { shippingAddress: _shippingAddress, ...payloadWithoutShipping } = validPayload
+    const response = await POST(
+      new Request('http://localhost/api/checkout/create', {
+        method: 'POST',
+        body: JSON.stringify(payloadWithoutShipping),
+      })
+    )
+
+    expect(response.status).toBe(201)
+    expect(mocks.runCreateCheckoutWorkflow).toHaveBeenCalledWith(
+      payloadWithoutShipping,
+      expect.objectContaining({
+        step: expect.any(Function),
+      })
+    )
+  })
+
   it('keeps route timing instrumentation active when enabled', async () => {
     vi.stubEnv('DOOPIFY_ROUTE_TIMING', '1')
     vi.stubEnv('NODE_ENV', 'test')

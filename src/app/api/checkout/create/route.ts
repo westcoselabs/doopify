@@ -25,7 +25,7 @@ const addressSchema = z.object({
 const schema = z.object({
   email: z.string().email(),
   items: z.array(itemSchema).min(1),
-  shippingAddress: addressSchema,
+  shippingAddress: addressSchema.optional(),
   billingAddress: addressSchema.optional(),
   discountCode: z.string().trim().min(1).max(64).optional(),
   selectedShippingQuoteId: z.string().trim().min(1).max(200).optional(),
