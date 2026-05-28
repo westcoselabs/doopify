@@ -178,6 +178,16 @@
   align-items: end;
 }
 
+.assetActionRow {
+  margin-top: 0.7rem;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.assetFileInput {
+  display: none;
+}
+
 .assetSelect {
   width: 100%;
 }

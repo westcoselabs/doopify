@@ -44,6 +44,8 @@ describe('product selling tab contract', () => {
     expect(source).toContain('Linked digital assets')
     expect(source).toContain('No digital files linked yet')
     expect(source).toContain('Private upload and customer delivery are not live yet')
+    expect(source).toContain('Upload digital file')
+    expect(source).toContain('application/pdf,application/zip,image/png,image/jpeg,text/plain')
     expect(source).toContain('Link asset')
     expect(source).toContain('Unlink')
     expect(source).not.toContain('storageKey')

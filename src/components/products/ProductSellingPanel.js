@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import AdminButton from "../admin/ui/AdminButton";
 import AdminCard from "../admin/ui/AdminCard";
 import AdminInput from "../admin/ui/AdminInput";
@@ -179,6 +179,8 @@ export default function ProductSellingPanel({ onManageInVariants }) {
   const [isLoadingLinkedAssets, setIsLoadingLinkedAssets] = useState(false);
   const [isLinkingAsset, setIsLinkingAsset] = useState(false);
   const [isUnlinkingAssetId, setIsUnlinkingAssetId] = useState(null);
+  const [isUploadingAsset, setIsUploadingAsset] = useState(false);
+  const fileUploadRef = useRef(null);
 
   const linkedDigitalAssetIds = useMemo(
     () => new Set(linkedDigitalAssets.map((assetLink) => assetLink.digitalAsset?.id || assetLink.digitalAssetId)),
@@ -192,7 +194,7 @@ export default function ProductSellingPanel({ onManageInVariants }) {
   useEffect(() => {
     let isCancelled = false;
 
-    if (!isPersistedProduct) {
+    if (!isDigitalProduct) {
       return () => {
         isCancelled = true;
       };
@@ -222,6 +224,10 @@ export default function ProductSellingPanel({ onManageInVariants }) {
     }
 
     async function loadLinkedDigitalAssets() {
+      if (!isPersistedProduct) {
+        return;
+      }
+
       setIsLoadingLinkedAssets(true);
       try {
         const response = await fetch(`/api/products/${draftProductId}/digital-assets`);
@@ -253,7 +259,55 @@ export default function ProductSellingPanel({ onManageInVariants }) {
     return () => {
       isCancelled = true;
     };
-  }, [actions, draftProductId, isPersistedProduct]);
+  }, [actions, draftProductId, isDigitalProduct, isPersistedProduct]);
+
+  const handlePickDigitalAssetFile = () => {
+    fileUploadRef.current?.click();
+  };
+
+  const handleUploadDigitalAssetFile = async (event) => {
+    const selectedFile = event.target.files?.[0] || null;
+    if (!selectedFile || isUploadingAsset) {
+      return;
+    }
+
+    setIsUploadingAsset(true);
+    try {
+      const formData = new FormData();
+      formData.set("file", selectedFile);
+      formData.set("title", selectedFile.name.replace(/\.[^.]+$/, ""));
+
+      const response = await fetch("/api/digital-assets/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const json = await response.json().catch(() => null);
+      if (!response.ok || !json?.success) {
+        throw new Error(parseApiError(json, "Failed to upload digital asset."));
+      }
+
+      const uploadedAsset = json.data?.asset;
+      if (uploadedAsset?.id) {
+        setAvailableDigitalAssets((currentAssets) => {
+          const alreadyExists = currentAssets.some((currentAsset) => currentAsset.id === uploadedAsset.id);
+          if (alreadyExists) {
+            return currentAssets;
+          }
+          return [uploadedAsset, ...currentAssets];
+        });
+        setSelectedDigitalAssetId(uploadedAsset.id);
+      }
+
+      actions.showToast("Digital file uploaded to private asset storage.", "success");
+    } catch (error) {
+      actions.showToast(error instanceof Error ? error.message : "Failed to upload digital asset.", "error");
+    } finally {
+      setIsUploadingAsset(false);
+      if (event.target) {
+        event.target.value = "";
+      }
+    }
+  };
 
   const handleLinkDigitalAsset = async () => {
     if (!isPersistedProduct || !selectedDigitalAssetId || isLinkingAsset || !draftProductId) {
@@ -559,98 +613,110 @@ export default function ProductSellingPanel({ onManageInVariants }) {
               metadata records to this product for admin setup.
             </p>
 
+            <div className={styles.assetActionRow}>
+              <input
+                accept="application/pdf,application/zip,image/png,image/jpeg,text/plain"
+                className={styles.assetFileInput}
+                onChange={handleUploadDigitalAssetFile}
+                ref={fileUploadRef}
+                type="file"
+              />
+              <AdminButton
+                disabled={isUploadingAsset}
+                loading={isUploadingAsset}
+                onClick={handlePickDigitalAssetFile}
+                size="sm"
+                variant="ghost"
+              >
+                Upload digital file
+              </AdminButton>
+            </div>
+
+            <div className={styles.assetLinkRow}>
+              <label className={styles.field}>
+                <span>Available assets</span>
+                <select
+                  className={`admin-input ${styles.assetSelect}`}
+                  disabled={isLoadingDigitalAssets || isLoadingLinkedAssets || isLinkingAsset}
+                  onChange={(event) => setSelectedDigitalAssetId(event.target.value)}
+                  value={selectedDigitalAssetId}
+                >
+                  <option value="">Select a digital asset</option>
+                  {unlinkedDigitalAssets.map((asset) => (
+                    <option key={asset.id} value={asset.id}>
+                      {asset.title} ({asset.fileName})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <AdminButton
+                disabled={!isPersistedProduct || !selectedDigitalAssetId || isLinkingAsset}
+                loading={isLinkingAsset}
+                onClick={handleLinkDigitalAsset}
+                size="sm"
+                variant="secondary"
+              >
+                Link asset
+              </AdminButton>
+            </div>
+
             {!isPersistedProduct ? (
               <div className={styles.notice}>
                 <strong>Save this product first</strong>
-                <span>Digital assets can be linked after the product is saved to the database.</span>
+                <span>Uploading is allowed now. Linking to this product requires saving first.</span>
               </div>
-            ) : (
-              <>
-                <div className={styles.assetLinkRow}>
-                  <label className={styles.field}>
-                    <span>Available assets</span>
-                    <select
-                      className={`admin-input ${styles.assetSelect}`}
-                      disabled={
-                        isLoadingDigitalAssets ||
-                        isLoadingLinkedAssets ||
-                        isLinkingAsset ||
-                        unlinkedDigitalAssets.length === 0
-                      }
-                      onChange={(event) => setSelectedDigitalAssetId(event.target.value)}
-                      value={selectedDigitalAssetId}
-                    >
-                      <option value="">Select a digital asset</option>
-                      {unlinkedDigitalAssets.map((asset) => (
-                        <option key={asset.id} value={asset.id}>
-                          {asset.title} ({asset.fileName})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <AdminButton
-                    disabled={!selectedDigitalAssetId || isLinkingAsset}
-                    loading={isLinkingAsset}
-                    onClick={handleLinkDigitalAsset}
-                    size="sm"
-                    variant="secondary"
-                  >
-                    Link asset
-                  </AdminButton>
-                </div>
+            ) : null}
 
-                {isLoadingLinkedAssets ? (
-                  <p className={styles.assetInlineMessage}>Loading linked assets...</p>
-                ) : null}
+            {isLoadingLinkedAssets ? (
+              <p className={styles.assetInlineMessage}>Loading linked assets...</p>
+            ) : null}
 
-                {!isLoadingLinkedAssets && linkedDigitalAssets.length === 0 ? (
-                  <p className={styles.assetEmpty}>No digital files linked yet</p>
-                ) : null}
+            {!isLoadingLinkedAssets && linkedDigitalAssets.length === 0 ? (
+              <p className={styles.assetEmpty}>No digital files linked yet</p>
+            ) : null}
 
-                {!isLoadingLinkedAssets && linkedDigitalAssets.length > 0 ? (
-                  <ul className={styles.assetList}>
-                    {linkedDigitalAssets.map((assetLink) => {
-                      const asset = assetLink.digitalAsset;
-                      const assetId = asset?.id || assetLink.digitalAssetId;
-                      if (!assetId) {
-                        return null;
-                      }
+            {!isLoadingLinkedAssets && linkedDigitalAssets.length > 0 ? (
+              <ul className={styles.assetList}>
+                {linkedDigitalAssets.map((assetLink) => {
+                  const asset = assetLink.digitalAsset;
+                  const assetId = asset?.id || assetLink.digitalAssetId;
+                  if (!assetId) {
+                    return null;
+                  }
 
-                      return (
-                        <li key={assetLink.id || assetId} className={styles.assetItem}>
-                          <div className={styles.assetMeta}>
-                            <p className={styles.assetTitle}>{asset?.title || "Untitled asset"}</p>
-                            <p className={styles.assetDetail}>
-                              {asset?.fileName || "Unknown filename"} · {asset?.contentType || "Unknown type"} ·{" "}
-                              {formatByteSize(asset?.byteSize)}
-                            </p>
-                          </div>
-                          <AdminButton
-                            disabled={Boolean(isUnlinkingAssetId)}
-                            loading={isUnlinkingAssetId === assetId}
-                            onClick={() => handleUnlinkDigitalAsset(assetId)}
-                            size="sm"
-                            variant="ghost"
-                          >
-                            Unlink
-                          </AdminButton>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : null}
+                  return (
+                    <li key={assetLink.id || assetId} className={styles.assetItem}>
+                      <div className={styles.assetMeta}>
+                        <p className={styles.assetTitle}>{asset?.title || "Untitled asset"}</p>
+                        <p className={styles.assetDetail}>
+                          {asset?.fileName || "Unknown filename"} - {asset?.contentType || "Unknown type"} -{" "}
+                          {formatByteSize(asset?.byteSize)}
+                        </p>
+                      </div>
+                      <AdminButton
+                        disabled={Boolean(isUnlinkingAssetId)}
+                        loading={isUnlinkingAssetId === assetId}
+                        onClick={() => handleUnlinkDigitalAsset(assetId)}
+                        size="sm"
+                        variant="ghost"
+                      >
+                        Unlink
+                      </AdminButton>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
 
-                {!isLoadingDigitalAssets && availableDigitalAssets.length === 0 ? (
-                  <div className={styles.notice}>
-                    <strong>No digital assets available</strong>
-                    <span>
-                      Create digital asset metadata from the Digital Assets admin API flow, then
-                      return to link files to this product.
-                    </span>
-                  </div>
-                ) : null}
-              </>
-            )}
+            {!isLoadingDigitalAssets && availableDigitalAssets.length === 0 ? (
+              <div className={styles.notice}>
+                <strong>No digital assets available</strong>
+                <span>
+                  Upload a file above to create private digital asset metadata, then link it to this
+                  product.
+                </span>
+              </div>
+            ) : null}
           </AdminCard>
         ) : null}
       </div>
