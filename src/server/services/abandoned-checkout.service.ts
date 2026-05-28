@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { type Prisma } from '@prisma/client'
 import { z } from 'zod'
 
+import { classifyCartFulfillment, normalizeCartFulfillmentType } from '@/lib/checkout/cart-fulfillment'
 import { centsToDollars, dollarsToCents } from '@/lib/money'
 import { env } from '@/lib/env'
 import { prisma } from '@/lib/prisma'
@@ -143,6 +144,7 @@ export type RecoveryPayloadResult =
           quantity: number
           price: number
           priceCents: number
+          fulfillmentType: 'PHYSICAL' | 'DIGITAL'
         }>
         shippingAddress?: CheckoutAddress
         billingAddress?: CheckoutAddress
@@ -320,6 +322,7 @@ async function resolveRecoveryItems(items: CheckoutItem[]) {
         select: {
           id: true,
           title: true,
+          fulfillmentType: true,
         },
       },
     },
@@ -344,6 +347,7 @@ async function resolveRecoveryItems(items: CheckoutItem[]) {
       variantTitle: variant.title ?? undefined,
       quantity: item.quantity,
       priceCents: variant.priceCents ?? dollarsToCents((variant as { price?: number }).price ?? 0),
+      fulfillmentType: normalizeCartFulfillmentType(variant.product.fulfillmentType),
     }
   })
 }
@@ -633,6 +637,7 @@ export async function recoverCheckoutByToken(token: string): Promise<RecoveryPay
     variantTitle?: string
     quantity: number
     priceCents: number
+    fulfillmentType: 'PHYSICAL' | 'DIGITAL'
   }>
 
   try {
@@ -643,32 +648,38 @@ export async function recoverCheckoutByToken(token: string): Promise<RecoveryPay
 
   const store = await getStoreSettings()
   const currency = (store?.currency || checkout.currency || 'USD').toUpperCase()
+  const cartFulfillment = classifyCartFulfillment(lineItems)
+  const requiresShipping = cartFulfillment === 'PHYSICAL_ONLY'
   const pricing = buildCheckoutPricingWithDecisionsCents(lineItems, store?.shippingThresholdCents, {
-    shippingAddress: payload.shippingAddress,
+    shippingAddress: requiresShipping ? payload.shippingAddress : undefined,
     storeCountry: store?.country,
     currency,
-    shippingRates: {
-      domesticCents: Number(store?.shippingDomesticRateCents ?? 999),
-      internationalCents: Number(store?.shippingInternationalRateCents ?? 1999),
-    },
-    shippingZones: store?.shippingZones?.map((zone) => ({
-      id: zone.id,
-      name: zone.name,
-      countryCode: zone.countryCode,
-      provinceCode: zone.provinceCode,
-      isActive: zone.isActive,
-      priority: zone.priority,
-      rates: zone.rates.map((rate) => ({
-        id: rate.id,
-        name: rate.name,
-        method: rate.method,
-        amountCents: rate.amountCents,
-        minSubtotalCents: rate.minSubtotalCents,
-        maxSubtotalCents: rate.maxSubtotalCents,
-        isActive: rate.isActive,
-        priority: rate.priority,
-      })),
-    })),
+    shippingRates: requiresShipping
+      ? {
+          domesticCents: Number(store?.shippingDomesticRateCents ?? 999),
+          internationalCents: Number(store?.shippingInternationalRateCents ?? 1999),
+        }
+      : null,
+    shippingZones: requiresShipping
+      ? store?.shippingZones?.map((zone) => ({
+          id: zone.id,
+          name: zone.name,
+          countryCode: zone.countryCode,
+          provinceCode: zone.provinceCode,
+          isActive: zone.isActive,
+          priority: zone.priority,
+          rates: zone.rates.map((rate) => ({
+            id: rate.id,
+            name: rate.name,
+            method: rate.method,
+            amountCents: rate.amountCents,
+            minSubtotalCents: rate.minSubtotalCents,
+            maxSubtotalCents: rate.maxSubtotalCents,
+            isActive: rate.isActive,
+            priority: rate.priority,
+          })),
+        }))
+      : [],
     taxRules: store?.taxRules?.map((rule) => ({
       id: rule.id,
       name: rule.name,

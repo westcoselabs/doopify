@@ -271,6 +271,116 @@ describe('abandoned-checkout.service', () => {
     expect(mocks.sendTrackedEmail).toHaveBeenCalledTimes(1)
   })
 
+  it('recovers digital-only checkouts without reintroducing shipping and preserves fulfillment type', async () => {
+    mocks.prisma.checkoutSession.findUnique.mockResolvedValue(
+      checkoutSessionFixture({
+        recoveryToken: '0123456789abcdef0123456789abcdef',
+        payload: {
+          email: 'customer@example.com',
+          items: [
+            {
+              productId: 'product_digital',
+              variantId: 'variant_digital',
+              title: 'Digital Pack',
+              quantity: 1,
+              priceCents: 5000,
+              fulfillmentType: 'DIGITAL',
+            },
+          ],
+        },
+      })
+    )
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_digital',
+        productId: 'product_digital',
+        title: 'Default',
+        priceCents: 5000,
+        inventory: 5,
+        product: {
+          id: 'product_digital',
+          title: 'Digital Pack',
+          fulfillmentType: 'DIGITAL',
+          status: 'ACTIVE',
+        },
+      },
+    ])
+    mocks.buildCheckoutPricingWithDecisionsCents.mockReturnValue({
+      subtotalCents: 5000,
+      shippingAmountCents: 0,
+      taxAmountCents: 0,
+      discountAmountCents: 0,
+      totalCents: 5000,
+      shippingDecision: { source: 'none' },
+      taxDecision: { source: 'none' },
+    })
+
+    const result = await recoverCheckoutByToken('0123456789abcdef0123456789abcdef')
+
+    expect(result).toMatchObject({
+      ok: true,
+      checkout: {
+        items: [
+          expect.objectContaining({
+            variantId: 'variant_digital',
+            fulfillmentType: 'DIGITAL',
+          }),
+        ],
+        pricing: expect.objectContaining({
+          shippingAmountCents: 0,
+        }),
+      },
+    })
+    expect(mocks.buildCheckoutPricingWithDecisionsCents).toHaveBeenCalledWith(
+      expect.any(Array),
+      7500,
+      expect.objectContaining({
+        shippingAddress: undefined,
+        shippingRates: null,
+        shippingZones: [],
+      })
+    )
+  })
+
+  it('keeps shipping pricing inputs for physical recovery payloads', async () => {
+    mocks.prisma.checkoutSession.findUnique.mockResolvedValue(
+      checkoutSessionFixture({
+        recoveryToken: 'fedcba9876543210fedcba9876543210',
+      })
+    )
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_1',
+        productId: 'product_1',
+        title: 'Default',
+        priceCents: 5000,
+        inventory: 5,
+        product: {
+          id: 'product_1',
+          title: 'Test Tee',
+          fulfillmentType: 'PHYSICAL',
+          status: 'ACTIVE',
+        },
+      },
+    ])
+
+    await recoverCheckoutByToken('fedcba9876543210fedcba9876543210')
+
+    expect(mocks.buildCheckoutPricingWithDecisionsCents).toHaveBeenCalledWith(
+      expect.any(Array),
+      7500,
+      expect.objectContaining({
+        shippingAddress: expect.objectContaining({
+          country: 'US',
+        }),
+        shippingRates: expect.objectContaining({
+          domesticCents: expect.any(Number),
+          internationalCents: expect.any(Number),
+        }),
+      })
+    )
+  })
+
   it('rejects invalid recovery tokens safely', async () => {
     const result = await recoverCheckoutByToken('bad')
     expect(result).toEqual({ ok: false, reason: 'INVALID_TOKEN' })
