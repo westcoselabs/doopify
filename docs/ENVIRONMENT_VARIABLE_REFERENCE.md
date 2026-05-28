@@ -63,6 +63,7 @@
 | `MEDIA_S3_SECRET_ACCESS_KEY` | Required when `MEDIA_STORAGE_PROVIDER=s3` | S3/R2 secret access key. |
 | `MEDIA_S3_ENDPOINT` | Optional | Custom endpoint for S3-compatible providers (e.g., Cloudflare R2). |
 | `MEDIA_PUBLIC_BASE_URL` | Optional | Public CDN base URL for object-stored media (e.g., `https://cdn.example.com/media`). Also used in `img-src` CSP. |
+| `DIGITAL_ASSET_LOCAL_DIR` | Optional | Local private directory for digital asset binaries when private downloads are stored on disk (defaults to `.private-digital-assets`). |
 
 ## Security / CSP
 
@@ -119,3 +120,5 @@
 - `MEDIA_PUBLIC_BASE_URL` is the canonical media CDN env var. `MEDIA_S3_PUBLIC_URL` is legacy/deprecated.
 - Postgres media storage is a local/dev fallback. Use Vercel Blob on Vercel production, or S3/R2 for non-Vercel object storage.
 - Product/gallery media is public by design. Do not upload sensitive/private files.
+- Private digital uploads are intentionally rejected for `MEDIA_STORAGE_PROVIDER=vercel-blob` until private-object guarantees are finalized.
+- For digital downloads on S3-compatible storage, bucket privacy and IAM policy configuration are required to keep files private.

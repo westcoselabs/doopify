@@ -19,6 +19,7 @@ Doopify is a real commerce application built with Next.js 16, Prisma, PostgreSQL
 - Refund and return management with Stripe idempotency
 - Outbound merchant webhooks with HMAC signing, retry/backoff, and delivery observability
 - Transactional email via Resend or SMTP with delivery tracking and safe resend
+- Digital products v1: digital-only checkout, secure downloads, guest-friendly delivery, and admin support actions
 - Abandoned checkout recovery with tokenized recovery links
 - Background job infrastructure with retry, exhaustion, and cron-compatible runner
 - Audit logging for team operations, payment events, and lifecycle mutations
@@ -66,6 +67,7 @@ Doopify is a real commerce application built with Next.js 16, Prisma, PostgreSQL
 | Topic | Guide |
 |---|---|
 | Pilot validation runbook | [docs/operations/pilot-validation-runbook.md](./docs/operations/pilot-validation-runbook.md) |
+| Digital products runbook | [docs/operations/digital-products-runbook.md](./docs/operations/digital-products-runbook.md) |
 | Troubleshooting | [docs/troubleshooting.md](./docs/troubleshooting.md) |
 | Production runbook | [docs/PRODUCTION_RUNBOOK.md](./docs/PRODUCTION_RUNBOOK.md) |
 | Deployment checklist | [docs/deployment/checklist.md](./docs/deployment/checklist.md) |

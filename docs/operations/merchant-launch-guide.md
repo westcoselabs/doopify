@@ -163,17 +163,25 @@ Recommended sign-off output:
 
 ---
 
-## 6. Deferred digital features
+## 6. Digital products in v1
 
-Digital commerce remains deferred/foundation-only in the current launch scope.
+Digital products are supported in v1 with guest-friendly delivery:
 
-Not in active launch checklist scope:
+- digital-only checkout
+- secure download links
+- checkout success download card
+- digital download email delivery
+- admin order support tools (copy link, resend, revoke, regenerate)
 
-- Full digital products experience
-- Digital downloads
-- Digital delivery emails
+Still intentionally out of scope:
 
-Treat these as future-phase capabilities, not launch blockers for the current physical-commerce checklist.
+- mixed physical + digital carts
+- customer account/login/download library
+- subscriptions, memberships, license keys, DRM/watermarking
+
+Use the dedicated runbook for setup, support, and QA steps:
+
+- `docs/operations/digital-products-runbook.md`
 
 ---
 
@@ -184,3 +192,4 @@ Treat these as future-phase capabilities, not launch blockers for the current ph
 - `docs/setup/email.md`
 - `docs/deployment/checklist.md`
 - `docs/operations/pilot-validation-runbook.md`
+- `docs/operations/digital-products-runbook.md`
