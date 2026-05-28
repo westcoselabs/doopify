@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import AdminButton from "../admin/ui/AdminButton";
 import AdminCard from "../admin/ui/AdminCard";
 import AdminInput from "../admin/ui/AdminInput";
@@ -40,12 +41,41 @@ const FULFILLMENT_MODES = [
     value: "digital",
     title: "Digital product",
     subtitle:
-      "Coming soon. Digital delivery is planned. No-shipping checkout, secure downloads, and delivery emails are not enabled yet.",
+      "No shipping flow for buyers yet. Use this to prep product metadata and linked files in admin only.",
     icon: "download",
-    helper:
-      "Digital product support is saved in the data model, but checkout still requires shipping in this release.",
   },
 ];
+
+function formatByteSize(byteSize) {
+  const parsed = Number(byteSize);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return "Unknown size";
+  }
+
+  if (parsed < 1024) {
+    return `${parsed} B`;
+  }
+
+  const kb = parsed / 1024;
+  if (kb < 1024) {
+    return `${kb.toFixed(1)} KB`;
+  }
+
+  const mb = kb / 1024;
+  if (mb < 1024) {
+    return `${mb.toFixed(1)} MB`;
+  }
+
+  const gb = mb / 1024;
+  return `${gb.toFixed(1)} GB`;
+}
+
+function parseApiError(json, fallbackMessage) {
+  if (json?.error && typeof json.error === "string") {
+    return json.error;
+  }
+  return fallbackMessage;
+}
 
 function isoToLocalInput(isoDate) {
   if (!isoDate) {
@@ -139,6 +169,173 @@ function getPreviewState({ draftProduct, totalInventory, continueSellingCount })
 export default function ProductSellingPanel({ onManageInVariants }) {
   const { editor, actions } = useProductStore();
   const draftProduct = editor.draftProduct;
+  const draftProductId = draftProduct?.id || null;
+  const isPersistedProduct = editor.mode === "existing" && Boolean(draftProductId);
+  const isDigitalProduct = draftProduct?.fulfillmentType === "digital";
+  const [availableDigitalAssets, setAvailableDigitalAssets] = useState([]);
+  const [linkedDigitalAssets, setLinkedDigitalAssets] = useState([]);
+  const [selectedDigitalAssetId, setSelectedDigitalAssetId] = useState("");
+  const [isLoadingDigitalAssets, setIsLoadingDigitalAssets] = useState(false);
+  const [isLoadingLinkedAssets, setIsLoadingLinkedAssets] = useState(false);
+  const [isLinkingAsset, setIsLinkingAsset] = useState(false);
+  const [isUnlinkingAssetId, setIsUnlinkingAssetId] = useState(null);
+
+  const linkedDigitalAssetIds = useMemo(
+    () => new Set(linkedDigitalAssets.map((assetLink) => assetLink.digitalAsset?.id || assetLink.digitalAssetId)),
+    [linkedDigitalAssets]
+  );
+  const unlinkedDigitalAssets = useMemo(
+    () => availableDigitalAssets.filter((asset) => !linkedDigitalAssetIds.has(asset.id)),
+    [availableDigitalAssets, linkedDigitalAssetIds]
+  );
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (!isPersistedProduct) {
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    async function loadDigitalAssets() {
+      setIsLoadingDigitalAssets(true);
+      try {
+        const response = await fetch("/api/digital-assets");
+        const json = await response.json().catch(() => null);
+        if (!response.ok || !json?.success) {
+          throw new Error(parseApiError(json, "Failed to load digital assets."));
+        }
+        if (!isCancelled) {
+          setAvailableDigitalAssets(Array.isArray(json.data?.assets) ? json.data.assets : []);
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          actions.showToast(error instanceof Error ? error.message : "Failed to load digital assets.", "error");
+          setAvailableDigitalAssets([]);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingDigitalAssets(false);
+        }
+      }
+    }
+
+    async function loadLinkedDigitalAssets() {
+      setIsLoadingLinkedAssets(true);
+      try {
+        const response = await fetch(`/api/products/${draftProductId}/digital-assets`);
+        const json = await response.json().catch(() => null);
+        if (!response.ok || !json?.success) {
+          throw new Error(parseApiError(json, "Failed to load linked digital assets."));
+        }
+        if (!isCancelled) {
+          setLinkedDigitalAssets(Array.isArray(json.data?.assets) ? json.data.assets : []);
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          actions.showToast(
+            error instanceof Error ? error.message : "Failed to load linked digital assets.",
+            "error"
+          );
+          setLinkedDigitalAssets([]);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingLinkedAssets(false);
+        }
+      }
+    }
+
+    loadDigitalAssets();
+    loadLinkedDigitalAssets();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [actions, draftProductId, isPersistedProduct]);
+
+  const handleLinkDigitalAsset = async () => {
+    if (!isPersistedProduct || !selectedDigitalAssetId || isLinkingAsset || !draftProductId) {
+      return;
+    }
+
+    setIsLinkingAsset(true);
+
+    try {
+      const response = await fetch(`/api/products/${draftProductId}/digital-assets`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ digitalAssetId: selectedDigitalAssetId }),
+      });
+      const json = await response.json().catch(() => null);
+      if (!response.ok || !json?.success) {
+        throw new Error(parseApiError(json, "Failed to link digital asset to product."));
+      }
+
+      const linkedAsset = json.data;
+      if (linkedAsset?.id) {
+        setLinkedDigitalAssets((currentLinks) => {
+          const existingIndex = currentLinks.findIndex((currentLink) => currentLink.id === linkedAsset.id);
+          if (existingIndex >= 0) {
+            const nextLinks = [...currentLinks];
+            nextLinks[existingIndex] = linkedAsset;
+            return nextLinks;
+          }
+
+          return [...currentLinks, linkedAsset].sort((left, right) => {
+            if (left.sortOrder !== right.sortOrder) {
+              return (left.sortOrder ?? 0) - (right.sortOrder ?? 0);
+            }
+            return String(left.createdAt || "").localeCompare(String(right.createdAt || ""));
+          });
+        });
+      }
+
+      setSelectedDigitalAssetId("");
+      actions.showToast("Digital asset linked to product.", "success");
+    } catch (error) {
+      actions.showToast(
+        error instanceof Error ? error.message : "Failed to link digital asset to product.",
+        "error"
+      );
+    } finally {
+      setIsLinkingAsset(false);
+    }
+  };
+
+  const handleUnlinkDigitalAsset = async (digitalAssetId) => {
+    if (!isPersistedProduct || !digitalAssetId || isUnlinkingAssetId || !draftProductId) {
+      return;
+    }
+
+    setIsUnlinkingAssetId(digitalAssetId);
+
+    try {
+      const response = await fetch(`/api/products/${draftProductId}/digital-assets`, {
+        method: "DELETE",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ digitalAssetId }),
+      });
+      const json = await response.json().catch(() => null);
+      if (!response.ok || !json?.success) {
+        throw new Error(parseApiError(json, "Failed to unlink digital asset."));
+      }
+
+      setLinkedDigitalAssets((currentLinks) =>
+        currentLinks.filter((currentLink) => (currentLink.digitalAsset?.id || currentLink.digitalAssetId) !== digitalAssetId)
+      );
+      actions.showToast("Digital asset unlinked from product.", "success");
+    } catch (error) {
+      actions.showToast(error instanceof Error ? error.message : "Failed to unlink digital asset.", "error");
+    } finally {
+      setIsUnlinkingAssetId(null);
+    }
+  };
 
   if (!draftProduct) {
     return null;
@@ -157,7 +354,6 @@ export default function ProductSellingPanel({ onManageInVariants }) {
   const preview = getPreviewState({ draftProduct, totalInventory, continueSellingCount });
   const showPresaleWarning = draftProduct.salesMode === "presale" && continueSellingCount === 0;
   const pricePreview = draftProduct.basePrice || "0.00";
-  const isLegacyDigital = draftProduct.fulfillmentType === "digital";
 
   return (
     <div className={styles.layout}>
@@ -329,14 +525,8 @@ export default function ProductSellingPanel({ onManageInVariants }) {
               <AdminSelectableTile
                 key={mode.value}
                 className={styles.modeTile}
-                disabled={mode.value === "digital"}
-                footer={mode.value === "digital" ? mode.helper : null}
                 media={<span className={`material-symbols-outlined ${styles.modeIcon}`}>{mode.icon}</span>}
-                onClick={
-                  mode.value === "digital"
-                    ? undefined
-                    : () => actions.setDraftField("fulfillmentType", mode.value)
-                }
+                onClick={() => actions.setDraftField("fulfillmentType", mode.value)}
                 selected={draftProduct.fulfillmentType === mode.value}
                 subtitle={mode.subtitle}
                 title={mode.title}
@@ -344,9 +534,9 @@ export default function ProductSellingPanel({ onManageInVariants }) {
             ))}
           </div>
 
-          {isLegacyDigital ? (
+          {isDigitalProduct ? (
             <div className={styles.digitalNotice}>
-              <strong>Digital checkout not live yet</strong>
+              <strong>Digital checkout delivery is being configured</strong>
               <span>
                 Digital fulfillment is marked on this product, but digital checkout is not live
                 yet. Customers will still see the current shipping flow until digital checkout is
@@ -355,6 +545,114 @@ export default function ProductSellingPanel({ onManageInVariants }) {
             </div>
           ) : null}
         </AdminCard>
+
+        {isDigitalProduct ? (
+          <AdminCard className={styles.panelCard} spotlight variant="card">
+            <div className={styles.sectionHead}>
+              <div>
+                <p className={styles.eyebrow}>Digital files</p>
+                <h3 className={`font-headline ${styles.title}`}>Linked digital assets</h3>
+              </div>
+            </div>
+            <p className={styles.copy}>
+              Private upload and customer delivery are not live yet. Link existing digital asset
+              metadata records to this product for admin setup.
+            </p>
+
+            {!isPersistedProduct ? (
+              <div className={styles.notice}>
+                <strong>Save this product first</strong>
+                <span>Digital assets can be linked after the product is saved to the database.</span>
+              </div>
+            ) : (
+              <>
+                <div className={styles.assetLinkRow}>
+                  <label className={styles.field}>
+                    <span>Available assets</span>
+                    <select
+                      className={`admin-input ${styles.assetSelect}`}
+                      disabled={
+                        isLoadingDigitalAssets ||
+                        isLoadingLinkedAssets ||
+                        isLinkingAsset ||
+                        unlinkedDigitalAssets.length === 0
+                      }
+                      onChange={(event) => setSelectedDigitalAssetId(event.target.value)}
+                      value={selectedDigitalAssetId}
+                    >
+                      <option value="">Select a digital asset</option>
+                      {unlinkedDigitalAssets.map((asset) => (
+                        <option key={asset.id} value={asset.id}>
+                          {asset.title} ({asset.fileName})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <AdminButton
+                    disabled={!selectedDigitalAssetId || isLinkingAsset}
+                    loading={isLinkingAsset}
+                    onClick={handleLinkDigitalAsset}
+                    size="sm"
+                    variant="secondary"
+                  >
+                    Link asset
+                  </AdminButton>
+                </div>
+
+                {isLoadingLinkedAssets ? (
+                  <p className={styles.assetInlineMessage}>Loading linked assets...</p>
+                ) : null}
+
+                {!isLoadingLinkedAssets && linkedDigitalAssets.length === 0 ? (
+                  <p className={styles.assetEmpty}>No digital files linked yet</p>
+                ) : null}
+
+                {!isLoadingLinkedAssets && linkedDigitalAssets.length > 0 ? (
+                  <ul className={styles.assetList}>
+                    {linkedDigitalAssets.map((assetLink) => {
+                      const asset = assetLink.digitalAsset;
+                      const assetId = asset?.id || assetLink.digitalAssetId;
+                      if (!assetId) {
+                        return null;
+                      }
+
+                      return (
+                        <li key={assetLink.id || assetId} className={styles.assetItem}>
+                          <div className={styles.assetMeta}>
+                            <p className={styles.assetTitle}>{asset?.title || "Untitled asset"}</p>
+                            <p className={styles.assetDetail}>
+                              {asset?.fileName || "Unknown filename"} · {asset?.contentType || "Unknown type"} ·{" "}
+                              {formatByteSize(asset?.byteSize)}
+                            </p>
+                          </div>
+                          <AdminButton
+                            disabled={Boolean(isUnlinkingAssetId)}
+                            loading={isUnlinkingAssetId === assetId}
+                            onClick={() => handleUnlinkDigitalAsset(assetId)}
+                            size="sm"
+                            variant="ghost"
+                          >
+                            Unlink
+                          </AdminButton>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                ) : null}
+
+                {!isLoadingDigitalAssets && availableDigitalAssets.length === 0 ? (
+                  <div className={styles.notice}>
+                    <strong>No digital assets available</strong>
+                    <span>
+                      Create digital asset metadata from the Digital Assets admin API flow, then
+                      return to link files to this product.
+                    </span>
+                  </div>
+                ) : null}
+              </>
+            )}
+          </AdminCard>
+        ) : null}
       </div>
 
       <aside className={styles.previewCard}>

@@ -170,6 +170,61 @@
   color: var(--on-surface-variant);
 }
 
+.assetLinkRow {
+  margin-top: 0.7rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: end;
+}
+
+.assetSelect {
+  width: 100%;
+}
+
+.assetInlineMessage,
+.assetEmpty {
+  margin: 0.65rem 0 0;
+  font-size: 0.76rem;
+  color: var(--on-surface-variant);
+}
+
+.assetList {
+  list-style: none;
+  margin: 0.65rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.assetItem {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.8rem;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0.6rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.assetMeta {
+  min-width: 0;
+}
+
+.assetTitle {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.assetDetail {
+  margin: 0.2rem 0 0;
+  font-size: 0.74rem;
+  color: var(--on-surface-variant);
+  line-height: 1.35;
+}
+
 .previewCard {
   position: sticky;
   top: 0;
@@ -286,7 +341,9 @@
   .modeGrid,
   .summaryGrid,
   .gridTwo,
-  .fulfillmentGrid {
+  .fulfillmentGrid,
+  .assetLinkRow,
+  .assetItem {
     grid-template-columns: 1fr;
   }
 }
