@@ -197,6 +197,14 @@ enum EmailDeliveryStatus {
   RESEND_REQUESTED
 }
 
+enum DigitalDownloadEventResult {
+  ALLOWED
+  DENIED_EXPIRED
+  DENIED_REVOKED
+  DENIED_EXHAUSTED
+  DENIED_OTHER
+}
+
 enum JobStatus {
   PENDING
   RUNNING
@@ -298,6 +306,8 @@ model Store {
   shippingManualRates ShippingManualRate[]
   shippingFallbackRates ShippingFallbackRate[]
   taxRules          TaxRule[]
+  digitalAssets     DigitalAsset[]
+  digitalDownloadGrants DigitalDownloadGrant[]
 
   @@map("stores")
 }
@@ -571,8 +581,10 @@ model Product {
   variants              ProductVariant[]
   options               ProductOption[]
   media                 ProductMedia[]
+  digitalAssets         ProductDigitalAsset[]
   collections           CollectionProduct[]
   orderItems            OrderItem[]
+  digitalDownloadGrants DigitalDownloadGrant[]
 
   @@index([handle])
   @@index([status])
@@ -658,6 +670,43 @@ model ProductMedia {
   @@unique([productId, assetId])
   @@index([productId])
   @@map("product_media")
+}
+
+model DigitalAsset {
+  id             String                @id @default(cuid())
+  storeId        String
+  title          String
+  fileName       String
+  contentType    String
+  byteSize       Int
+  storageProvider String
+  storageKey     String
+  checksumSha256 String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  store          Store                 @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  products       ProductDigitalAsset[]
+  grants         DigitalDownloadGrant[]
+
+  @@index([storeId])
+  @@index([storageProvider])
+  @@index([storageKey])
+  @@map("digital_assets")
+}
+
+model ProductDigitalAsset {
+  id             String       @id @default(cuid())
+  productId      String
+  digitalAssetId String
+  sortOrder      Int          @default(0)
+  createdAt      DateTime     @default(now())
+  product        Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  digitalAsset   DigitalAsset @relation(fields: [digitalAssetId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, digitalAssetId])
+  @@index([productId, sortOrder])
+  @@index([digitalAssetId])
+  @@map("product_digital_assets")
 }
 
 model Collection {
@@ -766,6 +815,7 @@ model Order {
   returns              Return[]
   discountApplications DiscountApplication[]
   shippingLabels       ShippingLabel[]
+  digitalDownloadGrants DigitalDownloadGrant[]
 
   @@index([orderNumber])
   @@index([customerId])
@@ -791,9 +841,56 @@ model OrderItem {
   product          Product?         @relation(fields: [productId], references: [id], onDelete: SetNull)
   variant          ProductVariant?  @relation(fields: [variantId], references: [id], onDelete: SetNull)
   fulfillmentItems FulfillmentItem[]
+  digitalDownloadGrants DigitalDownloadGrant[]
 
   @@index([orderId])
   @@map("order_items")
+}
+
+model DigitalDownloadGrant {
+  id              String               @id @default(cuid())
+  storeId         String
+  orderId         String
+  orderItemId     String
+  productId       String
+  digitalAssetId  String
+  tokenHash       String               @unique
+  downloadLimit   Int                  @default(5)
+  downloadCount   Int                  @default(0)
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  lastDownloadedAt DateTime?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  store           Store                @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  order           Order                @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  orderItem       OrderItem            @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  product         Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  digitalAsset    DigitalAsset         @relation(fields: [digitalAssetId], references: [id], onDelete: Cascade)
+  events          DigitalDownloadEvent[]
+
+  @@index([storeId])
+  @@index([orderId])
+  @@index([orderItemId])
+  @@index([productId])
+  @@index([digitalAssetId])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("digital_download_grants")
+}
+
+model DigitalDownloadEvent {
+  id         String                     @id @default(cuid())
+  grantId    String
+  occurredAt DateTime                   @default(now())
+  ipAddress  String?
+  userAgent  String?
+  result     DigitalDownloadEventResult
+  grant      DigitalDownloadGrant       @relation(fields: [grantId], references: [id], onDelete: Cascade)
+
+  @@index([grantId])
+  @@index([occurredAt])
+  @@map("digital_download_events")
 }
 
 model OrderAddress {
