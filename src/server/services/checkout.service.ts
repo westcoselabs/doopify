@@ -28,6 +28,7 @@ import {
 import { convertVariantWeightToOz, totalCartWeightOz } from '@/server/shipping/weight-conversion'
 import type { ShippingRateQuote } from '@/server/shipping/shipping-rate.types'
 import { markCheckoutRecoveredByPaymentIntent } from '@/server/services/abandoned-checkout.service'
+import { getBuyerDigitalDownloadAvailabilityForPaidOrder } from '@/server/services/digital-download-delivery.service'
 import { issueDigitalDownloadGrantsForPaidOrder } from '@/server/services/digital-grant-issuance.service'
 import { canPurchaseVariant } from '@/server/services/product-availability.service'
 import { addCustomerAddress, createCustomer, getCustomerByEmail } from '@/server/services/customer.service'
@@ -920,17 +921,39 @@ export async function getCheckoutStatus(paymentIntentId: string): Promise<{
   total?: number
   currency?: string
   estimatedDeliveryText?: string | null
+  digitalDownloads?: Array<{
+    fileName: string
+    title: string
+    downloadUrl: string
+    expiresAt: string
+    downloadLimit: number
+    downloadCount: number
+  }>
+  digitalDownloadsPending?: boolean
   reason?: string | null
   checkoutStatus?: CheckoutSessionStatus
 }> {
   const existingOrder = await getOrderByPaymentIntentId(paymentIntentId)
   if (existingOrder) {
+    const digitalDownloads = await getBuyerDigitalDownloadAvailabilityForPaidOrder({
+      orderId: existingOrder.id,
+    })
+
     return {
       status: 'paid',
       orderNumber: existingOrder.orderNumber,
       total: centsToDollars(existingOrder.totalCents),
       currency: existingOrder.currency,
       estimatedDeliveryText: existingOrder.estimatedDeliveryText,
+      ...(digitalDownloads.hasDigitalItems
+        ? {
+            digitalDownloads: digitalDownloads.downloads.map((entry) => ({
+              ...entry,
+              expiresAt: entry.expiresAt.toISOString(),
+            })),
+            digitalDownloadsPending: digitalDownloads.pending,
+          }
+        : {}),
       checkoutStatus: 'COMPLETED',
     }
   }

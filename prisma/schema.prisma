@@ -868,6 +868,7 @@ model DigitalDownloadGrant {
   product         Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
   digitalAsset    DigitalAsset         @relation(fields: [digitalAssetId], references: [id], onDelete: Cascade)
   events          DigitalDownloadEvent[]
+  delivery        DigitalDownloadDelivery?
 
   @@index([storeId])
   @@index([orderId])
@@ -878,6 +879,18 @@ model DigitalDownloadGrant {
   @@index([revokedAt])
   @@unique([orderItemId, digitalAssetId])
   @@map("digital_download_grants")
+}
+
+model DigitalDownloadDelivery {
+  id        String               @id @default(cuid())
+  grantId   String               @unique
+  tokenEnc  String
+  createdAt DateTime             @default(now())
+  updatedAt DateTime             @updatedAt
+  grant     DigitalDownloadGrant @relation(fields: [grantId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@map("digital_download_deliveries")
 }
 
 model DigitalDownloadEvent {

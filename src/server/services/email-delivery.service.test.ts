@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   enqueueJob: vi.fn(),
   sendTransactionalEmail: vi.fn(),
   getOrderById: vi.fn(),
+  getBuyerDigitalDownloadAvailabilityForPaidOrder: vi.fn(),
   buildOrderConfirmationEmailMessage: vi.fn(),
   buildFulfillmentTrackingEmailMessage: vi.fn(),
   emitInternalEvent: vi.fn(),
@@ -29,6 +30,9 @@ vi.mock('@/lib/prisma', () => ({ prisma: mocks.prisma }))
 vi.mock('@/server/email/provider', () => ({ sendTransactionalEmail: mocks.sendTransactionalEmail }))
 vi.mock('@/server/jobs/job.service', () => ({ enqueueJob: mocks.enqueueJob }))
 vi.mock('@/server/services/order.service', () => ({ getOrderById: mocks.getOrderById }))
+vi.mock('@/server/services/digital-download-delivery.service', () => ({
+  getBuyerDigitalDownloadAvailabilityForPaidOrder: mocks.getBuyerDigitalDownloadAvailabilityForPaidOrder,
+}))
 vi.mock('@/server/services/email-template.service', () => ({
   buildOrderConfirmationEmailMessage: mocks.buildOrderConfirmationEmailMessage,
   buildFulfillmentTrackingEmailMessage: mocks.buildFulfillmentTrackingEmailMessage,
@@ -67,6 +71,11 @@ describe('email delivery service', () => {
     mocks.prisma.fulfillment.findUnique.mockResolvedValue(null)
     mocks.enqueueJob.mockResolvedValue({ id: 'job-1', type: 'SEND_FULFILLMENT_EMAIL' })
     mocks.getOrderById.mockResolvedValue(null)
+    mocks.getBuyerDigitalDownloadAvailabilityForPaidOrder.mockResolvedValue({
+      hasDigitalItems: false,
+      pending: false,
+      downloads: [],
+    })
     mocks.buildOrderConfirmationEmailMessage.mockResolvedValue({
       from: 'orders@example.com',
       subject: 'Store order #1001 confirmation',
@@ -499,6 +508,71 @@ describe('email delivery service', () => {
   })
 
   // ── Order confirmation job: template-disabled and provider-missing paths ─────
+
+  it('passes buyer-safe digital download links into order confirmation emails', async () => {
+    mocks.prisma.emailDelivery.findUnique.mockResolvedValue({
+      id: 'email-oc-digital',
+      event: 'order.paid',
+      template: 'order_confirmation',
+      recipientEmail: 'customer@example.com',
+      subject: 'Order confirmation',
+      status: 'PENDING',
+      provider: 'resend',
+      orderId: 'order-digital-1',
+      customerId: null,
+      refundId: null,
+      returnId: null,
+    })
+    mocks.getOrderById.mockResolvedValue({
+      id: 'order-digital-1',
+      orderNumber: 1010,
+      email: 'customer@example.com',
+      currency: 'USD',
+      totalCents: 5000,
+      items: [],
+      addresses: [],
+    })
+    mocks.getBuyerDigitalDownloadAvailabilityForPaidOrder.mockResolvedValue({
+      hasDigitalItems: true,
+      pending: false,
+      downloads: [
+        {
+          title: 'Guide',
+          fileName: 'Guide.pdf',
+          downloadUrl: 'https://store.example.com/api/digital-downloads/raw-token',
+          expiresAt: new Date('2026-06-27T00:00:00.000Z'),
+          downloadLimit: 5,
+          downloadCount: 0,
+        },
+      ],
+    })
+    mocks.buildOrderConfirmationEmailMessage.mockResolvedValue({
+      from: 'orders@example.com',
+      subject: 'Order #1010 confirmation',
+      html: '<p>Digital links</p>',
+    })
+    mocks.sendTransactionalEmail.mockResolvedValue({ provider: 'resend', providerMessageId: 'msg-order-digital' })
+    mocks.prisma.emailDelivery.update.mockResolvedValue({ id: 'email-oc-digital', status: 'SENT' })
+
+    await processOrderConfirmationEmailDeliveryJob({
+      deliveryId: 'email-oc-digital',
+      orderId: 'order-digital-1',
+    })
+
+    expect(mocks.buildOrderConfirmationEmailMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderId: 'order-digital-1',
+        digitalDownloads: [
+          expect.objectContaining({
+            downloadUrl: 'https://store.example.com/api/digital-downloads/raw-token',
+          }),
+        ],
+        digitalDownloadsPending: false,
+      })
+    )
+    expect(JSON.stringify(mocks.buildOrderConfirmationEmailMessage.mock.calls)).not.toContain('tokenHash')
+    expect(JSON.stringify(mocks.buildOrderConfirmationEmailMessage.mock.calls)).not.toContain('storageKey')
+  })
 
   it('marks order confirmation delivery FAILED when template is disabled (returns null)', async () => {
     mocks.prisma.emailDelivery.findUnique.mockResolvedValue({

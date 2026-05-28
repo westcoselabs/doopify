@@ -27,6 +27,15 @@ export type OrderConfirmationInput = {
     postalCode?: string | null
     country?: string | null
   } | null
+  digitalDownloads?: Array<{
+    title: string
+    fileName: string
+    downloadUrl: string
+    expiresAt: Date | string
+    downloadLimit: number
+    downloadCount: number
+  }>
+  digitalDownloadsPending?: boolean
 }
 
 export type AbandonedCheckoutRecoveryInput = {
@@ -79,6 +88,17 @@ function formatMoney(amount: number, currency: string) {
   }).format(amount)
 }
 
+function formatEmailDate(value: Date | string) {
+  const parsed = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(parsed.getTime())) return ''
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(parsed)
+}
+
 function resolveEmailBranding(
   store: Awaited<ReturnType<typeof getStoreSettingsLite>>
 ): EmailBranding {
@@ -129,6 +149,46 @@ function formatAddress(address: OrderConfirmationInput['shippingAddress']) {
     .join('<br />')
 }
 
+function renderDigitalDownloadsSection(input: OrderConfirmationInput) {
+  const downloads = input.digitalDownloads ?? []
+  if (downloads.length === 0) {
+    if (!input.digitalDownloadsPending) {
+      return ''
+    }
+
+    return `
+      <div style="padding:20px;border:1px solid #e5e7eb;border-radius:16px;background:#f9fafb;margin-bottom:24px;">
+        <p style="margin:0;font-size:16px;color:#111827;"><strong>Your files are being prepared. Check your email shortly.</strong></p>
+      </div>
+    `
+  }
+
+  const rows = downloads
+    .map((entry) => {
+      const expiresAt = formatEmailDate(entry.expiresAt)
+      const detail = expiresAt
+        ? `This secure link expires on ${expiresAt} and can be used up to ${entry.downloadLimit} times.`
+        : `This secure link can be used up to ${entry.downloadLimit} times.`
+
+      return `
+        <div style="padding:14px;border:1px solid #e5e7eb;border-radius:12px;background:#ffffff;margin:0 0 12px;">
+          <p style="margin:0 0 8px;font-size:14px;color:#111827;"><strong>${escapeHtml(entry.title || entry.fileName)}</strong></p>
+          <p style="margin:0 0 10px;font-size:12px;color:#4b5563;">${escapeHtml(detail)}</p>
+          <a href="${escapeHtml(entry.downloadUrl)}" style="display:inline-block;padding:10px 16px;border-radius:999px;background:#111827;color:#ffffff;text-decoration:none;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;">Download</a>
+        </div>
+      `
+    })
+    .join('')
+
+  return `
+    <div style="padding:20px;border:1px solid #e5e7eb;border-radius:16px;background:#f9fafb;margin-bottom:24px;">
+      <p style="margin:0 0 12px;font-size:18px;color:#111827;"><strong>Your downloads are ready.</strong></p>
+      ${rows}
+      <p style="margin:0;font-size:12px;color:#6b7280;">If you have trouble with a link, reply to this email for support.</p>
+    </div>
+  `
+}
+
 function buildOrderConfirmationHtml(
   input: OrderConfirmationInput,
   storeName: string,
@@ -163,6 +223,7 @@ function buildOrderConfirmationHtml(
           <tbody>${itemRows}</tbody>
         </table>
         <p style="font-size:18px;margin:0 0 24px;"><strong>Total:</strong> ${formatMoney(input.total, input.currency)}</p>
+        ${renderDigitalDownloadsSection(input)}
         <div style="padding:20px;border:1px solid #e5e7eb;border-radius:16px;background:#f9fafb;">
           <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#6b7280;">Shipping address</p>
           <p style="margin:0;font-size:14px;line-height:1.6;color:#111827;">${formatAddress(input.shippingAddress)}</p>
@@ -307,6 +368,7 @@ function buildCustomizedOrderConfirmationHtml(
           <tbody>${itemRows}</tbody>
         </table>
         <p style="font-size:18px;margin:0 0 24px;"><strong>Total:</strong> ${formatMoney(input.total, input.currency)}</p>
+        ${renderDigitalDownloadsSection(input)}
         ${input.shippingAddress ? `
         <div style="padding:20px;border:1px solid #e5e7eb;border-radius:16px;background:#f9fafb;">
           <p style="margin:0 0 8px;font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:#6b7280;">Shipping address</p>

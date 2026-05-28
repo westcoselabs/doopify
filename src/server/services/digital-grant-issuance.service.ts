@@ -1,11 +1,13 @@
 import { normalizeCartFulfillmentType } from '@/lib/checkout/cart-fulfillment'
 import { prisma } from '@/lib/prisma'
+import { ensureDigitalDownloadDeliveryToken } from '@/server/services/digital-download-delivery.service'
 import {
   createDownloadToken,
   getDefaultDigitalGrantPolicy,
   hashDownloadToken,
 } from '@/server/services/digital-download-grant.service'
 import { getStoreSettingsLite } from '@/server/services/settings.service'
+import { Prisma } from '@prisma/client'
 
 type IssueDigitalGrantsInput = {
   orderId: string
@@ -33,6 +35,10 @@ type OrderWithDigitalContext = {
       digitalAssets: Array<{ digitalAssetId: string }>
     } | null
   }>
+}
+
+function isUniqueConstraintError(error: unknown) {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'
 }
 
 function buildGrantKey(orderItemId: string, digitalAssetId: string) {
@@ -90,12 +96,13 @@ export async function issueDigitalDownloadGrantsForPaidOrder(
   const existingGrants = await prisma.digitalDownloadGrant.findMany({
     where: { orderId: order.id },
     select: {
+      id: true,
       orderItemId: true,
       digitalAssetId: true,
     },
   })
-  const existingKeys = new Set(
-    existingGrants.map((grant) => buildGrantKey(grant.orderItemId, grant.digitalAssetId))
+  const existingByKey = new Map(
+    existingGrants.map((grant) => [buildGrantKey(grant.orderItemId, grant.digitalAssetId), grant] as const)
   )
 
   const policy = getDefaultDigitalGrantPolicy(input.now)
@@ -105,6 +112,7 @@ export async function issueDigitalDownloadGrantsForPaidOrder(
     orderItemId: string
     productId: string
     digitalAssetId: string
+    rawToken: string
     tokenHash: string
     downloadLimit: number
     expiresAt: Date
@@ -145,18 +153,20 @@ export async function issueDigitalDownloadGrantsForPaidOrder(
 
     for (const digitalAssetId of assetIds) {
       const key = buildGrantKey(item.id, digitalAssetId)
-      if (existingKeys.has(key)) {
+      if (existingByKey.has(key)) {
         skippedExisting += 1
         continue
       }
 
+      const rawToken = createDownloadToken()
       createData.push({
         storeId: store.id,
         orderId: order.id,
         orderItemId: item.id,
         productId: item.product.id,
         digitalAssetId,
-        tokenHash: hashDownloadToken(createDownloadToken()),
+        rawToken,
+        tokenHash: hashDownloadToken(rawToken),
         downloadLimit: policy.downloadLimit,
         expiresAt: policy.expiresAt,
       })
@@ -165,12 +175,73 @@ export async function issueDigitalDownloadGrantsForPaidOrder(
 
   let created = 0
   if (createData.length) {
-    const result = await prisma.digitalDownloadGrant.createMany({
-      data: createData,
-      skipDuplicates: true,
+    await prisma.$transaction(async (tx) => {
+      for (const candidate of createData) {
+        let grantId: string | null = null
+        let deliveryToken: string | undefined = undefined
+
+        try {
+          const createdGrant = await tx.digitalDownloadGrant.create({
+            data: {
+              storeId: candidate.storeId,
+              orderId: candidate.orderId,
+              orderItemId: candidate.orderItemId,
+              productId: candidate.productId,
+              digitalAssetId: candidate.digitalAssetId,
+              tokenHash: candidate.tokenHash,
+              downloadLimit: candidate.downloadLimit,
+              expiresAt: candidate.expiresAt,
+            },
+            select: { id: true },
+          })
+          created += 1
+          grantId = createdGrant.id
+          deliveryToken = candidate.rawToken
+        } catch (error) {
+          if (!isUniqueConstraintError(error)) {
+            throw error
+          }
+
+          const existing = await tx.digitalDownloadGrant.findUnique({
+            where: {
+              orderItemId_digitalAssetId: {
+                orderItemId: candidate.orderItemId,
+                digitalAssetId: candidate.digitalAssetId,
+              },
+            },
+            select: { id: true },
+          })
+
+          if (!existing) {
+            throw error
+          }
+
+          skippedExisting += 1
+          grantId = existing.id
+        }
+
+        if (!grantId) {
+          continue
+        }
+
+        await ensureDigitalDownloadDeliveryToken({
+          tx,
+          grantId,
+          rawToken: deliveryToken,
+        })
+      }
     })
-    created = result.count
-    skippedExisting += createData.length - created
+  }
+
+  if (existingByKey.size > 0) {
+    await prisma.$transaction(async (tx) => {
+      for (const existing of existingByKey.values()) {
+        await ensureDigitalDownloadDeliveryToken({
+          tx,
+          grantId: existing.id,
+        })
+      }
+    })
   }
 
   return {

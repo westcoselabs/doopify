@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   emitInternalEvent: vi.fn(),
   markCheckoutRecoveredByPaymentIntent: vi.fn(),
   issueDigitalDownloadGrantsForPaidOrder: vi.fn(),
+  getBuyerDigitalDownloadAvailabilityForPaidOrder: vi.fn(),
   getShippingRatesForCheckout: vi.fn(),
   getStripeRuntimeConnection: vi.fn(),
 }))
@@ -64,6 +65,10 @@ vi.mock('@/server/services/abandoned-checkout.service', () => ({
 
 vi.mock('@/server/services/digital-grant-issuance.service', () => ({
   issueDigitalDownloadGrantsForPaidOrder: mocks.issueDigitalDownloadGrantsForPaidOrder,
+}))
+
+vi.mock('@/server/services/digital-download-delivery.service', () => ({
+  getBuyerDigitalDownloadAvailabilityForPaidOrder: mocks.getBuyerDigitalDownloadAvailabilityForPaidOrder,
 }))
 
 vi.mock('@/server/shipping/shipping-rate.service', () => ({
@@ -116,6 +121,11 @@ describe('checkout service', () => {
       skippedExisting: 0,
       missingLinkedAssets: 0,
       mixedOrderDetected: false,
+    })
+    mocks.getBuyerDigitalDownloadAvailabilityForPaidOrder.mockResolvedValue({
+      hasDigitalItems: false,
+      pending: false,
+      downloads: [],
     })
     mocks.getShippingRatesForCheckout.mockImplementation(async ({ shippingAddress }) => [
       {
@@ -1547,7 +1557,59 @@ describe('checkout service', () => {
       estimatedDeliveryText: '3-5 business days',
       checkoutStatus: 'COMPLETED',
     })
+    expect(mocks.getBuyerDigitalDownloadAvailabilityForPaidOrder).toHaveBeenCalledWith({
+      orderId: 'order_1',
+    })
+    expect(status).not.toHaveProperty('digitalDownloads')
     expect(mocks.createOrder).not.toHaveBeenCalled()
+  })
+
+  it('includes buyer-safe digital download links for paid digital orders', async () => {
+    mocks.getOrderByPaymentIntentId.mockResolvedValueOnce({
+      id: 'order_digital_1',
+      orderNumber: 2002,
+      totalCents: 1999,
+      currency: 'USD',
+      estimatedDeliveryText: 'Digital delivery pending',
+    })
+    mocks.getBuyerDigitalDownloadAvailabilityForPaidOrder.mockResolvedValueOnce({
+      hasDigitalItems: true,
+      pending: true,
+      downloads: [
+        {
+          fileName: 'Starter Kit.pdf',
+          title: 'Starter Kit',
+          downloadUrl: '/api/digital-downloads/token_1',
+          expiresAt: new Date('2026-06-27T00:00:00.000Z'),
+          downloadLimit: 5,
+          downloadCount: 0,
+        },
+      ],
+    })
+
+    const status = await getCheckoutStatus('pi_paid_digital')
+
+    expect(status).toEqual({
+      status: 'paid',
+      orderNumber: 2002,
+      total: 19.99,
+      currency: 'USD',
+      estimatedDeliveryText: 'Digital delivery pending',
+      digitalDownloads: [
+        {
+          fileName: 'Starter Kit.pdf',
+          title: 'Starter Kit',
+          downloadUrl: '/api/digital-downloads/token_1',
+          expiresAt: '2026-06-27T00:00:00.000Z',
+          downloadLimit: 5,
+          downloadCount: 0,
+        },
+      ],
+      digitalDownloadsPending: true,
+      checkoutStatus: 'COMPLETED',
+    })
+    expect(JSON.stringify(status)).not.toContain('tokenHash')
+    expect(JSON.stringify(status)).not.toContain('storageKey')
   })
 
   it('returns processing status from checkout session and does not create orders', async () => {

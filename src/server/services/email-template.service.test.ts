@@ -94,4 +94,34 @@ describe('email template service', () => {
 
     expect(message).toBeNull()
   })
+
+  it('renders digital download links with safe copy and no token hash exposure', async () => {
+    const message = await buildOrderConfirmationEmailMessage({
+      orderNumber: 1004,
+      orderId: 'order-4',
+      email: 'customer@example.com',
+      currency: 'USD',
+      total: 29,
+      items: [{ title: 'Digital Kit', quantity: 1, price: 29 }],
+      digitalDownloads: [
+        {
+          title: 'Digital Kit',
+          fileName: 'Digital-Kit.zip',
+          downloadUrl: 'https://store.example.com/api/digital-downloads/raw-token-value',
+          expiresAt: '2026-06-27T00:00:00.000Z',
+          downloadLimit: 5,
+          downloadCount: 0,
+        },
+      ],
+      digitalDownloadsPending: false,
+    })
+
+    expect(message).not.toBeNull()
+    expect(message!.html).toContain('Your downloads are ready.')
+    expect(message!.html).toContain('This secure link expires on')
+    expect(message!.html).toContain('can be used up to 5 times')
+    expect(message!.html).toContain('https://store.example.com/api/digital-downloads/raw-token-value')
+    expect(message!.html).not.toContain('tokenHash')
+    expect(message!.html).not.toContain('storageKey')
+  })
 })

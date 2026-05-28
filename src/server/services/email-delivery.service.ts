@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import { emitInternalEvent } from '@/server/events/dispatcher'
 import { sendTransactionalEmail } from '@/server/email/provider'
 import { enqueueJob } from '@/server/jobs/job.service'
+import { getBuyerDigitalDownloadAvailabilityForPaidOrder } from '@/server/services/digital-download-delivery.service'
 import {
   buildFulfillmentTrackingEmailMessage,
   buildOrderConfirmationEmailMessage,
@@ -487,6 +488,10 @@ export async function processOrderConfirmationEmailDeliveryJob(input: { delivery
   if (!order) {
     throw new Error(`Order ${orderId} was not found for delivery ${delivery.id}`)
   }
+  const downloadAvailability = await getBuyerDigitalDownloadAvailabilityForPaidOrder({
+    orderId: order.id,
+    absoluteUrls: true,
+  })
 
   const shippingAddress = order.addresses.find((address) => address.type === 'SHIPPING')
   const message = await buildOrderConfirmationEmailMessage({
@@ -512,6 +517,12 @@ export async function processOrderConfirmationEmailDeliveryJob(input: { delivery
           country: shippingAddress.country,
         }
       : null,
+    ...(downloadAvailability.hasDigitalItems
+      ? {
+          digitalDownloads: downloadAvailability.downloads,
+          digitalDownloadsPending: downloadAvailability.pending,
+        }
+      : {}),
   })
 
   // Template disabled — skip send and surface a clear failure so it is visible in the delivery log.
@@ -758,6 +769,10 @@ export async function resendEmailDelivery(id: string): Promise<ResendEmailDelive
       message: 'The linked order could not be found for this email delivery',
     }
   }
+  const downloadAvailability = await getBuyerDigitalDownloadAvailabilityForPaidOrder({
+    orderId: order.id,
+    absoluteUrls: true,
+  })
 
   const shippingAddress = order.addresses.find((address) => address.type === 'SHIPPING')
   const message = await buildOrderConfirmationEmailMessage({
@@ -783,6 +798,12 @@ export async function resendEmailDelivery(id: string): Promise<ResendEmailDelive
           country: shippingAddress.country,
         }
       : null,
+    ...(downloadAvailability.hasDigitalItems
+      ? {
+          digitalDownloads: downloadAvailability.downloads,
+          digitalDownloadsPending: downloadAvailability.pending,
+        }
+      : {}),
   })
 
   if (!message) {

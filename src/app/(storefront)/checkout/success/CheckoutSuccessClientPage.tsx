@@ -14,6 +14,15 @@ type CheckoutStatusResponseData = {
   total?: number
   currency?: string
   estimatedDeliveryText?: string | null
+  digitalDownloads?: Array<{
+    fileName: string
+    title: string
+    downloadUrl: string
+    expiresAt: string
+    downloadLimit: number
+    downloadCount: number
+  }>
+  digitalDownloadsPending?: boolean
   reason?: string
 }
 
@@ -57,6 +66,17 @@ function formatMoney(amount: number | null | undefined, currency = 'USD'): strin
     style: 'currency',
     currency: String(currency || 'USD').toUpperCase(),
   }).format(amount)
+}
+
+function formatDate(value: string) {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return ''
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  }).format(parsed)
 }
 
 const CHECKOUT_RESULT_PRIMARY_ACTION_STYLE = {
@@ -123,6 +143,8 @@ export default function CheckoutSuccessClientPage() {
   const [orderCurrency, setOrderCurrency] = useState('USD');
   const [estimatedDeliveryText, setEstimatedDeliveryText] = useState('');
   const [failureReason, setFailureReason] = useState('');
+  const [digitalDownloads, setDigitalDownloads] = useState<CheckoutStatusResponseData['digitalDownloads']>([]);
+  const [digitalDownloadsPending, setDigitalDownloadsPending] = useState(false);
   const [pendingState, setPendingState] = useState<PendingState>('none');
   const [showLongWaitSupportHint, setShowLongWaitSupportHint] = useState(false);
   const [pendingMessage, setPendingMessage] = useState('');
@@ -182,6 +204,8 @@ export default function CheckoutSuccessClientPage() {
           setOrderCurrency(String(payload.data.currency || 'USD'));
           setEstimatedDeliveryText(String(payload.data.estimatedDeliveryText || '').trim());
           setFailureReason('');
+          setDigitalDownloads(Array.isArray(payload.data.digitalDownloads) ? payload.data.digitalDownloads : []);
+          setDigitalDownloadsPending(Boolean(payload.data.digitalDownloadsPending));
           setPendingState('none');
           setPendingMessage('');
           setShowLongWaitSupportHint(false);
@@ -191,6 +215,8 @@ export default function CheckoutSuccessClientPage() {
 
         if (nextStatus === 'failed') {
           setFailureReason('Please return to checkout and try another payment method.');
+          setDigitalDownloads([]);
+          setDigitalDownloadsPending(false);
           setPendingState('none');
           setPendingMessage('');
           setShowLongWaitSupportHint(false);
@@ -279,6 +305,15 @@ export default function CheckoutSuccessClientPage() {
         .support-subtle{font-size:13px;color:var(--checkout-muted)}
         .support-links{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:4px}
         .support-link{display:inline-flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:999px;border:1px solid color-mix(in srgb, var(--checkout-text) 22%, transparent);background:color-mix(in srgb, var(--checkout-text) 8%, transparent);color:var(--checkout-text);font-size:14px;line-height:1;text-decoration:none}
+        .downloads-card{width:min(560px,100%);margin-top:10px;padding:18px;border-radius:16px;text-align:left;border:1px solid color-mix(in srgb, var(--checkout-text) 14%, transparent);background:color-mix(in srgb, var(--checkout-text) 6%, transparent)}
+        .downloads-title{margin:0 0 10px;font-size:17px;line-height:1.35}
+        .downloads-note{margin:10px 0 0;font-size:13px;color:var(--checkout-muted)}
+        .downloads-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:10px}
+        .downloads-item{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;padding:10px;border:1px solid color-mix(in srgb, var(--checkout-text) 12%, transparent);border-radius:12px;background:rgba(255,255,255,0.02)}
+        .download-meta{display:flex;flex-direction:column;gap:4px}
+        .download-name{font-size:14px;color:var(--checkout-text)}
+        .download-helper{font-size:12px;color:var(--checkout-muted)}
+        .download-btn{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 12px;border-radius:999px;border:1px solid var(--checkout-button-border);background:var(--checkout-button-bg);color:var(--checkout-button-text);font-size:11px;letter-spacing:.1em;text-transform:uppercase;text-decoration:none}
         @keyframes spin{to{transform:rotate(360deg)}}
       `}</style>
 
@@ -309,6 +344,33 @@ export default function CheckoutSuccessClientPage() {
                 <p className="support-subtle">
                   {estimatedDeliveryText || "We'll send a confirmation email with your next order updates shortly."}
                 </p>
+                {digitalDownloads && digitalDownloads.length > 0 ? (
+                  <div className="downloads-card">
+                    <h2 className="downloads-title">Your downloads are ready</h2>
+                    <ul className="downloads-list">
+                      {digitalDownloads.map((entry) => (
+                        <li key={`${entry.downloadUrl}:${entry.fileName}`} className="downloads-item">
+                          <div className="download-meta">
+                            <span className="download-name">{entry.title || entry.fileName}</span>
+                            <span className="download-helper">
+                              Expires {formatDate(entry.expiresAt) || 'soon'} · {entry.downloadCount}/{entry.downloadLimit} downloads used
+                            </span>
+                          </div>
+                          <a className="download-btn" href={entry.downloadUrl}>
+                            Download
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="downloads-note">We also sent these links to your email.</p>
+                  </div>
+                ) : null}
+                {digitalDownloadsPending && (!digitalDownloads || digitalDownloads.length === 0) ? (
+                  <div className="downloads-card">
+                    <h2 className="downloads-title">Your files are being prepared. Check your email shortly.</h2>
+                    <p className="downloads-note">We&apos;ll send secure download links as soon as they are ready.</p>
+                  </div>
+                ) : null}
                 <p className="support">{support.helpText}</p>
                 {support.detailText ? <p className="support-subtle">{support.detailText}</p> : null}
                 {support.supportEmail || support.supportPhone ? (

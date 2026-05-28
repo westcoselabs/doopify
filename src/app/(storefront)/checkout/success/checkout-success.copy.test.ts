@@ -32,6 +32,9 @@ describe('checkout success waiting-state copy', () => {
     expect(source).toContain('If this takes more than a minute, contact support with your payment reference')
     expect(source).toContain('Payment could not be completed')
     expect(source).toContain('Please return to checkout and try another payment method.')
+    expect(source).toContain('Your downloads are ready')
+    expect(source).toContain('We also sent these links to your email.')
+    expect(source).toContain('Your files are being prepared. Check your email shortly.')
   })
 
   it('includes support contact and pending actions', () => {
@@ -46,6 +49,8 @@ describe('checkout success waiting-state copy', () => {
     expect(source).toContain('Check again')
     expect(source).toContain('Continue shopping')
     expect(source).toContain('Contact support')
+    expect(source).not.toContain('Create account')
+    expect(source).not.toContain('Sign in')
   })
 
   it('uses frontend-owned checkout CTA tokens instead of Brand Kit theme controls', () => {
