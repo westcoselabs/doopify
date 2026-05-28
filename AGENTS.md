@@ -19,7 +19,7 @@ If these files conflict, treat `docs/STATUS.md` as current state, `docs/features
 Ignore files in `docs/archive/` unless the user explicitly asks for historical context.
 Do not use `docs/archive/**` as current status, setup, deployment, or security truth.
 
-## Current Repo Truth
+## Current Repo Truth ##
 
 Doopify is a real DB-backed commerce app, not a prototype.
 
