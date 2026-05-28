@@ -28,6 +28,7 @@ import {
 import { convertVariantWeightToOz, totalCartWeightOz } from '@/server/shipping/weight-conversion'
 import type { ShippingRateQuote } from '@/server/shipping/shipping-rate.types'
 import { markCheckoutRecoveredByPaymentIntent } from '@/server/services/abandoned-checkout.service'
+import { issueDigitalDownloadGrantsForPaidOrder } from '@/server/services/digital-grant-issuance.service'
 import { canPurchaseVariant } from '@/server/services/product-availability.service'
 import { addCustomerAddress, createCustomer, getCustomerByEmail } from '@/server/services/customer.service'
 import { createOrder, getOrderByPaymentIntentId } from '@/server/services/order.service'
@@ -805,6 +806,7 @@ export async function completeCheckoutFromPaymentIntent(intent: StripePaymentInt
       data: { status: 'COMPLETED', completedAt: new Date(), failureReason: null },
     })
     await markCheckoutRecoveredByPaymentIntent(intent.id)
+    await issueDigitalDownloadGrantsForPaidOrder({ orderId: existingOrder.id })
     return existingOrder
   }
 
@@ -860,6 +862,7 @@ export async function completeCheckoutFromPaymentIntent(intent: StripePaymentInt
     },
   })
   await markCheckoutRecoveredByPaymentIntent(intent.id)
+  await issueDigitalDownloadGrantsForPaidOrder({ orderId: order.id })
 
   return order
 }

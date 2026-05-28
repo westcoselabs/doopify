@@ -876,6 +876,7 @@ model DigitalDownloadGrant {
   @@index([digitalAssetId])
   @@index([expiresAt])
   @@index([revokedAt])
+  @@unique([orderItemId, digitalAssetId])
   @@map("digital_download_grants")
 }
 

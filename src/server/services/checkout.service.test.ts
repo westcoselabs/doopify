@@ -26,6 +26,7 @@ const mocks = vi.hoisted(() => ({
   getOrderByPaymentIntentId: vi.fn(),
   emitInternalEvent: vi.fn(),
   markCheckoutRecoveredByPaymentIntent: vi.fn(),
+  issueDigitalDownloadGrantsForPaidOrder: vi.fn(),
   getShippingRatesForCheckout: vi.fn(),
   getStripeRuntimeConnection: vi.fn(),
 }))
@@ -59,6 +60,10 @@ vi.mock('@/server/events/dispatcher', () => ({
 
 vi.mock('@/server/services/abandoned-checkout.service', () => ({
   markCheckoutRecoveredByPaymentIntent: mocks.markCheckoutRecoveredByPaymentIntent,
+}))
+
+vi.mock('@/server/services/digital-grant-issuance.service', () => ({
+  issueDigitalDownloadGrantsForPaidOrder: mocks.issueDigitalDownloadGrantsForPaidOrder,
 }))
 
 vi.mock('@/server/shipping/shipping-rate.service', () => ({
@@ -106,6 +111,12 @@ describe('checkout service', () => {
       payoutsEnabled: null,
     })
     mocks.getCustomerByEmail.mockResolvedValue(null)
+    mocks.issueDigitalDownloadGrantsForPaidOrder.mockResolvedValue({
+      created: 0,
+      skippedExisting: 0,
+      missingLinkedAssets: 0,
+      mixedOrderDetected: false,
+    })
     mocks.getShippingRatesForCheckout.mockImplementation(async ({ shippingAddress }) => [
       {
         id: shippingAddress?.country === 'CA' ? 'manual:fallback:international' : 'manual:fallback:domestic',
@@ -745,6 +756,9 @@ describe('checkout service', () => {
       where: { paymentIntentId: 'pi_duplicate' },
       data: { status: 'COMPLETED', completedAt: expect.any(Date), failureReason: null },
     })
+    expect(mocks.issueDigitalDownloadGrantsForPaidOrder).toHaveBeenCalledWith({
+      orderId: 'order_1',
+    })
     expect(mocks.createOrder).not.toHaveBeenCalled()
   })
 
@@ -802,6 +816,9 @@ describe('checkout service', () => {
       status: 'succeeded',
     })
 
+    expect(mocks.issueDigitalDownloadGrantsForPaidOrder).toHaveBeenCalledWith({
+      orderId: 'order_shipping_snapshot',
+    })
     expect(mocks.createOrder).toHaveBeenCalledWith(
       expect.objectContaining({
         shippingMethodName: 'Manual economy',

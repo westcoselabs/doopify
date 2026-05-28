@@ -64,6 +64,10 @@ const address = {
 async function cleanTestData() {
   await prisma.analyticsEvent.deleteMany()
   await prisma.webhookDelivery.deleteMany()
+  await prisma.digitalDownloadEvent.deleteMany()
+  await prisma.digitalDownloadGrant.deleteMany()
+  await prisma.productDigitalAsset.deleteMany()
+  await prisma.digitalAsset.deleteMany()
   await prisma.shippingRate.deleteMany()
   await prisma.shippingZone.deleteMany()
   await prisma.taxRule.deleteMany()
@@ -148,12 +152,43 @@ async function createCheckoutSession(input: {
     method: 'PERCENTAGE' | 'FIXED_AMOUNT' | 'FREE_SHIPPING' | 'BUY_X_GET_Y'
     amountCents: number
   }
+  shippingAmountCents?: number
+  includeShippingAddress?: boolean
+  itemFulfillmentType?: 'PHYSICAL' | 'DIGITAL'
   status?: 'PENDING' | 'COMPLETED' | 'FAILED' | 'EXPIRED'
 }) {
   const subtotalCents = input.priceCents * input.quantity
-  const shippingAmountCents = subtotalCents >= 7500 ? 0 : 999
+  const shippingAmountCents =
+    input.shippingAmountCents ?? (subtotalCents >= 7500 ? 0 : 999)
   const discountAmountCents = input.discountApplication?.amountCents ?? 0
   const totalCents = subtotalCents + shippingAmountCents - discountAmountCents
+
+  const payload = {
+    email: input.email,
+    ...(input.includeShippingAddress === false
+      ? {}
+      : {
+          shippingAddress: address,
+          billingAddress: address,
+        }),
+    items: [
+      {
+        productId: input.productId,
+        variantId: input.variantId,
+        title: input.title,
+        variantTitle: input.variantTitle,
+        sku: input.sku,
+        priceCents: input.priceCents,
+        quantity: input.quantity,
+        fulfillmentType: input.itemFulfillmentType,
+      },
+    ],
+    ...(input.discountApplication
+      ? {
+          discountApplications: [input.discountApplication],
+        }
+      : {}),
+  }
 
   return prisma.checkoutSession.create({
     data: {
@@ -166,27 +201,7 @@ async function createCheckoutSession(input: {
       taxAmountCents: 0,
       discountAmountCents,
       totalCents,
-      payload: {
-        email: input.email,
-        shippingAddress: address,
-        billingAddress: address,
-        items: [
-          {
-            productId: input.productId,
-            variantId: input.variantId,
-            title: input.title,
-            variantTitle: input.variantTitle,
-            sku: input.sku,
-            priceCents: input.priceCents,
-            quantity: input.quantity,
-          },
-        ],
-        ...(input.discountApplication
-          ? {
-              discountApplications: [input.discountApplication],
-            }
-          : {}),
-      },
+      payload,
     },
   })
 }
@@ -299,6 +314,87 @@ async function seedCheckout({
   }
 }
 
+async function seedDigitalCheckout({
+  paymentIntentId,
+  quantity,
+}: {
+  paymentIntentId: string
+  quantity: number
+}) {
+  await prisma.store.create({
+    data: {
+      id: 'store_digital',
+      name: 'Digital Store',
+      email: 'digital@example.com',
+      currency: 'USD',
+      shippingThresholdCents: 7500,
+    },
+  })
+
+  const product = await prisma.product.create({
+    data: {
+      title: 'Digital Guide',
+      handle: `digital-guide-${paymentIntentId}`,
+      status: 'ACTIVE',
+      fulfillmentType: 'DIGITAL',
+      variants: {
+        create: {
+          title: 'Default',
+          sku: `SKU-DIGITAL-${paymentIntentId}`,
+          priceCents: 2000,
+          inventory: 10,
+        },
+      },
+    },
+    include: {
+      variants: true,
+    },
+  })
+
+  const digitalAsset = await prisma.digitalAsset.create({
+    data: {
+      storeId: 'store_digital',
+      title: 'Digital Guide PDF',
+      fileName: 'guide.pdf',
+      contentType: 'application/pdf',
+      byteSize: 1024,
+      storageProvider: 's3',
+      storageKey: `private/digital/${paymentIntentId}/guide.pdf`,
+      checksumSha256: 'abc123',
+    },
+  })
+
+  await prisma.productDigitalAsset.create({
+    data: {
+      productId: product.id,
+      digitalAssetId: digitalAsset.id,
+      sortOrder: 0,
+    },
+  })
+
+  const variant = product.variants[0]
+  await createCheckoutSession({
+    paymentIntentId,
+    email: 'digital-buyer@example.com',
+    productId: product.id,
+    variantId: variant.id,
+    title: product.title,
+    variantTitle: variant.title,
+    sku: variant.sku ?? 'SKU-DIGITAL',
+    priceCents: variant.priceCents,
+    quantity,
+    shippingAmountCents: 0,
+    includeShippingAddress: false,
+    itemFulfillmentType: 'DIGITAL',
+  })
+
+  return {
+    product,
+    variant,
+    digitalAsset,
+  }
+}
+
 runIntegration('checkout service integration', () => {
   beforeEach(async () => {
     process.env.RESEND_API_KEY = ''
@@ -348,11 +444,15 @@ runIntegration('checkout service integration', () => {
     const checkoutSession = await prisma.checkoutSession.findUniqueOrThrow({
       where: { paymentIntentId: 'pi_integration_success' },
     })
+    const digitalGrantCount = await prisma.digitalDownloadGrant.count({
+      where: { orderId: order.id },
+    })
 
     expect(order.paymentStatus).toBe('PAID')
     expect(order.items).toHaveLength(1)
     expect(order.payments).toHaveLength(1)
     expect(updatedVariant.inventory).toBe(3)
+    expect(digitalGrantCount).toBe(0)
     expect(checkoutSession.status).toBe('COMPLETED')
     expect(checkoutSession.completedAt).toBeInstanceOf(Date)
   })
@@ -389,6 +489,112 @@ runIntegration('checkout service integration', () => {
     expect(orderCount).toBe(1)
     expect(paymentCount).toBe(1)
     expect(updatedVariant.inventory).toBe(3)
+  })
+
+  it('creates digital download grants for paid digital-only orders and remains idempotent on duplicate finalization', async () => {
+    const { digitalAsset, product } = await seedDigitalCheckout({
+      paymentIntentId: 'pi_integration_digital_grants',
+      quantity: 1,
+    })
+
+    const firstOrder = await completeCheckoutFromPaymentIntent({
+      id: 'pi_integration_digital_grants',
+      amount: 2000,
+      currency: 'usd',
+      status: 'succeeded',
+    })
+    const secondOrder = await completeCheckoutFromPaymentIntent({
+      id: 'pi_integration_digital_grants',
+      amount: 2000,
+      currency: 'usd',
+      status: 'succeeded',
+    })
+
+    const grants = await prisma.digitalDownloadGrant.findMany({
+      where: { orderId: firstOrder.id },
+      select: {
+        id: true,
+        orderItemId: true,
+        digitalAssetId: true,
+        productId: true,
+        downloadLimit: true,
+        downloadCount: true,
+        expiresAt: true,
+        tokenHash: true,
+      },
+    })
+
+    expect(secondOrder.id).toBe(firstOrder.id)
+    expect(grants).toHaveLength(1)
+    expect(grants[0]).toMatchObject({
+      productId: product.id,
+      digitalAssetId: digitalAsset.id,
+      downloadLimit: 5,
+      downloadCount: 0,
+    })
+    expect(grants[0].expiresAt.getTime()).toBeGreaterThan(Date.now())
+    expect(grants[0].tokenHash).toMatch(/^[a-f0-9]{64}$/)
+  })
+
+  it('does not fail paid finalization when a digital product has no linked assets', async () => {
+    await prisma.store.create({
+      data: {
+        id: 'store_missing_assets',
+        name: 'Missing Asset Store',
+        email: 'missing-assets@example.com',
+        currency: 'USD',
+        shippingThresholdCents: 7500,
+      },
+    })
+
+    const product = await prisma.product.create({
+      data: {
+        title: 'Digital Without Asset',
+        handle: 'digital-without-asset',
+        status: 'ACTIVE',
+        fulfillmentType: 'DIGITAL',
+        variants: {
+          create: {
+            title: 'Default',
+            sku: 'SKU-DIGITAL-MISSING',
+            priceCents: 1500,
+            inventory: 10,
+          },
+        },
+      },
+      include: { variants: true },
+    })
+
+    const variant = product.variants[0]
+    await createCheckoutSession({
+      paymentIntentId: 'pi_integration_digital_missing_assets',
+      email: 'digital-missing@example.com',
+      productId: product.id,
+      variantId: variant.id,
+      title: product.title,
+      variantTitle: variant.title,
+      sku: variant.sku ?? 'SKU-DIGITAL-MISSING',
+      priceCents: variant.priceCents,
+      quantity: 1,
+      shippingAmountCents: 0,
+      includeShippingAddress: false,
+      itemFulfillmentType: 'DIGITAL',
+    })
+
+    const order = await completeCheckoutFromPaymentIntent({
+      id: 'pi_integration_digital_missing_assets',
+      amount: 1500,
+      currency: 'usd',
+      status: 'succeeded',
+    })
+
+    expect(order.paymentStatus).toBe('PAID')
+    expect(await prisma.order.count()).toBe(1)
+    expect(
+      await prisma.digitalDownloadGrant.count({
+        where: { orderId: order.id },
+      })
+    ).toBe(0)
   })
 
   it('keeps inventory idempotent during competing duplicate payment-intent completions', async () => {
@@ -657,6 +863,57 @@ runIntegration('checkout service integration', () => {
     expect(paymentCount).toBe(1)
     expect(checkoutSession.status).toBe('COMPLETED')
     expect(checkoutSession.failureReason).toBeNull()
+  })
+
+  it('issues digital grants through verified webhook-paid finalization without changing order/payment assertions', async () => {
+    const { product, digitalAsset } = await seedDigitalCheckout({
+      paymentIntentId: 'pi_integration_webhook_digital_grants',
+      quantity: 1,
+    })
+
+    await processStripeWebhookEvent({
+      id: 'evt_webhook_digital_grants',
+      type: 'payment_intent.succeeded',
+      data: {
+        object: {
+          id: 'pi_integration_webhook_digital_grants',
+          amount: 2000,
+          currency: 'usd',
+          status: 'succeeded',
+        },
+      },
+    })
+
+    const order = await prisma.order.findFirstOrThrow({
+      where: {
+        payments: {
+          some: {
+            stripePaymentIntentId: 'pi_integration_webhook_digital_grants',
+          },
+        },
+      },
+      include: {
+        payments: true,
+      },
+    })
+    const grants = await prisma.digitalDownloadGrant.findMany({
+      where: { orderId: order.id },
+      select: {
+        productId: true,
+        digitalAssetId: true,
+        tokenHash: true,
+      },
+    })
+
+    expect(order.paymentStatus).toBe('PAID')
+    expect(order.payments).toHaveLength(1)
+    expect(grants).toEqual([
+      expect.objectContaining({
+        productId: product.id,
+        digitalAssetId: digitalAsset.id,
+        tokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    ])
   })
 
   it('keeps paid order finalization committed when confirmation email delivery fails', async () => {
@@ -937,4 +1194,3 @@ runIntegration('checkout service integration', () => {
     expect(finalDelivery.rawPayload).toBe(rawPayload)
   })
 })
-
