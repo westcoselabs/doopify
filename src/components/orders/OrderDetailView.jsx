@@ -1749,14 +1749,6 @@ export default function OrderDetailView({
                   <h3 className={styles.cardTitle}>Digital delivery</h3>
                   <p className={styles.metaText}>Download access for this order.</p>
                 </div>
-                <AdminButton
-                  loading={digitalDeliveryActionLoading === "resend"}
-                  onClick={resendDigitalDeliveryEmail}
-                  size="sm"
-                  variant="secondary"
-                >
-                  Resend email
-                </AdminButton>
               </div>
               {digitalDelivery?.pending && !digitalDelivery?.grants?.length ? (
                 <AdminEmptyState
@@ -1766,85 +1758,109 @@ export default function OrderDetailView({
                 />
               ) : (
                 <div className={styles.digitalDeliveryList}>
-                  {(digitalDelivery?.grants || []).map((grant) => (
-                    <div className={styles.digitalDeliveryRow} key={grant.grantId}>
-                      <div className={styles.digitalDeliveryTitleRow}>
-                        <strong>{grant.title || grant.fileName || "Digital download"}</strong>
-                        <AdminStatusChip
-                          tone={digitalDeliveryStatusTone(grant.status)}
-                        >
-                          {digitalDeliveryStatusLabel(grant.status)}
-                        </AdminStatusChip>
-                      </div>
-                      {grant.fileName ? <p className={styles.metaText}>{grant.fileName}</p> : null}
-                      <p className={styles.metaText}>
-                        Downloads used: {grant.downloadCount} of {grant.downloadLimit}
-                      </p>
-                      <p className={styles.metaText}>
-                        Expires:{" "}
-                        {formatDateTimeForDisplay(grant.expiresAt, {
-                          timeZone: storeTimeZone,
-                          fallbackText: "Unknown",
-                        })}
-                      </p>
-                      {grant.lastDownloadedAt ? (
+                  {(digitalDelivery?.grants || []).map((grant) => {
+                    const isRevoked = String(grant.status || "").toUpperCase() === "REVOKED";
+                    const canCopyLink = Boolean(grant.deliveryTokenAvailable) && !isRevoked;
+                    const canResend = !isRevoked;
+
+                    return (
+                      <div className={styles.digitalDeliveryRow} key={grant.grantId}>
+                        <div className={styles.digitalDeliveryTitleRow}>
+                          <strong>{grant.title || grant.fileName || "Digital download"}</strong>
+                          <AdminStatusChip
+                            tone={digitalDeliveryStatusTone(grant.status)}
+                          >
+                            {digitalDeliveryStatusLabel(grant.status)}
+                          </AdminStatusChip>
+                        </div>
+                        {grant.fileName ? <p className={styles.metaText}>{grant.fileName}</p> : null}
                         <p className={styles.metaText}>
-                          Last downloaded:{" "}
-                          {formatDateTimeForDisplay(grant.lastDownloadedAt, {
+                          Downloads used: {grant.downloadCount} of {grant.downloadLimit}
+                        </p>
+                        <p className={styles.metaText}>
+                          Expires:{" "}
+                          {formatDateTimeForDisplay(grant.expiresAt, {
                             timeZone: storeTimeZone,
                             fallbackText: "Unknown",
                           })}
                         </p>
-                      ) : null}
-                      {grant.deliveryEmailStatus ? (
-                        <p className={styles.metaText}>Delivery email: {grant.deliveryEmailStatus}</p>
-                      ) : null}
-                      {Array.isArray(grant.events) && grant.events.length ? (
-                        <div className={styles.digitalEventList}>
-                          {grant.events.slice(0, 3).map((event) => (
-                            <p className={styles.metaText} key={event.id}>
-                              {event.label} ·{" "}
-                              {formatDateTimeForDisplay(event.occurredAt, {
-                                timeZone: storeTimeZone,
-                                fallbackText: "Unknown",
-                              })}
-                            </p>
-                          ))}
+                        {grant.lastDownloadedAt ? (
+                          <p className={styles.metaText}>
+                            Last downloaded:{" "}
+                            {formatDateTimeForDisplay(grant.lastDownloadedAt, {
+                              timeZone: storeTimeZone,
+                              fallbackText: "Unknown",
+                            })}
+                          </p>
+                        ) : null}
+                        {grant.deliveryEmailStatus ? (
+                          <p className={styles.metaText}>Delivery email: {grant.deliveryEmailStatus}</p>
+                        ) : null}
+                        {Array.isArray(grant.events) && grant.events.length ? (
+                          <div className={styles.digitalEventList}>
+                            {grant.events.slice(0, 3).map((event) => (
+                              <p className={styles.metaText} key={event.id}>
+                                {event.label} ·{" "}
+                                {formatDateTimeForDisplay(event.occurredAt, {
+                                  timeZone: storeTimeZone,
+                                  fallbackText: "Unknown",
+                                })}
+                              </p>
+                            ))}
+                          </div>
+                        ) : null}
+                        <div className={styles.digitalActionRow}>
+                          <AdminButton
+                            className={styles.digitalActionButton}
+                            disabled={!canCopyLink}
+                            loading={digitalDeliveryActionLoading === `copy:${grant.grantId}`}
+                            onClick={() => copyDigitalDownloadLink(grant.grantId)}
+                            size="sm"
+                            variant="secondary"
+                          >
+                            Copy link
+                          </AdminButton>
+                          <AdminButton
+                            className={styles.digitalActionButton}
+                            disabled={!canResend}
+                            loading={digitalDeliveryActionLoading === "resend"}
+                            onClick={resendDigitalDeliveryEmail}
+                            size="sm"
+                            variant="secondary"
+                          >
+                            Resend email
+                          </AdminButton>
+                          <AdminButton
+                            className={styles.digitalActionButton}
+                            loading={digitalDeliveryActionLoading === `regenerate:${grant.grantId}`}
+                            onClick={() => regenerateDigitalGrant(grant.grantId)}
+                            size="sm"
+                            variant="ghost"
+                          >
+                            Regenerate link
+                          </AdminButton>
+                          <AdminButton
+                            className={styles.digitalActionButton}
+                            disabled={isRevoked}
+                            loading={digitalDeliveryActionLoading === `revoke:${grant.grantId}`}
+                            onClick={() => revokeDigitalGrant(grant.grantId)}
+                            size="sm"
+                            variant="danger"
+                          >
+                            Revoke access
+                          </AdminButton>
                         </div>
-                      ) : null}
-                      <div className={styles.digitalActionRow}>
-                        <button
-                          className={styles.textActionButton}
-                          disabled={digitalDeliveryActionLoading === `copy:${grant.grantId}` || !grant.deliveryTokenAvailable}
-                          onClick={() => copyDigitalDownloadLink(grant.grantId)}
-                          type="button"
-                        >
-                          {digitalDeliveryActionLoading === `copy:${grant.grantId}` ? "Copying..." : "Copy link"}
-                        </button>
-                        <button
-                          className={styles.textActionButton}
-                          disabled={digitalDeliveryActionLoading === `revoke:${grant.grantId}`}
-                          onClick={() => revokeDigitalGrant(grant.grantId)}
-                          type="button"
-                        >
-                          {digitalDeliveryActionLoading === `revoke:${grant.grantId}` ? "Revoking..." : "Revoke access"}
-                        </button>
-                        <button
-                          className={styles.textActionButton}
-                          disabled={digitalDeliveryActionLoading === `regenerate:${grant.grantId}`}
-                          onClick={() => regenerateDigitalGrant(grant.grantId)}
-                          type="button"
-                        >
-                          {digitalDeliveryActionLoading === `regenerate:${grant.grantId}`
-                            ? "Regenerating..."
-                            : "Regenerate link"}
-                        </button>
+                        {isRevoked ? (
+                          <p className={styles.metaText}>
+                            Copy link unavailable for revoked access. Regenerate link to restore access.
+                          </p>
+                        ) : null}
+                        <p className={styles.metaText}>
+                          Regenerating this link will invalidate the previous download URL.
+                        </p>
                       </div>
-                      <p className={styles.metaText}>
-                        Regenerating this link will invalidate the previous download URL.
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </AdminCard>

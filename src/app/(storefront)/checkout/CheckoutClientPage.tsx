@@ -164,7 +164,8 @@ type CheckoutClientPageProps = {
   recoveryToken: string
 }
 
-const MIXED_CART_UNSUPPORTED_MESSAGE = 'Mixed physical and digital carts are not supported yet.'
+const MIXED_CART_UNSUPPORTED_MESSAGE = "Digital and shipped items can't be checked out together yet."
+const MIXED_CART_SPLIT_ORDER_HINT = 'Please remove one item type and place separate orders.'
 
 function loadStripeJs(): Promise<StripeConstructor> {
   if (typeof window === 'undefined') {
@@ -1141,13 +1142,14 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
                 ) : isDigitalOnlyCart ? (
                   <div className="section">
                     <div style={{ padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(16,185,129,0.35)', background: 'rgba(6,78,59,0.2)', color: '#86efac', fontSize: 13 }}>
-                      No shipping required. Digital delivery will be available after payment.
+                      No shipping required. Your order will be delivered digitally after payment.
                     </div>
                   </div>
                 ) : isMixedCart ? (
                   <div className="section">
                     <div style={{ padding: '10px 12px', borderRadius: 12, border: '1px solid rgba(239,68,68,0.35)', background: 'rgba(127,29,29,0.2)', color: '#fca5a5', fontSize: 13 }}>
-                      {MIXED_CART_UNSUPPORTED_MESSAGE}
+                      <strong style={{ display: 'block' }}>{MIXED_CART_UNSUPPORTED_MESSAGE}</strong>
+                      <span>{MIXED_CART_SPLIT_ORDER_HINT}</span>
                     </div>
                   </div>
                 ) : null}
@@ -1376,7 +1378,9 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
               <span>Shipping</span>
               <span>
                 {isMixedCart
-                  ? 'Blocked for mixed cart'
+                  ? 'Separate orders required'
+                  : isDigitalOnlyCart
+                  ? 'Digital delivery'
                   : previewShipping == null
                   ? 'Select shipping option'
                   : formatMoney(previewShipping, checkout?.selectedShippingRate?.currency || selectedShippingQuote?.currency || currency)}

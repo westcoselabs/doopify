@@ -79,6 +79,25 @@ function formatDate(value: string) {
   }).format(parsed)
 }
 
+function formatDownloadAvailability(entry: {
+  expiresAt: string
+  downloadLimit: number
+  downloadCount: number
+}) {
+  const limit = Number(entry.downloadLimit)
+  const used = Number(entry.downloadCount)
+  const hasLimit = Number.isFinite(limit) && limit > 0
+  const hasUsed = Number.isFinite(used) && used >= 0
+  const expiryText = `Expires ${formatDate(entry.expiresAt) || 'soon'}`
+
+  if (!hasLimit || !hasUsed) {
+    return expiryText
+  }
+
+  const remaining = Math.max(limit - used, 0)
+  return `${remaining} download${remaining === 1 ? '' : 's'} remaining · ${expiryText}`
+}
+
 const CHECKOUT_RESULT_PRIMARY_ACTION_STYLE = {
   background: 'var(--checkout-button-bg)',
   color: 'var(--checkout-button-text)',
@@ -323,7 +342,7 @@ export default function CheckoutSuccessClientPage() {
             <>
               <div className="spinner" aria-hidden />
               <p className="badge">Order update</p>
-              <h1 className="title">Confirming your order…</h1>
+              <h1 className="title">Confirming your order...</h1>
               <p className="body">
                 We&apos;re confirming your payment and preparing your order. This usually only takes a few seconds.
               </p>
@@ -353,11 +372,11 @@ export default function CheckoutSuccessClientPage() {
                           <div className="download-meta">
                             <span className="download-name">{entry.title || entry.fileName}</span>
                             <span className="download-helper">
-                              Expires {formatDate(entry.expiresAt) || 'soon'} · {entry.downloadCount}/{entry.downloadLimit} downloads used
+                              {formatDownloadAvailability(entry)}
                             </span>
                           </div>
                           <a className="download-btn" href={entry.downloadUrl}>
-                            Download
+                            Download now
                           </a>
                         </li>
                       ))}
@@ -367,8 +386,8 @@ export default function CheckoutSuccessClientPage() {
                 ) : null}
                 {digitalDownloadsPending && (!digitalDownloads || digitalDownloads.length === 0) ? (
                   <div className="downloads-card">
-                    <h2 className="downloads-title">Your files are being prepared. Check your email shortly.</h2>
-                    <p className="downloads-note">We&apos;ll send secure download links as soon as they are ready.</p>
+                    <h2 className="downloads-title">Your files are being prepared</h2>
+                    <p className="downloads-note">We&apos;ll email your secure download links as soon as they&apos;re ready.</p>
                   </div>
                 ) : null}
                 <p className="support">{support.helpText}</p>

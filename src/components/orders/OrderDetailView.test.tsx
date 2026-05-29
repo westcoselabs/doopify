@@ -376,6 +376,7 @@ describe('OrderDetailView', () => {
     expect(html).toContain('Resend email')
     expect(html).toContain('Revoke access')
     expect(html).toContain('Regenerate link')
+    expect(html).toContain('Copy link unavailable for revoked access. Regenerate link to restore access.')
     expect(html).toContain('Regenerating this link will invalidate the previous download URL.')
   })
 
@@ -393,6 +394,41 @@ describe('OrderDetailView', () => {
     )
 
     expect(html).not.toContain('Digital delivery')
+  })
+
+  it('disables revoked-grant copy and resend actions while keeping regenerate available', () => {
+    const html = renderToStaticMarkup(
+      <OrderDetailView
+        order={buildOrder({
+          digitalDelivery: {
+            hasDigitalItems: true,
+            pending: false,
+            grants: [
+              {
+                grantId: 'grant_revoked',
+                title: 'Revoked file',
+                fileName: 'revoked.pdf',
+                status: 'REVOKED',
+                downloadCount: 2,
+                downloadLimit: 5,
+                expiresAt: '2099-01-01T00:00:00.000Z',
+                lastDownloadedAt: null,
+                deliveryEmailStatus: null,
+                deliveryTokenAvailable: true,
+                events: [],
+              },
+            ],
+          },
+        })}
+      />
+    )
+
+    expect(html).toContain('Revoked file')
+    expect(html).toContain('Copy link')
+    expect(html).toContain('Resend email')
+    expect(html).toContain('Regenerate link')
+    expect(html).toContain('Copy link unavailable for revoked access. Regenerate link to restore access.')
+    expect(html).toContain('disabled=""')
   })
 
   it('maps status chip tones correctly', () => {

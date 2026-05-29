@@ -41,7 +41,7 @@ const FULFILLMENT_MODES = [
     value: "digital",
     title: "Digital product",
     subtitle:
-      "No shipping flow for buyers yet. Use this to prep product metadata and linked files in admin only.",
+      "No shipping required. Buyers receive secure download links after payment.",
     icon: "download",
   },
 ];
@@ -148,7 +148,7 @@ function getPreviewState({ draftProduct, totalInventory, continueSellingCount })
         : presaleActive
           ? `This item is available for presale.${draftProduct.expectedDeliveryText?.trim() ? ` ${draftProduct.expectedDeliveryText.trim()}` : ""}`
         : fulfillmentType === "digital"
-          ? "Digital product foundation is configured. Checkout still follows current shipping flow in this release."
+          ? "No shipping is required. Customers receive secure download links after payment."
           : soldOut
             ? "This product is currently sold out."
             : "Available for immediate purchase.");
@@ -590,18 +590,17 @@ export default function ProductSellingPanel({ onManageInVariants }) {
 
           {isDigitalProduct ? (
             <div className={styles.digitalNotice}>
-              <strong>Digital checkout delivery is being configured</strong>
+              <strong>Digital delivery is active for this product</strong>
               <span>
-                Digital fulfillment is marked on this product, but digital checkout is not live
-                yet. Customers will still see the current shipping flow until digital checkout is
-                completed.
+                Customers receive secure download links on the checkout success page and by email.
+                Use linked assets below to control what is delivered.
               </span>
             </div>
           ) : null}
         </AdminCard>
 
         {isDigitalProduct ? (
-          <AdminCard className={styles.panelCard} spotlight variant="card">
+          <AdminCard className={`${styles.panelCard} ${styles.digitalFilesCard}`} spotlight variant="card">
             <div className={styles.sectionHead}>
               <div>
                 <p className={styles.eyebrow}>Digital files</p>
@@ -609,8 +608,8 @@ export default function ProductSellingPanel({ onManageInVariants }) {
               </div>
             </div>
             <p className={styles.copy}>
-              Private upload and customer delivery are not live yet. Link existing digital asset
-              metadata records to this product for admin setup.
+              Upload private files and link them to this product. Customers receive secure
+              download links after payment.
             </p>
 
             <div className={styles.assetActionRow}>

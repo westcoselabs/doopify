@@ -98,15 +98,17 @@ describe('checkout button copy and state', () => {
     const source = read(PAGE)
     expect(source).toContain('Enter a valid shipping and billing address before continuing.')
     expect(source).toContain('Select a shipping method before continuing.')
-    expect(source).toContain('Mixed physical and digital carts are not supported yet.')
+    expect(source).toContain("Digital and shipped items can't be checked out together yet.")
     expect(source).toContain('Payment form is still loading. Please wait a moment.')
     expect(source).toContain('Checkout initialization failed. Fix the error above and try again.')
   })
 
   it('includes digital-only no-shipping checkout copy', () => {
     const source = read(PAGE)
-    expect(source).toContain('No shipping required. Digital delivery will be available after payment.')
-    expect(source).toContain('Blocked for mixed cart')
+    expect(source).toContain('No shipping required. Your order will be delivered digitally after payment.')
+    expect(source).toContain('Please remove one item type and place separate orders.')
+    expect(source).toContain('Separate orders required')
+    expect(source).toContain('Digital delivery')
   })
 
   it('keeps checkout button styling frontend-owned and independent of Brand Kit theme fields', () => {

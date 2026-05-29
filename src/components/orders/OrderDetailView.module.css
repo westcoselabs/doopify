@@ -888,6 +888,12 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.65rem;
+  margin-top: 0.3rem;
+}
+
+.digitalActionButton {
+  min-height: 2.05rem;
+  padding-inline: 0.8rem;
 }
 
 .digitalEventList {
@@ -1051,6 +1057,18 @@
   .sideCard {
     padding-left: 1rem;
     padding-right: 1rem;
+  }
+
+  .digitalActionRow {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+  }
+
+  .digitalActionButton {
+    width: 100%;
+    justify-content: center;
+    min-height: 2.4rem;
   }
 }
 
