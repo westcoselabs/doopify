@@ -14,6 +14,11 @@ import {
   type CheckoutPricingTaxDecision,
 } from '@/server/checkout/pricing'
 import {
+  loadAutomaticPromotionsForCheckout,
+} from '@/server/promotions/checkout-loader.service'
+import type { PromotionApplicationDraft } from '@/server/promotions/contracts'
+import { evaluatePromotions } from '@/server/promotions/evaluator'
+import {
   buildCheckoutAddressFingerprint,
   buildCheckoutCartFingerprint,
   getStoredCheckoutShippingQuote,
@@ -68,6 +73,7 @@ type CheckoutPayload = {
   shippingAddress?: CheckoutAddress
   billingAddress?: CheckoutAddress
   discountApplications?: CheckoutAppliedDiscount[]
+  promotionApplications?: CheckoutPromotionApplicationSnapshot[]
   pricingSnapshot?: {
     computedAt: string
     currency: string
@@ -75,9 +81,12 @@ type CheckoutPayload = {
     shippingAmountCents: number
     taxAmountCents: number
     discountAmountCents: number
+    codeDiscountAmountCents?: number
+    promotionDiscountAmountCents?: number
     totalCents: number
     shippingDecision: CheckoutPricingShippingDecision
     taxDecision: CheckoutPricingTaxDecision
+    promotionApplications?: CheckoutPromotionApplicationSnapshot[]
   }
   selectedShippingRate?: {
     id: string
@@ -93,6 +102,25 @@ type CheckoutPayload = {
     providerShipmentId?: string
     providerRateId?: string
   }
+}
+
+type CheckoutPromotionLineAllocationSnapshot = {
+  variantId: string
+  quantityDiscounted: number
+  discountCents: number
+  promotionId: string
+  promotionName: string
+  promotionType: PromotionApplicationDraft['promotionType']
+}
+
+type CheckoutPromotionApplicationSnapshot = {
+  promotionId: string
+  promotionName: string
+  promotionType: PromotionApplicationDraft['promotionType']
+  rewardType: PromotionApplicationDraft['rewardType']
+  amountCents: number
+  lineAllocations: CheckoutPromotionLineAllocationSnapshot[]
+  summary: string
 }
 
 const MIXED_CART_UNSUPPORTED_MESSAGE = 'Mixed physical and digital carts are not supported yet.'
@@ -118,6 +146,16 @@ function normalizeAddress(input: CheckoutAddress): CheckoutAddress {
     country: input.country.trim(),
     phone: input.phone?.trim() || undefined,
   }
+}
+
+function normalizePromotionFulfillmentType(value: string | null | undefined): 'PHYSICAL' | 'DIGITAL' | null {
+  const normalized = String(value || '')
+    .trim()
+    .toUpperCase()
+
+  if (normalized === 'PHYSICAL') return 'PHYSICAL'
+  if (normalized === 'DIGITAL') return 'DIGITAL'
+  return null
 }
 
 function getLatestChargeId(intent: StripePaymentIntent) {
@@ -177,6 +215,27 @@ function mapShippingQuoteForSnapshot(quote: ShippingRateQuote) {
     estimatedDeliveryText: quote.estimatedDeliveryText,
     providerShipmentId: quote.providerShipmentId,
     providerRateId: quote.providerRateId,
+  }
+}
+
+function mapPromotionApplicationForSnapshot(
+  promotion: PromotionApplicationDraft
+): CheckoutPromotionApplicationSnapshot {
+  return {
+    promotionId: promotion.promotionId,
+    promotionName: promotion.promotionName,
+    promotionType: promotion.promotionType,
+    rewardType: promotion.rewardType,
+    amountCents: promotion.amountCents,
+    lineAllocations: promotion.lineAllocations.map((line) => ({
+      variantId: line.variantId,
+      quantityDiscounted: line.quantityDiscounted,
+      discountCents: line.discountCents,
+      promotionId: line.promotionId,
+      promotionName: line.promotionName,
+      promotionType: line.promotionType,
+    })),
+    summary: promotion.summary,
   }
 }
 
@@ -324,6 +383,7 @@ async function resolveLineItems(items: CheckoutItemInput[]) {
       weightOz: convertVariantWeightToOz(variant.weight, variant.weightUnit),
       quantity: item.quantity,
       fulfillmentType: normalizeCartFulfillmentType(variant.product.fulfillmentType),
+      promotionFulfillmentType: normalizePromotionFulfillmentType(variant.product.fulfillmentType),
     }
   })
 }
@@ -530,6 +590,26 @@ export async function createCheckoutPaymentIntent(input: {
     ? normalizeAddress(input.billingAddress)
     : shippingAddress
   const discount = await resolveDiscountCode(input.discountCode)
+  const promotionLoadResult = await loadAutomaticPromotionsForCheckout()
+  const promotionEvaluation = evaluatePromotions(
+    {
+      cartLines: lineItems.map((item) => ({
+        variantId: item.variantId,
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPriceCents: item.priceCents,
+        fulfillmentType: item.promotionFulfillmentType,
+      })),
+      promotions: promotionLoadResult.promotions,
+      discountCode: discount?.code ?? null,
+    },
+    {
+      codeDiscountApplied: Boolean(discount),
+      physicalOnly: true,
+    }
+  )
+  const promotionApplications = promotionEvaluation.appliedPromotions.map(mapPromotionApplicationForSnapshot)
+  const promotionDiscountAmountCents = promotionEvaluation.totalDiscountCents
   const currency = (store?.currency || 'USD').toUpperCase()
   const shippingResolution = requiresShipping
     ? await resolveSelectedShippingQuote({
@@ -610,7 +690,10 @@ export async function createCheckoutPaymentIntent(input: {
   const pricing = buildCheckoutPricingWithDecisionsCents(
     lineItems,
     store?.shippingThresholdCents,
-    pricingOptions
+    {
+      ...pricingOptions,
+      additionalSubtotalDiscountCents: promotionDiscountAmountCents,
+    }
   )
   const selectedShippingRate = requiresShipping
     ? mapShippingQuoteForSnapshot((shippingResolution as { selectedQuote: ShippingRateQuote }).selectedQuote)
@@ -618,18 +701,22 @@ export async function createCheckoutPaymentIntent(input: {
   const pricingWithSelectedShipping = requiresShipping
     ? buildCheckoutPricingWithDecisionsCents(lineItems, store?.shippingThresholdCents, {
         ...pricingOptions,
+        additionalSubtotalDiscountCents: promotionDiscountAmountCents,
         selectedShippingAmountCents: selectedShippingRate.amountCents,
         selectedShippingRateId: selectedShippingRate.id,
       })
     : pricing
   const shippingAmountCents = pricingWithSelectedShipping.shippingAmountCents
   const discountAmountCents = pricingWithSelectedShipping.discountAmountCents ?? 0
+  const codeDiscountAmountCents = pricingWithSelectedShipping.codeDiscountAmountCents ?? 0
+  const resolvedPromotionDiscountAmountCents =
+    pricingWithSelectedShipping.promotionDiscountAmountCents ?? promotionDiscountAmountCents
   const taxAmountCents = pricingWithSelectedShipping.taxAmountCents ?? 0
   const totalCents = pricingWithSelectedShipping.totalCents
   const appliedDiscount = pricingWithSelectedShipping.appliedDiscount
     ? {
         ...pricingWithSelectedShipping.appliedDiscount,
-        amountCents: discountAmountCents,
+        amountCents: codeDiscountAmountCents,
       }
     : null
 
@@ -674,7 +761,13 @@ export async function createCheckoutPaymentIntent(input: {
   const payload: CheckoutPayload = {
     email: normalizedEmail,
     items: lineItems.map((item) => ({
-      ...item,
+      productId: item.productId,
+      variantId: item.variantId,
+      title: item.title,
+      variantTitle: item.variantTitle,
+      sku: item.sku,
+      priceCents: item.priceCents,
+      quantity: item.quantity,
       fulfillmentType: normalizeCartFulfillmentType(item.fulfillmentType),
     })),
     ...(shippingAddress ? { shippingAddress } : {}),
@@ -686,6 +779,8 @@ export async function createCheckoutPaymentIntent(input: {
       shippingAmountCents,
       taxAmountCents,
       discountAmountCents,
+      codeDiscountAmountCents,
+      promotionDiscountAmountCents: resolvedPromotionDiscountAmountCents,
       totalCents,
       shippingDecision: requiresShipping
         ? pricingWithSelectedShipping.shippingDecision
@@ -694,9 +789,11 @@ export async function createCheckoutPaymentIntent(input: {
             warning: 'No shipping required for digital-only checkout.',
           },
       taxDecision: pricingWithSelectedShipping.taxDecision,
+      ...(promotionApplications.length ? { promotionApplications } : {}),
     },
     selectedShippingRate,
     ...(appliedDiscount ? { discountApplications: [appliedDiscount] } : {}),
+    ...(promotionApplications.length ? { promotionApplications } : {}),
   }
 
   const checkoutSession = await prisma.checkoutSession.create({
@@ -731,6 +828,7 @@ export async function createCheckoutPaymentIntent(input: {
     shippingAmountCents,
     discountAmountCents,
     totalCents,
+    ...(promotionApplications.length ? { promotionApplications } : {}),
     shippingAmount: centsToDollars(shippingAmountCents),
     discountAmount: centsToDollars(discountAmountCents),
     total: centsToDollars(totalCents),

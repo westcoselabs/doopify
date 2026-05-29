@@ -89,13 +89,13 @@ function resolveSetsFromQualifiers(promotion: PromotionDefinition, linesByVarian
   return { ok: true as const, sets }
 }
 
-function hasDigitalLine(
+function hasIneligiblePhysicalLine(
   linesByVariant: LineLookup,
   variantIds: string[]
 ) {
   for (const variantId of variantIds) {
     const line = linesByVariant[variantId]
-    if (line?.fulfillmentType === 'DIGITAL') return true
+    if (line && line.fulfillmentType !== 'PHYSICAL') return true
   }
   return false
 }
@@ -316,7 +316,7 @@ function evaluateCandidate(
       ...promotion.qualifiers.map((row) => row.variantId),
       ...promotion.rewards.map((row) => row.variantId),
     ]
-    if (hasDigitalLine(linesByVariant, involvedVariantIds)) {
+    if (hasIneligiblePhysicalLine(linesByVariant, involvedVariantIds)) {
       return {
         skip: buildSkip(
           promotion,

@@ -82,6 +82,31 @@ describe('buildCheckoutPricingWithDecisionsCents', () => {
     ).toThrow('Line price must be a non-negative integer cents value')
   })
 
+  it('applies additional subtotal promotion discounts before tax using server-owned cents math', () => {
+    const pricing = buildCheckoutPricingWithDecisionsCents([{ priceCents: 10000, quantity: 1 }], null, {
+      shippingAddress: { country: 'US', province: 'CA' },
+      storeCountry: 'US',
+      shippingRates: { domesticCents: 0, internationalCents: 0 },
+      taxSettings: {
+        enabled: true,
+        strategy: 'MANUAL',
+        defaultTaxRateBps: 1000,
+        taxShipping: false,
+        pricesIncludeTax: false,
+      },
+      additionalSubtotalDiscountCents: 2000,
+    })
+
+    expect(pricing).toMatchObject({
+      subtotalCents: 10000,
+      promotionDiscountAmountCents: 2000,
+      codeDiscountAmountCents: 0,
+      discountAmountCents: 2000,
+      taxAmountCents: 800,
+      totalCents: 8800,
+    })
+  })
+
   it('applies minimum-order validation using cents', () => {
     expect(() =>
       buildCheckoutPricingWithDecisionsCents([{ priceCents: 2000, quantity: 1 }], null, {

@@ -120,11 +120,15 @@ export type CheckoutPricingResult = {
   shippingAmountCents: number
   taxAmountCents: number
   discountAmountCents: number
+  codeDiscountAmountCents?: number
+  promotionDiscountAmountCents?: number
   totalCents: number
   subtotal?: number
   shippingAmount?: number
   taxAmount?: number
   discountAmount?: number
+  codeDiscountAmount?: number
+  promotionDiscountAmount?: number
   total?: number
   appliedDiscount?: CheckoutAppliedDiscount
 }
@@ -585,6 +589,7 @@ export function buildCheckoutPricingWithDecisionsCents(
     taxRates?: CheckoutPricingTaxRates
     taxRules?: CheckoutPricingTaxRule[]
     taxSettings?: CheckoutPricingTaxSettings
+    additionalSubtotalDiscountCents?: number
     selectedShippingAmountCents?: number
     selectedShippingRateId?: string
     now?: Date
@@ -627,14 +632,23 @@ export function buildCheckoutPricingWithDecisionsCents(
         }
       })()
     : undefined
-  const discountAmountCents = appliedDiscount?.amountCents ?? 0
+  const codeDiscountAmountCents = appliedDiscount?.amountCents ?? 0
+  const additionalSubtotalDiscountCents =
+    options.additionalSubtotalDiscountCents != null
+      ? assertIntegerCents(options.additionalSubtotalDiscountCents, 'Additional subtotal discount')
+      : 0
+  const promotionDiscountAmountCents = Math.min(subtotalCents, additionalSubtotalDiscountCents)
+  const discountAmountCents = codeDiscountAmountCents + promotionDiscountAmountCents
+  const subtotalDiscountForTax =
+    promotionDiscountAmountCents +
+    (appliedDiscount && (appliedDiscount.method === 'PERCENTAGE' || appliedDiscount.method === 'FIXED_AMOUNT')
+      ? codeDiscountAmountCents
+      : 0)
   const taxableSubtotalCents =
-    appliedDiscount && (appliedDiscount.method === 'PERCENTAGE' || appliedDiscount.method === 'FIXED_AMOUNT')
-      ? Math.max(0, subtotalCents - discountAmountCents)
-      : subtotalCents
+    subtotalDiscountForTax > 0 ? Math.max(0, subtotalCents - subtotalDiscountForTax) : subtotalCents
   const effectiveShippingForTax =
     appliedDiscount?.method === 'FREE_SHIPPING'
-      ? Math.max(0, shippingAmountCents - discountAmountCents)
+      ? Math.max(0, shippingAmountCents - codeDiscountAmountCents)
       : shippingAmountCents
   const taxDecision = calculateTax({
     taxableSubtotalCents,
@@ -647,15 +661,18 @@ export function buildCheckoutPricingWithDecisionsCents(
   })
   const taxAmountCents = taxDecision.amountCents
   const pricesIncludeTax = Boolean(options.taxSettings?.enabled && options.taxSettings?.pricesIncludeTax)
-  const totalCents = pricesIncludeTax
+  const rawTotalCents = pricesIncludeTax
     ? subtotalCents + shippingAmountCents - discountAmountCents
     : subtotalCents + shippingAmountCents + taxAmountCents - discountAmountCents
+  const totalCents = Math.max(0, rawTotalCents)
 
   return {
     subtotalCents,
     shippingAmountCents,
     taxAmountCents,
     discountAmountCents,
+    codeDiscountAmountCents,
+    promotionDiscountAmountCents,
     totalCents,
     shippingDecision,
     taxDecision,
@@ -670,6 +687,10 @@ function withDisplayDollars(input: CheckoutPricingResultWithDecisions): Checkout
     shippingAmount: centsToDollars(input.shippingAmountCents),
     taxAmount: centsToDollars(input.taxAmountCents),
     discountAmount: centsToDollars(input.discountAmountCents),
+    codeDiscountAmount:
+      input.codeDiscountAmountCents != null ? centsToDollars(input.codeDiscountAmountCents) : undefined,
+    promotionDiscountAmount:
+      input.promotionDiscountAmountCents != null ? centsToDollars(input.promotionDiscountAmountCents) : undefined,
     total: centsToDollars(input.totalCents),
     shippingDecision: {
       ...input.shippingDecision,
@@ -700,6 +721,7 @@ export function buildCheckoutPricingWithDecisions(
     taxRates?: CheckoutPricingTaxRates
     taxRules?: CheckoutPricingTaxRule[]
     taxSettings?: CheckoutPricingTaxSettings
+    additionalSubtotalDiscountCents?: number
     selectedShippingAmountCents?: number
     selectedShippingRateId?: string
     now?: Date
@@ -721,6 +743,7 @@ export function buildCheckoutPricing(
     taxRates?: CheckoutPricingTaxRates
     taxRules?: CheckoutPricingTaxRule[]
     taxSettings?: CheckoutPricingTaxSettings
+    additionalSubtotalDiscountCents?: number
     selectedShippingAmountCents?: number
     selectedShippingRateId?: string
     now?: Date
@@ -733,11 +756,15 @@ export function buildCheckoutPricing(
     shippingAmountCents: detailed.shippingAmountCents,
     taxAmountCents: detailed.taxAmountCents,
     discountAmountCents: detailed.discountAmountCents,
+    codeDiscountAmountCents: detailed.codeDiscountAmountCents,
+    promotionDiscountAmountCents: detailed.promotionDiscountAmountCents,
     totalCents: detailed.totalCents,
     subtotal: detailed.subtotal,
     shippingAmount: detailed.shippingAmount,
     taxAmount: detailed.taxAmount,
     discountAmount: detailed.discountAmount,
+    codeDiscountAmount: detailed.codeDiscountAmount,
+    promotionDiscountAmount: detailed.promotionDiscountAmount,
     total: detailed.total,
     ...(detailed.appliedDiscount ? { appliedDiscount: detailed.appliedDiscount } : {}),
   }

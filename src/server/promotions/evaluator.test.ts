@@ -282,6 +282,30 @@ describe('evaluatePromotions', () => {
     expect(result.skippedPromotions[0]?.reason).toBe('PHYSICAL_ONLY_RESTRICTION')
   })
 
+  it('treats unknown fulfillment types as ineligible under physical-only policy', () => {
+    const cartLines = baseCartLines().map((line) =>
+      line.variantId === 'variant_sticker' ? { ...line, fulfillmentType: null } : line
+    )
+    const promo = makePromotion({
+      id: 'promo_free_unknown',
+      type: 'FREE_GIFT',
+      rewardType: 'FREE',
+      value: 0,
+      rewards: [{ variantId: 'variant_sticker', productId: 'product_sticker', rewardQuantity: 1 }],
+    })
+
+    const result = evaluatePromotions(
+      {
+        cartLines,
+        promotions: [promo],
+      },
+      { physicalOnly: true }
+    )
+
+    expect(result.appliedPromotions).toHaveLength(0)
+    expect(result.skippedPromotions[0]?.reason).toBe('PHYSICAL_ONLY_RESTRICTION')
+  })
+
   it('chooses the highest-value eligible promotion when multiple apply', () => {
     const lower = makePromotion({ id: 'promo_low', value: 10 })
     const higher = makePromotion({ id: 'promo_high', value: 20 })

@@ -16,6 +16,11 @@ const mocks = vi.hoisted(() => ({
     discount: {
       findUnique: vi.fn(),
     },
+    promotion: {
+      findMany: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
   },
   createStripePaymentIntent: vi.fn(),
   getStoreSettings: vi.fn(),
@@ -96,6 +101,32 @@ const address = {
   country: 'GB',
 }
 
+function makePromotionRecord(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'promo_1',
+    name: 'Smart Promo',
+    status: 'ACTIVE',
+    type: 'PRODUCT_GROUP_DISCOUNT',
+    rewardType: 'PERCENTAGE',
+    value: 10,
+    startsAt: null,
+    endsAt: null,
+    usageLimit: null,
+    usageCount: 0,
+    priority: 100,
+    qualifiers: [
+      {
+        productId: 'product_1',
+        variantId: 'variant_1',
+        requiredQuantity: 1,
+        variant: { product: { fulfillmentType: 'PHYSICAL' } },
+      },
+    ],
+    rewards: [],
+    ...overrides,
+  }
+}
+
 describe('checkout service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -104,6 +135,7 @@ describe('checkout service', () => {
       currency: 'USD',
       shippingThresholdCents: 7500,
     })
+    mocks.prisma.promotion.findMany.mockResolvedValue([])
     mocks.getStripeRuntimeConnection.mockResolvedValue({
       source: 'env',
       verified: false,
@@ -715,6 +747,589 @@ describe('checkout service', () => {
         amount: 5,
       },
     })
+  })
+
+  it('applies PRODUCT_GROUP_DISCOUNT to qualifier variants and persists promotion snapshot', async () => {
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_1',
+        productId: 'product_1',
+        title: 'Default',
+        sku: 'SKU-1',
+        price: 25,
+        inventory: 4,
+        product: {
+          id: 'product_1',
+          title: 'Qualifier A',
+          fulfillmentType: 'PHYSICAL',
+        },
+      },
+      {
+        id: 'variant_2',
+        productId: 'product_2',
+        title: 'Default',
+        sku: 'SKU-2',
+        price: 15,
+        inventory: 4,
+        product: {
+          id: 'product_2',
+          title: 'Qualifier B',
+          fulfillmentType: 'PHYSICAL',
+        },
+      },
+    ])
+    mocks.prisma.promotion.findMany.mockResolvedValue([
+      makePromotionRecord({
+        id: 'promo_group_10',
+        name: 'Group 10% Off',
+        value: 10,
+        qualifiers: [
+          {
+            productId: 'product_1',
+            variantId: 'variant_1',
+            requiredQuantity: 1,
+            variant: { product: { fulfillmentType: 'PHYSICAL' } },
+          },
+          {
+            productId: 'product_2',
+            variantId: 'variant_2',
+            requiredQuantity: 1,
+            variant: { product: { fulfillmentType: 'PHYSICAL' } },
+          },
+        ],
+      }),
+    ])
+    mocks.createStripePaymentIntent.mockResolvedValue({
+      id: 'pi_promo_group',
+      client_secret: 'secret_promo_group',
+      amount: 4599,
+      currency: 'usd',
+      status: 'requires_payment_method',
+    })
+    mocks.prisma.checkoutSession.create.mockResolvedValue({
+      id: 'checkout_promo_group',
+    })
+
+    const checkout = await createCheckoutPaymentIntent({
+      email: 'ada@example.com',
+      items: [
+        { variantId: 'variant_1', quantity: 1 },
+        { variantId: 'variant_2', quantity: 1 },
+      ],
+      shippingAddress: address,
+    })
+
+    expect(mocks.createStripePaymentIntent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        amount: 4599,
+      })
+    )
+    expect(mocks.prisma.checkoutSession.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          discountAmountCents: 400,
+          totalCents: 4599,
+          payload: expect.objectContaining({
+            pricingSnapshot: expect.objectContaining({
+              promotionDiscountAmountCents: 400,
+              promotionApplications: [
+                expect.objectContaining({
+                  promotionId: 'promo_group_10',
+                  amountCents: 400,
+                }),
+              ],
+            }),
+            promotionApplications: [
+              expect.objectContaining({
+                promotionId: 'promo_group_10',
+                amountCents: 400,
+              }),
+            ],
+          }),
+        }),
+      })
+    )
+    expect(checkout).toMatchObject({
+      discountAmountCents: 400,
+      totalCents: 4599,
+      promotionApplications: [
+        expect.objectContaining({
+          promotionId: 'promo_group_10',
+          amountCents: 400,
+        }),
+      ],
+    })
+  })
+
+  it('applies BUY_X_GET_Y only when the reward item is already present in cart', async () => {
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_qualifier',
+        productId: 'product_qualifier',
+        title: 'Default',
+        sku: 'SKU-Q',
+        price: 20,
+        inventory: 4,
+        product: {
+          id: 'product_qualifier',
+          title: 'Qualifier',
+          fulfillmentType: 'PHYSICAL',
+        },
+      },
+      {
+        id: 'variant_reward',
+        productId: 'product_reward',
+        title: 'Default',
+        sku: 'SKU-R',
+        price: 5,
+        inventory: 4,
+        product: {
+          id: 'product_reward',
+          title: 'Reward',
+          fulfillmentType: 'PHYSICAL',
+        },
+      },
+    ])
+    mocks.prisma.promotion.findMany.mockResolvedValue([
+      makePromotionRecord({
+        id: 'promo_bxy_50',
+        name: 'Buy one get reward half off',
+        type: 'BUY_X_GET_Y',
+        rewardType: 'PERCENTAGE',
+        value: 50,
+        qualifiers: [
+          {
+            productId: 'product_qualifier',
+            variantId: 'variant_qualifier',
+            requiredQuantity: 1,
+            variant: { product: { fulfillmentType: 'PHYSICAL' } },
+          },
+        ],
+        rewards: [
+          {
+            productId: 'product_reward',
+            variantId: 'variant_reward',
+            rewardQuantity: 1,
+            variant: { product: { fulfillmentType: 'PHYSICAL' } },
+          },
+        ],
+      }),
+    ])
+    mocks.createStripePaymentIntent.mockResolvedValue({
+      id: 'pi_promo_bxy',
+      client_secret: 'secret_promo_bxy',
+      amount: 3249,
+      currency: 'usd',
+      status: 'requires_payment_method',
+    })
+    mocks.prisma.checkoutSession.create.mockResolvedValue({
+      id: 'checkout_promo_bxy',
+    })
+
+    const checkout = await createCheckoutPaymentIntent({
+      email: 'ada@example.com',
+      items: [
+        { variantId: 'variant_qualifier', quantity: 1 },
+        { variantId: 'variant_reward', quantity: 1 },
+      ],
+      shippingAddress: address,
+    })
+
+    expect(checkout).toMatchObject({
+      discountAmountCents: 250,
+      totalCents: 3249,
+      promotionApplications: [
+        expect.objectContaining({
+          promotionId: 'promo_bxy_50',
+          amountCents: 250,
+          lineAllocations: [expect.objectContaining({ variantId: 'variant_reward' })],
+        }),
+      ],
+    })
+  })
+
+  it('applies FREE_GIFT only when the reward item is already present in cart', async () => {
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_qualifier',
+        productId: 'product_qualifier',
+        title: 'Default',
+        sku: 'SKU-Q',
+        price: 20,
+        inventory: 4,
+        product: {
+          id: 'product_qualifier',
+          title: 'Qualifier',
+          fulfillmentType: 'PHYSICAL',
+        },
+      },
+      {
+        id: 'variant_reward',
+        productId: 'product_reward',
+        title: 'Default',
+        sku: 'SKU-R',
+        price: 5,
+        inventory: 4,
+        product: {
+          id: 'product_reward',
+          title: 'Reward',
+          fulfillmentType: 'PHYSICAL',
+        },
+      },
+    ])
+    mocks.prisma.promotion.findMany.mockResolvedValue([
+      makePromotionRecord({
+        id: 'promo_free_gift',
+        name: 'Free Gift',
+        type: 'FREE_GIFT',
+        rewardType: 'FREE',
+        value: 0,
+        qualifiers: [
+          {
+            productId: 'product_qualifier',
+            variantId: 'variant_qualifier',
+            requiredQuantity: 1,
+            variant: { product: { fulfillmentType: 'PHYSICAL' } },
+          },
+        ],
+        rewards: [
+          {
+            productId: 'product_reward',
+            variantId: 'variant_reward',
+            rewardQuantity: 1,
+            variant: { product: { fulfillmentType: 'PHYSICAL' } },
+          },
+        ],
+      }),
+    ])
+    mocks.createStripePaymentIntent.mockResolvedValue({
+      id: 'pi_promo_free',
+      client_secret: 'secret_promo_free',
+      amount: 2999,
+      currency: 'usd',
+      status: 'requires_payment_method',
+    })
+    mocks.prisma.checkoutSession.create.mockResolvedValue({
+      id: 'checkout_promo_free',
+    })
+
+    const checkout = await createCheckoutPaymentIntent({
+      email: 'ada@example.com',
+      items: [
+        { variantId: 'variant_qualifier', quantity: 1 },
+        { variantId: 'variant_reward', quantity: 1 },
+      ],
+      shippingAddress: address,
+    })
+
+    expect(checkout).toMatchObject({
+      discountAmountCents: 500,
+      totalCents: 2999,
+      promotionApplications: [
+        expect.objectContaining({
+          promotionId: 'promo_free_gift',
+          amountCents: 500,
+        }),
+      ],
+    })
+  })
+
+  it('does not auto-add missing reward lines for BUY_X_GET_Y', async () => {
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_qualifier',
+        productId: 'product_qualifier',
+        title: 'Default',
+        sku: 'SKU-Q',
+        price: 20,
+        inventory: 4,
+        product: {
+          id: 'product_qualifier',
+          title: 'Qualifier',
+          fulfillmentType: 'PHYSICAL',
+        },
+      },
+    ])
+    mocks.prisma.promotion.findMany.mockResolvedValue([
+      makePromotionRecord({
+        id: 'promo_missing_reward',
+        type: 'BUY_X_GET_Y',
+        rewardType: 'PERCENTAGE',
+        value: 50,
+        qualifiers: [
+          {
+            productId: 'product_qualifier',
+            variantId: 'variant_qualifier',
+            requiredQuantity: 1,
+            variant: { product: { fulfillmentType: 'PHYSICAL' } },
+          },
+        ],
+        rewards: [
+          {
+            productId: 'product_reward',
+            variantId: 'variant_reward_missing',
+            rewardQuantity: 1,
+            variant: { product: { fulfillmentType: 'PHYSICAL' } },
+          },
+        ],
+      }),
+    ])
+    mocks.createStripePaymentIntent.mockResolvedValue({
+      id: 'pi_missing_reward',
+      client_secret: 'secret_missing_reward',
+      amount: 2999,
+      currency: 'usd',
+      status: 'requires_payment_method',
+    })
+    mocks.prisma.checkoutSession.create.mockResolvedValue({
+      id: 'checkout_missing_reward',
+    })
+
+    const checkout = await createCheckoutPaymentIntent({
+      email: 'ada@example.com',
+      items: [{ variantId: 'variant_qualifier', quantity: 1 }],
+      shippingAddress: address,
+    })
+
+    expect(checkout).toMatchObject({
+      discountAmountCents: 0,
+      totalCents: 2999,
+      items: [expect.objectContaining({ variantId: 'variant_qualifier', quantity: 1 })],
+    })
+    expect(checkout).not.toHaveProperty('promotionApplications')
+  })
+
+  it('does not stack automatic promotions when a valid code discount is present', async () => {
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_1',
+        productId: 'product_1',
+        title: 'Default',
+        sku: 'SKU-1',
+        price: 25,
+        inventory: 3,
+        product: {
+          id: 'product_1',
+          title: 'Test Shirt',
+          fulfillmentType: 'PHYSICAL',
+        },
+      },
+    ])
+    mocks.prisma.promotion.findMany.mockResolvedValue([
+      makePromotionRecord({
+        id: 'promo_blocked_by_code',
+        qualifiers: [
+          {
+            productId: 'product_1',
+            variantId: 'variant_1',
+            requiredQuantity: 1,
+            variant: { product: { fulfillmentType: 'PHYSICAL' } },
+          },
+        ],
+      }),
+    ])
+    mocks.prisma.discount.findUnique.mockResolvedValue({
+      id: 'discount_1',
+      code: 'LAUNCH10',
+      title: 'Launch 10',
+      type: 'CODE',
+      method: 'PERCENTAGE',
+      value: 10,
+      minimumOrderCents: null,
+      usageLimit: null,
+      usageCount: 0,
+      status: 'ACTIVE',
+      startsAt: null,
+      endsAt: null,
+    })
+    mocks.createStripePaymentIntent.mockResolvedValue({
+      id: 'pi_code_blocks',
+      client_secret: 'secret_code_blocks',
+      amount: 3249,
+      currency: 'usd',
+      status: 'requires_payment_method',
+    })
+    mocks.prisma.checkoutSession.create.mockResolvedValue({
+      id: 'checkout_code_blocks',
+    })
+
+    const checkout = await createCheckoutPaymentIntent({
+      email: 'ada@example.com',
+      items: [{ variantId: 'variant_1', quantity: 1 }],
+      shippingAddress: address,
+      discountCode: 'launch10',
+    })
+
+    expect(checkout).toMatchObject({
+      discountAmountCents: 250,
+      totalCents: 3249,
+      appliedDiscount: expect.objectContaining({
+        discountId: 'discount_1',
+      }),
+    })
+    expect(checkout).not.toHaveProperty('promotionApplications')
+  })
+
+  it('does not apply promotions for digital-only carts in Smart Promotions V1', async () => {
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_digital',
+        productId: 'product_digital',
+        title: 'Default',
+        sku: 'SKU-D',
+        price: 25,
+        inventory: 3,
+        product: {
+          id: 'product_digital',
+          title: 'Digital Product',
+          fulfillmentType: 'DIGITAL',
+        },
+      },
+    ])
+    mocks.prisma.promotion.findMany.mockResolvedValue([
+      makePromotionRecord({
+        id: 'promo_digital_rejected',
+        qualifiers: [
+          {
+            productId: 'product_digital',
+            variantId: 'variant_digital',
+            requiredQuantity: 1,
+            variant: { product: { fulfillmentType: 'DIGITAL' } },
+          },
+        ],
+      }),
+    ])
+    mocks.createStripePaymentIntent.mockResolvedValue({
+      id: 'pi_digital_promo_rejected',
+      client_secret: 'secret_digital_promo_rejected',
+      amount: 2500,
+      currency: 'usd',
+      status: 'requires_payment_method',
+    })
+    mocks.prisma.checkoutSession.create.mockResolvedValue({
+      id: 'checkout_digital_promo_rejected',
+    })
+
+    const checkout = await createCheckoutPaymentIntent({
+      email: 'ada@example.com',
+      items: [{ variantId: 'variant_digital', quantity: 1 }],
+    })
+
+    expect(checkout).toMatchObject({
+      discountAmountCents: 0,
+      shippingAmountCents: 0,
+      totalCents: 2500,
+    })
+    expect(checkout).not.toHaveProperty('promotionApplications')
+  })
+
+  it('treats unknown fulfillment types as ineligible for promotions in checkout integration', async () => {
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_unknown',
+        productId: 'product_unknown',
+        title: 'Default',
+        sku: 'SKU-U',
+        price: 20,
+        inventory: 4,
+        product: {
+          id: 'product_unknown',
+          title: 'Unknown Product',
+          fulfillmentType: 'UNKNOWN_TYPE',
+        },
+      },
+    ])
+    mocks.prisma.promotion.findMany.mockResolvedValue([
+      makePromotionRecord({
+        id: 'promo_unknown_line',
+        qualifiers: [
+          {
+            productId: 'product_unknown',
+            variantId: 'variant_unknown',
+            requiredQuantity: 1,
+            variant: { product: { fulfillmentType: 'PHYSICAL' } },
+          },
+        ],
+      }),
+    ])
+    mocks.createStripePaymentIntent.mockResolvedValue({
+      id: 'pi_unknown_fulfillment',
+      client_secret: 'secret_unknown_fulfillment',
+      amount: 2999,
+      currency: 'usd',
+      status: 'requires_payment_method',
+    })
+    mocks.prisma.checkoutSession.create.mockResolvedValue({
+      id: 'checkout_unknown_fulfillment',
+    })
+
+    const checkout = await createCheckoutPaymentIntent({
+      email: 'ada@example.com',
+      items: [{ variantId: 'variant_unknown', quantity: 1 }],
+      shippingAddress: address,
+    })
+
+    expect(checkout).toMatchObject({
+      discountAmountCents: 0,
+      totalCents: 2999,
+    })
+    expect(checkout).not.toHaveProperty('promotionApplications')
+  })
+
+  it('does not apply exhausted promotions and does not increment promotion usage during checkout creation', async () => {
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      {
+        id: 'variant_1',
+        productId: 'product_1',
+        title: 'Default',
+        sku: 'SKU-1',
+        price: 25,
+        inventory: 3,
+        product: {
+          id: 'product_1',
+          title: 'Test Shirt',
+          fulfillmentType: 'PHYSICAL',
+        },
+      },
+    ])
+    mocks.prisma.promotion.findMany.mockResolvedValue([
+      makePromotionRecord({
+        id: 'promo_exhausted',
+        usageLimit: 1,
+        usageCount: 1,
+        qualifiers: [
+          {
+            productId: 'product_1',
+            variantId: 'variant_1',
+            requiredQuantity: 1,
+            variant: { product: { fulfillmentType: 'PHYSICAL' } },
+          },
+        ],
+      }),
+    ])
+    mocks.createStripePaymentIntent.mockResolvedValue({
+      id: 'pi_exhausted_promo',
+      client_secret: 'secret_exhausted_promo',
+      amount: 3499,
+      currency: 'usd',
+      status: 'requires_payment_method',
+    })
+    mocks.prisma.checkoutSession.create.mockResolvedValue({
+      id: 'checkout_exhausted_promo',
+    })
+
+    const checkout = await createCheckoutPaymentIntent({
+      email: 'ada@example.com',
+      items: [{ variantId: 'variant_1', quantity: 1 }],
+      shippingAddress: address,
+    })
+
+    expect(checkout).toMatchObject({
+      discountAmountCents: 0,
+      totalCents: 3499,
+    })
+    expect(mocks.prisma.promotion.update).not.toHaveBeenCalled()
+    expect(mocks.prisma.promotion.updateMany).not.toHaveBeenCalled()
   })
 
   it('rejects missing discount codes before creating a Stripe payment intent', async () => {
