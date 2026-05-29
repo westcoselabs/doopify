@@ -52,10 +52,24 @@ export type PromotionEvaluationInput = {
   currency?: string
 }
 
+export type PromotionEvaluationOptions = {
+  now?: Date
+  codeDiscountApplied?: boolean
+  combineWithCodeDiscounts?: boolean
+  maxAutomaticPromotionsPerCheckout?: number
+  physicalOnly?: boolean
+}
+
 export type PromotionLineAllocation = {
   variantId: string
-  quantity: number
-  amountCents: number
+  quantityDiscounted: number
+  discountCents: number
+  promotionId: string
+  promotionName: string
+  promotionType: PromotionType
+  // Backward-compatible aliases for older call sites while Phase 2 settles.
+  quantity?: number
+  amountCents?: number
 }
 
 export type PromotionApplicationDraft = {
@@ -73,6 +87,27 @@ export type PromotionEvaluationResult = {
   totalDiscountCents: number
   skippedPromotionIds: string[]
   blockedByCodeDiscount: boolean
+  skippedPromotions: PromotionEvaluationSkip[]
+  warnings: string[]
+}
+
+export type PromotionEvaluationSkip = {
+  promotionId: string
+  promotionName: string
+  reason:
+    | 'BLOCKED_BY_CODE_DISCOUNT'
+    | 'INACTIVE_STATUS'
+    | 'NOT_STARTED'
+    | 'EXPIRED'
+    | 'USAGE_LIMIT_REACHED'
+    | 'MISSING_QUALIFIERS'
+    | 'MISSING_REWARDS'
+    | 'PHYSICAL_ONLY_RESTRICTION'
+    | 'AMBIGUOUS_VARIANT_ROLE'
+    | 'NO_ELIGIBLE_TARGET_LINES'
+    | 'ZERO_DISCOUNT'
+    | 'NOT_SELECTED_BETTER_PROMOTION'
+  message: string
 }
 
 export type PromotionValidationIssue = {
