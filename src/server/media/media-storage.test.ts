@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   getMediaPublicUrl,
   getMediaStorageAdapter,
+  getMediaStorageAdapterForProvider,
   resetMediaStorageAdapterCacheForTests,
 } from './media-storage'
 
@@ -131,5 +132,23 @@ describe('media storage resolver', () => {
 
   it('returns stable app media URLs', () => {
     expect(getMediaPublicUrl('asset_123')).toBe('/api/media/asset_123')
+  })
+
+  it('resolves storage adapters by explicit provider', () => {
+    vi.stubEnv('MEDIA_S3_REGION', 'auto')
+    vi.stubEnv('MEDIA_S3_BUCKET', 'doopify-media')
+    vi.stubEnv('MEDIA_S3_ACCESS_KEY_ID', 'key')
+    vi.stubEnv('MEDIA_S3_SECRET_ACCESS_KEY', 'secret')
+    vi.stubEnv('BLOB_READ_WRITE_TOKEN', 'vercel_blob_rw_token')
+
+    expect(getMediaStorageAdapterForProvider('postgres').provider).toBe('postgres')
+    expect(getMediaStorageAdapterForProvider('s3').provider).toBe('s3')
+    expect(getMediaStorageAdapterForProvider('vercel-blob').provider).toBe('vercel-blob')
+  })
+
+  it('throws when resolving an unsupported explicit provider', () => {
+    expect(() => getMediaStorageAdapterForProvider('r2')).toThrowError(
+      'Unsupported media storage provider: r2'
+    )
   })
 })

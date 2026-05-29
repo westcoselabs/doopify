@@ -1,8 +1,14 @@
 import { err, ok, parseBody } from '@/lib/api'
 import { prisma } from '@/lib/prisma'
 import { requireAdmin } from '@/server/auth/require-auth'
-import { getMediaPublicUrl, getMediaStorageAdapter } from '@/server/media/media-storage'
+import {
+  getMediaPublicUrl,
+  getMediaStorageAdapter,
+  getMediaStorageAdapterForProvider,
+  MediaStorageConfigError,
+} from '@/server/media/media-storage'
 import { NextResponse } from 'next/server'
+import { Prisma } from '@prisma/client'
 
 interface Params {
   params: Promise<{ assetId: string }>
@@ -102,10 +108,68 @@ export async function DELETE(_req: Request, { params }: Params) {
 
   try {
     const { assetId } = await params
-    await getMediaStorageAdapter().delete(assetId)
+    const asset = await prisma.mediaAsset.findUnique({
+      where: { id: assetId },
+      select: {
+        id: true,
+        storageProvider: true,
+      },
+    })
+
+    if (!asset) {
+      return err('Asset not found', 404)
+    }
+
+    const store = await prisma.store.findFirst({
+      select: {
+        id: true,
+        logoUrl: true,
+        faviconUrl: true,
+        emailLogoUrl: true,
+        checkoutLogoUrl: true,
+      },
+    })
+
+    const assetPublicUrl = getMediaPublicUrl(assetId)
+    const isUsedInBranding = Boolean(
+      store &&
+        [store.logoUrl, store.faviconUrl, store.emailLogoUrl, store.checkoutLogoUrl].some(
+          (value) => value === assetPublicUrl
+        )
+    )
+
+    if (isUsedInBranding) {
+      return err('This image is currently used in store branding. Update branding first, then delete it.', 409)
+    }
+
+    const adapter = getMediaStorageAdapterForProvider(asset.storageProvider)
+    await adapter.delete(assetId)
     return new NextResponse(null, { status: 204 })
-  } catch (e) {
-    console.error('[DELETE /api/media/[assetId]]', e)
+  } catch (error) {
+    console.error('[DELETE /api/media/[assetId]]', error)
+
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      (error.code === 'P2025' || error.code === 'P2001')
+    ) {
+      return err('Asset not found', 404)
+    }
+
+    if (
+      error instanceof Prisma.PrismaClientKnownRequestError &&
+      error.code === 'P2003'
+    ) {
+      return err('This asset is currently in use and cannot be deleted yet.', 409)
+    }
+
+    if (error instanceof Error && error.message.toLowerCase() === 'asset not found') {
+      return err('Asset not found', 404)
+    }
+
+    if (error instanceof MediaStorageConfigError) {
+      return err('Media storage is not configured for this asset.', 500)
+    }
+
     return err('Failed to delete asset', 500)
   }
 }

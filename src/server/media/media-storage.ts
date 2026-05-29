@@ -73,20 +73,21 @@ function mediaUrl(assetId: string) {
   return `/api/media/${assetId}`
 }
 
-export function getMediaStorageAdapter(): MediaStorageAdapter {
-  const provider = process.env.MEDIA_STORAGE_PROVIDER?.trim().toLowerCase()
+function normalizeMediaProvider(provider: string | null | undefined) {
+  const value = provider?.trim().toLowerCase()
+  if (!value || value === 'postgres') return 'postgres'
+  if (value === 's3') return 's3'
+  if (value === 'vercel-blob' || value === 'blob') return 'vercel-blob'
+  return null
+}
 
-  if (!provider || provider === 'postgres') {
-    if (!provider && process.env.NODE_ENV === 'production' && !warnedProductionPostgresDefault) {
-      console.warn(
-        '[media-storage] MEDIA_STORAGE_PROVIDER is unset in production. Falling back to Postgres media storage (not recommended for production scale).'
-      )
-      warnedProductionPostgresDefault = true
-    }
+export function getMediaStorageAdapterForProvider(provider: string | null | undefined): MediaStorageAdapter {
+  const normalizedProvider = normalizeMediaProvider(provider)
+  if (normalizedProvider === 'postgres') {
     return postgresMediaStorageAdapter
   }
 
-  if (provider === 's3') {
+  if (normalizedProvider === 's3') {
     const config = getS3ConfigFromEnv()
     if (!config) {
       throw new MediaStorageConfigError(
@@ -99,7 +100,7 @@ export function getMediaStorageAdapter(): MediaStorageAdapter {
     return cachedS3Adapter
   }
 
-  if (provider === 'vercel-blob' || provider === 'blob') {
+  if (normalizedProvider === 'vercel-blob') {
     const config = getVercelBlobConfigFromEnv()
     if (!config) {
       throw new MediaStorageConfigError(
@@ -112,7 +113,31 @@ export function getMediaStorageAdapter(): MediaStorageAdapter {
     return cachedBlobAdapter
   }
 
-  console.warn(`[media-storage] MEDIA_STORAGE_PROVIDER=${provider} is unsupported. Falling back to Postgres storage.`)
+  throw new MediaStorageConfigError('unknown', `Unsupported media storage provider: ${provider || 'unknown'}`)
+}
+
+export function getMediaStorageAdapter(): MediaStorageAdapter {
+  const provider = process.env.MEDIA_STORAGE_PROVIDER?.trim()
+
+  if (!provider) {
+    if (!provider && process.env.NODE_ENV === 'production' && !warnedProductionPostgresDefault) {
+      console.warn(
+        '[media-storage] MEDIA_STORAGE_PROVIDER is unset in production. Falling back to Postgres media storage (not recommended for production scale).'
+      )
+      warnedProductionPostgresDefault = true
+    }
+    return postgresMediaStorageAdapter
+  }
+
+  try {
+    return getMediaStorageAdapterForProvider(provider)
+  } catch (error) {
+    if (!(error instanceof MediaStorageConfigError) || error.provider !== 'unknown') {
+      throw error
+    }
+  }
+
+  console.warn(`[media-storage] MEDIA_STORAGE_PROVIDER=${provider.toLowerCase()} is unsupported. Falling back to Postgres storage.`)
   return postgresMediaStorageAdapter
 }
 
