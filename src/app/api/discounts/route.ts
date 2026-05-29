@@ -1,6 +1,8 @@
 import { z } from 'zod'
 import { ok, err, parseBody } from '@/lib/api'
+import { centsToDollars, dollarsToCents } from '@/lib/money'
 import { prisma } from '@/lib/prisma'
+import { requireAdmin } from '@/server/auth/require-auth'
 
 const DEFAULT_DISCOUNT_LIST_PAGE_SIZE = 20
 const MAX_DISCOUNT_LIST_PAGE_SIZE = 100
@@ -16,7 +18,32 @@ function clampPageSize(value: number) {
   )
 }
 
+type DiscountApiInput = {
+  minimumOrderCents?: number
+  minimumOrder?: number
+}
+
+function resolveMinimumOrderCents(input: DiscountApiInput) {
+  if (input.minimumOrderCents != null) return input.minimumOrderCents
+  if (input.minimumOrder != null) return dollarsToCents(input.minimumOrder)
+  return undefined
+}
+
+function mapDiscountResponse(discount: {
+  minimumOrderCents: number | null
+  [key: string]: unknown
+}) {
+  return {
+    ...discount,
+    minimumOrder:
+      discount.minimumOrderCents == null ? null : centsToDollars(discount.minimumOrderCents),
+  }
+}
+
 export async function GET(req: Request) {
+  const auth = await requireAdmin(req)
+  if (!auth.ok) return auth.response
+
   try {
     const { searchParams } = new URL(req.url)
     const page = clampPage(Number(searchParams.get('page') || 1))
@@ -54,7 +81,10 @@ export async function GET(req: Request) {
       prisma.discount.count({ where }),
     ])
 
-    return ok({ discounts, pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) } })
+    return ok({
+      discounts: discounts.map(mapDiscountResponse),
+      pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+    })
   } catch (e) {
     console.error('[GET /api/discounts]', e)
     return err('Failed to fetch discounts', 500)
@@ -67,34 +97,65 @@ const createSchema = z.object({
   type: z.enum(['CODE', 'AUTOMATIC']),
   method: z.enum(['PERCENTAGE', 'FIXED_AMOUNT', 'FREE_SHIPPING', 'BUY_X_GET_Y']),
   value: z.number().min(0),
-  minimumOrder: z.number().optional(),
-  usageLimit: z.number().int().optional(),
+  minimumOrder: z.number().min(0).optional(),
+  minimumOrderCents: z.number().int().min(0).optional(),
+  usageLimit: z.number().int().positive().optional(),
   status: z.enum(['ACTIVE', 'SCHEDULED', 'EXPIRED', 'DISABLED']).optional(),
   startsAt: z.string().datetime().optional(),
   endsAt: z.string().datetime().optional(),
   combinesWithOrders: z.boolean().optional(),
   combinesWithProducts: z.boolean().optional(),
   combinesWithShipping: z.boolean().optional(),
+}).superRefine((value, ctx) => {
+  if (value.startsAt && value.endsAt) {
+    const startsAt = new Date(value.startsAt)
+    const endsAt = new Date(value.endsAt)
+    if (startsAt > endsAt) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'startsAt cannot be after endsAt',
+        path: ['startsAt'],
+      })
+    }
+  }
 })
 
 export async function POST(req: Request) {
+  const auth = await requireAdmin(req)
+  if (!auth.ok) return auth.response
+
   const body = await parseBody(req)
   if (!body) return err('Invalid request body')
 
   const parsed = createSchema.safeParse(body)
   if (!parsed.success) return err(parsed.error.errors[0].message)
 
+  if (parsed.data.method === 'BUY_X_GET_Y') {
+    return err('BUY_X_GET_Y discounts are not supported at checkout yet')
+  }
+
+  const minimumOrderCents = resolveMinimumOrderCents(parsed.data)
+
   try {
     const discount = await prisma.discount.create({
       data: {
-        ...parsed.data,
+        title: parsed.data.title,
+        type: parsed.data.type,
+        method: parsed.data.method,
+        value: parsed.data.value,
+        minimumOrderCents,
+        usageLimit: parsed.data.usageLimit,
+        status: parsed.data.status,
+        combinesWithOrders: parsed.data.combinesWithOrders,
+        combinesWithProducts: parsed.data.combinesWithProducts,
+        combinesWithShipping: parsed.data.combinesWithShipping,
         // Normalize to uppercase so validation is always case-insensitive
         code: parsed.data.code ? parsed.data.code.toUpperCase() : undefined,
         startsAt: parsed.data.startsAt ? new Date(parsed.data.startsAt) : undefined,
         endsAt: parsed.data.endsAt ? new Date(parsed.data.endsAt) : undefined,
       },
     })
-    return ok(discount, 201)
+    return ok(mapDiscountResponse(discount), 201)
   } catch (e: unknown) {
     const msg = e instanceof Error && e.message.includes('Unique')
       ? 'A discount with this code already exists'
