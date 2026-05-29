@@ -372,6 +372,34 @@ describe('promotions admin service', () => {
     expect(mocks.tx.promotionReward.deleteMany).not.toHaveBeenCalled()
   })
 
+  it('allows no-op patch payloads while returning current promotion detail', async () => {
+    mocks.prisma.promotion.findUnique.mockResolvedValue(buildPromotionDetailRow())
+    mocks.prisma.productVariant.findMany.mockResolvedValue([
+      buildVariantRow({ id: 'var_1', productId: 'prod_1' }),
+      buildVariantRow({ id: 'var_2', productId: 'prod_2' }),
+    ])
+    mocks.tx.promotion.update.mockResolvedValue({ id: 'promo_1' })
+    mocks.tx.promotion.findUnique.mockResolvedValue(buildPromotionDetailRow())
+
+    const result = await updatePromotionFromAdmin('promo_1', {})
+
+    expect(result.ok).toBe(true)
+    expect(mocks.tx.promotion.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'promo_1' },
+        data: expect.objectContaining({
+          name: 'Promo One',
+          status: 'ACTIVE',
+          type: 'BUY_X_GET_Y',
+          rewardType: 'PERCENTAGE',
+          value: 20,
+        }),
+      })
+    )
+    expect(mocks.tx.promotionQualifier.deleteMany).not.toHaveBeenCalled()
+    expect(mocks.tx.promotionReward.deleteMany).not.toHaveBeenCalled()
+  })
+
   it('replaces qualifier/reward rows on patch with product ids from variant lookup', async () => {
     mocks.prisma.promotion.findUnique.mockResolvedValue(buildPromotionDetailRow())
     mocks.prisma.productVariant.findMany.mockResolvedValue([

@@ -126,4 +126,48 @@ describe('/api/promotions/[id] route', () => {
     expect(deleteResponse.status).toBe(200)
     expect(mocks.disablePromotionForAdmin).toHaveBeenCalledWith('promo_1')
   })
+
+  it('allows no-op patch payloads', async () => {
+    mocks.updatePromotionFromAdmin.mockResolvedValue({
+      ok: true,
+      promotion: {
+        id: 'promo_1',
+        name: 'Unchanged',
+        status: 'ACTIVE',
+        type: 'BUY_X_GET_Y',
+        rewardType: 'PERCENTAGE',
+        value: 15,
+        startsAt: null,
+        endsAt: null,
+        usageLimit: null,
+        usageCount: 0,
+        priority: 100,
+        qualifiers: [],
+        rewards: [],
+        createdAt: new Date('2026-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2026-01-02T00:00:00.000Z'),
+      },
+      warnings: [],
+    })
+
+    const response = await PATCH(
+      new Request('http://localhost/api/promotions/promo_1', {
+        method: 'PATCH',
+        body: JSON.stringify({}),
+      }),
+      { params: Promise.resolve({ id: 'promo_1' }) }
+    )
+
+    expect(response.status).toBe(200)
+    expect(mocks.updatePromotionFromAdmin).toHaveBeenCalledWith('promo_1', {})
+    await expect(response.json()).resolves.toMatchObject({
+      success: true,
+      data: {
+        promotion: {
+          id: 'promo_1',
+          name: 'Unchanged',
+        },
+      },
+    })
+  })
 })

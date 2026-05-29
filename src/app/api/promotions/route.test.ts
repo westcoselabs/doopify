@@ -91,6 +91,86 @@ describe('/api/promotions route', () => {
     expect(payload.data.pagination.total).toBe(1)
   })
 
+  it('returns 400 for invalid status filter values', async () => {
+    const invalidStatusResponse = await GET(new Request('http://localhost/api/promotions?status=BAD_VALUE'))
+    const emptyStatusResponse = await GET(new Request('http://localhost/api/promotions?status='))
+
+    expect(invalidStatusResponse.status).toBe(400)
+    await expect(invalidStatusResponse.json()).resolves.toMatchObject({
+      success: false,
+      error: 'Invalid promotion status filter',
+    })
+
+    expect(emptyStatusResponse.status).toBe(400)
+    await expect(emptyStatusResponse.json()).resolves.toMatchObject({
+      success: false,
+      error: 'Invalid promotion status filter',
+    })
+
+    expect(mocks.listPromotionsForAdmin).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 for invalid type filter values', async () => {
+    const invalidTypeResponse = await GET(new Request('http://localhost/api/promotions?type=BOGO'))
+    const emptyTypeResponse = await GET(new Request('http://localhost/api/promotions?type='))
+
+    expect(invalidTypeResponse.status).toBe(400)
+    await expect(invalidTypeResponse.json()).resolves.toMatchObject({
+      success: false,
+      error: 'Invalid promotion type filter',
+    })
+
+    expect(emptyTypeResponse.status).toBe(400)
+    await expect(emptyTypeResponse.json()).resolves.toMatchObject({
+      success: false,
+      error: 'Invalid promotion type filter',
+    })
+
+    expect(mocks.listPromotionsForAdmin).not.toHaveBeenCalled()
+  })
+
+  it('accepts a valid status filter', async () => {
+    mocks.listPromotionsForAdmin.mockResolvedValue({
+      promotions: [],
+      pagination: {
+        page: 1,
+        pageSize: 20,
+        total: 0,
+        totalPages: 0,
+      },
+    })
+
+    const response = await GET(new Request('http://localhost/api/promotions?status=active'))
+
+    expect(response.status).toBe(200)
+    expect(mocks.listPromotionsForAdmin).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: 'ACTIVE',
+      })
+    )
+  })
+
+  it('accepts a valid type filter', async () => {
+    mocks.listPromotionsForAdmin.mockResolvedValue({
+      promotions: [],
+      pagination: {
+        page: 1,
+        pageSize: 20,
+        total: 0,
+        totalPages: 0,
+      },
+    })
+
+    const response = await GET(new Request('http://localhost/api/promotions?type=free_gift'))
+
+    expect(response.status).toBe(200)
+    expect(mocks.listPromotionsForAdmin).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'FREE_GIFT',
+      })
+    )
+  })
+
   it('creates promotion and returns 422 when business validation fails', async () => {
     mocks.createPromotionFromAdmin.mockResolvedValue({
       ok: false,

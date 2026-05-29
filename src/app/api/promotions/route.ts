@@ -1,6 +1,10 @@
 import { err, ok, parseBody, unprocessable } from '@/lib/api'
 import { requireAdmin } from '@/server/auth/require-auth'
-import { promotionCreateSchema } from '@/server/promotions/admin-api-schema'
+import {
+  promotionCreateSchema,
+  promotionStatusSchema,
+  promotionTypeSchema,
+} from '@/server/promotions/admin-api-schema'
 import {
   clampPromotionListPage,
   clampPromotionListPageSize,
@@ -9,23 +13,21 @@ import {
 import { createPromotionFromAdmin, listPromotionsForAdmin } from '@/server/promotions/admin-service'
 import type { PromotionStatus, PromotionType } from '@prisma/client'
 
-const PROMOTION_STATUSES = new Set<PromotionStatus>(['DRAFT', 'ACTIVE', 'SCHEDULED', 'EXPIRED', 'DISABLED'])
-const PROMOTION_TYPES = new Set<PromotionType>(['PRODUCT_GROUP_DISCOUNT', 'BUY_X_GET_Y', 'FREE_GIFT'])
+function parseOptionalFilter<T extends string>(
+  rawValue: string | null,
+  parse: (value: string) => { success: true; data: T } | { success: false },
+  invalidMessage: string
+) {
+  if (rawValue === null) {
+    return { ok: true as const, value: undefined }
+  }
 
-function parseStatusFilter(value: string | null): PromotionStatus | undefined {
-  if (!value) return undefined
-  const normalized = value.trim().toUpperCase()
-  return PROMOTION_STATUSES.has(normalized as PromotionStatus)
-    ? (normalized as PromotionStatus)
-    : undefined
-}
+  const parsed = parse(rawValue.trim().toUpperCase())
+  if (!parsed.success) {
+    return { ok: false as const, response: err(invalidMessage, 400) }
+  }
 
-function parseTypeFilter(value: string | null): PromotionType | undefined {
-  if (!value) return undefined
-  const normalized = value.trim().toUpperCase()
-  return PROMOTION_TYPES.has(normalized as PromotionType)
-    ? (normalized as PromotionType)
-    : undefined
+  return { ok: true as const, value: parsed.data }
 }
 
 export async function GET(req: Request) {
@@ -38,8 +40,26 @@ export async function GET(req: Request) {
     const pageSize = clampPromotionListPageSize(
       Number(searchParams.get('pageSize') || DEFAULT_PROMOTION_LIST_PAGE_SIZE)
     )
-    const status = parseStatusFilter(searchParams.get('status'))
-    const type = parseTypeFilter(searchParams.get('type'))
+    const statusFilter = parseOptionalFilter<PromotionStatus>(
+      searchParams.get('status'),
+      (value) => promotionStatusSchema.safeParse(value),
+      'Invalid promotion status filter'
+    )
+    if (!statusFilter.ok) {
+      return statusFilter.response
+    }
+
+    const typeFilter = parseOptionalFilter<PromotionType>(
+      searchParams.get('type'),
+      (value) => promotionTypeSchema.safeParse(value),
+      'Invalid promotion type filter'
+    )
+    if (!typeFilter.ok) {
+      return typeFilter.response
+    }
+
+    const status = statusFilter.value
+    const type = typeFilter.value
     const search = String(searchParams.get('search') || '').trim() || undefined
 
     const result = await listPromotionsForAdmin({
