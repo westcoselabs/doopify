@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useMemo, useState } from 'react';
 import AppShell from '../AppShell';
@@ -16,6 +16,7 @@ import AdminSelect from '../admin/ui/AdminSelect';
 import AdminStatusChip from '../admin/ui/AdminStatusChip';
 import AdminTable from '../admin/ui/AdminTable';
 import AdminToolbar from '../admin/ui/AdminToolbar';
+import AutomaticPromotionsWorkspace from './AutomaticPromotionsWorkspace';
 import styles from './DiscountsWorkspace.module.css';
 
 function createDiscountDraft(type) {
@@ -44,6 +45,7 @@ function createDiscountDraft(type) {
 
 export default function DiscountsWorkspace() {
   const { discounts, addDiscount, updateDiscount } = useDiscounts();
+  const [activeTab, setActiveTab] = useState('discount-codes');
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -105,61 +107,84 @@ export default function DiscountsWorkspace() {
   };
 
   return (
-    <AppShell onSearchChange={event => setSearchQuery(event.target.value)} searchValue={searchQuery}>
+    <AppShell>
       <AdminPage>
         <AdminPageHeader
           actions={(
-            <>
-              <AdminButton onClick={() => openBuilder('automatic')} size="sm" variant="secondary">Create automatic discount</AdminButton>
+            activeTab === 'discount-codes' ? (
               <AdminButton onClick={() => openBuilder('discount code')} size="sm" variant="primary">Create discount code</AdminButton>
-            </>
+            ) : null
           )}
-          description="Create and manage discount codes and automatic promotions."
-          eyebrow="Discounts"
-          title="Promotions"
+          description="Manage discount codes and Smart Promotions from one workspace."
+          eyebrow="Marketing"
+          title="Discounts & Promotions"
         />
 
-        <AdminCard className={styles.panel} variant="panel">
-          <AdminToolbar>
-            <AdminSelect onChange={setTypeFilter} options={typeOptions} value={typeFilter} />
-            <AdminSelect onChange={setStatusFilter} options={statusOptions} value={statusFilter} />
-            <AdminSelect onChange={setMethodFilter} options={methodOptions} value={methodFilter} />
-          </AdminToolbar>
+        <div className={styles.segmentedControl}>
+          <button
+            className={`${styles.segmentedButton} ${activeTab === 'discount-codes' ? styles.segmentedButtonActive : ''}`}
+            onClick={() => setActiveTab('discount-codes')}
+            type="button"
+          >
+            Discount codes
+          </button>
+          <button
+            className={`${styles.segmentedButton} ${activeTab === 'automatic-promotions' ? styles.segmentedButtonActive : ''}`}
+            onClick={() => setActiveTab('automatic-promotions')}
+            type="button"
+          >
+            Automatic promotions
+          </button>
+        </div>
 
-          {visibleDiscounts.length ? (
-            <AdminTable
-              columns={[
-                { key: 'title', header: 'Title', render: d => d.title },
-                { key: 'summary', header: 'Summary', render: d => d.summary },
-                { key: 'method', header: 'Method', render: d => d.method },
-                { key: 'status', header: 'Status', render: d => <AdminStatusChip tone={d.status === 'active' ? 'success' : d.status === 'scheduled' ? 'warning' : 'neutral'}>{d.status}</AdminStatusChip> },
-                { key: 'type', header: 'Type', render: d => d.type },
-              ]}
-              onRowClick={d => setSelectedDiscountId(d.id)}
-              rows={visibleDiscounts}
-              selectedId={selectedDiscount?.id || null}
-            />
-          ) : (
-            <AdminEmptyState
-              actionLabel="Create discount code"
-              description="Create a code or automatic discount to start promotions."
-              icon="sell"
-              onAction={() => openBuilder('discount code')}
-              title="No discounts yet"
-            />
-          )}
-          {selectedDiscount ? (
-            <AdminFormSection description="Current discount configuration and performance" eyebrow="Discount detail" title={selectedDiscount.title}>
-              <div className={styles.detailGrid}>
-                <div><strong>Method:</strong> {selectedDiscount.method}</div>
-                <div><strong>Status:</strong> {selectedDiscount.status}</div>
-                <div><strong>Customer eligibility:</strong> {selectedDiscount.customerEligibility}</div>
-                <div><strong>Sales channels:</strong> {selectedDiscount.salesChannel}</div>
-              </div>
-              <div className={styles.detailActions}><AdminButton onClick={() => openEditor(selectedDiscount)} size="sm" variant="secondary">Edit discount</AdminButton></div>
-            </AdminFormSection>
-          ) : null}
-        </AdminCard>
+        {activeTab === 'discount-codes' ? (
+          <AdminCard className={styles.panel} variant="panel">
+            <AdminToolbar>
+              <AdminInput onChange={event => setSearchQuery(event.target.value)} placeholder="Search discount codes..." type="search" value={searchQuery} />
+              <AdminSelect onChange={setTypeFilter} options={typeOptions} value={typeFilter} />
+              <AdminSelect onChange={setStatusFilter} options={statusOptions} value={statusFilter} />
+              <AdminSelect onChange={setMethodFilter} options={methodOptions} value={methodFilter} />
+            </AdminToolbar>
+
+            {visibleDiscounts.length ? (
+              <AdminTable
+                columns={[
+                  { key: 'title', header: 'Title', render: d => d.title },
+                  { key: 'summary', header: 'Summary', render: d => d.summary },
+                  { key: 'method', header: 'Method', render: d => d.method },
+                  { key: 'status', header: 'Status', render: d => <AdminStatusChip tone={d.status === 'active' ? 'success' : d.status === 'scheduled' ? 'warning' : 'neutral'}>{d.status}</AdminStatusChip> },
+                  { key: 'type', header: 'Type', render: d => d.type },
+                ]}
+                onRowClick={d => setSelectedDiscountId(d.id)}
+                rows={visibleDiscounts}
+                selectedId={selectedDiscount?.id || null}
+              />
+            ) : (
+              <AdminEmptyState
+                actionLabel="Create discount code"
+                description="Create a code discount to start promotions."
+                icon="sell"
+                onAction={() => openBuilder('discount code')}
+                title="No discount codes yet"
+              />
+            )}
+            {selectedDiscount ? (
+              <AdminFormSection description="Current discount configuration and performance" eyebrow="Discount detail" title={selectedDiscount.title}>
+                <div className={styles.detailGrid}>
+                  <div><strong>Method:</strong> {selectedDiscount.method}</div>
+                  <div><strong>Status:</strong> {selectedDiscount.status}</div>
+                  <div><strong>Customer eligibility:</strong> {selectedDiscount.customerEligibility}</div>
+                  <div><strong>Sales channels:</strong> {selectedDiscount.salesChannel}</div>
+                </div>
+                <div className={styles.detailActions}><AdminButton onClick={() => openEditor(selectedDiscount)} size="sm" variant="secondary">Edit discount</AdminButton></div>
+              </AdminFormSection>
+            ) : null}
+          </AdminCard>
+        ) : (
+          <AdminCard className={styles.panel} variant="panel">
+            <AutomaticPromotionsWorkspace />
+          </AdminCard>
+        )}
 
         <AdminDrawer
           actions={(
@@ -170,7 +195,7 @@ export default function DiscountsWorkspace() {
           )}
           contextItems={[
             { label: 'Discounts' },
-            { label: draftDiscount?.title || (builderMode === 'discount code' ? 'New discount code' : 'Automatic discount'), current: true },
+            { label: draftDiscount?.title || 'New discount code', current: true },
             { label: 'Draft' },
           ]}
           onClose={() => { setBuilderMode(null); setDraftDiscount(null); }}
@@ -183,7 +208,7 @@ export default function DiscountsWorkspace() {
                 <div className={styles.drawerBody}>
                   <AdminFormSection eyebrow="Identity" title="Basic settings">
                     <div className={styles.formGrid}>
-                      <AdminInput onChange={event => setDraftDiscount(current => ({ ...current, title: event.target.value, code: event.target.value }))} placeholder={builderMode === 'discount code' ? 'SUMMER20' : 'Summer auto discount'} type="text" value={draftDiscount.title} />
+                      <AdminInput onChange={event => setDraftDiscount(current => ({ ...current, title: event.target.value, code: event.target.value }))} placeholder="SUMMER20" type="text" value={draftDiscount.title} />
                       <AdminSelect onChange={value => setDraftDiscount(current => ({ ...current, method: value }))} options={DISCOUNT_METHODS.map((method) => ({ value: method, label: method }))} value={draftDiscount.method} />
                       <AdminSelect onChange={value => setDraftDiscount(current => ({ ...current, valueType: value }))} options={valueTypeOptions} value={draftDiscount.valueType} />
                       <AdminInput onChange={event => setDraftDiscount(current => ({ ...current, value: event.target.value }))} placeholder="10" type="text" value={draftDiscount.value} />
@@ -201,7 +226,7 @@ export default function DiscountsWorkspace() {
               ) : null,
             },
           ]}
-          title={builderMode === 'discount code' ? 'New discount code' : 'Automatic discount'}
+          title="New discount code"
         />
       </AdminPage>
     </AppShell>

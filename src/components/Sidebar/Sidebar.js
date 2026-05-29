@@ -34,7 +34,7 @@ export const NAV_GROUPS = [
     id: 'marketing',
     label: 'Marketing',
     items: [
-      { href: '/discounts', label: 'Discounts', icon: 'sell' },
+      { href: '/discounts', label: 'Discounts & Promotions', icon: 'sell' },
       { href: '/admin/abandoned-checkouts', label: 'Abandoned', icon: 'mark_email_unread' },
       { href: '/analytics', label: 'Analytics', icon: 'analytics' },
     ],

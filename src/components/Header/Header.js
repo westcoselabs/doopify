@@ -12,7 +12,7 @@ export const PAGE_META = [
   { match: '/draft-orders', label: 'Draft orders', icon: 'edit_document' },
   { match: '/products', label: 'Products', icon: 'inventory_2' },
   { match: '/customers', label: 'Customers', icon: 'groups' },
-  { match: '/discounts', label: 'Discounts', icon: 'sell' },
+  { match: '/discounts', label: 'Discounts & Promotions', icon: 'sell' },
   { match: '/analytics', label: 'Analytics', icon: 'analytics' },
   { match: '/media', label: 'Media', icon: 'photo_library' },
   { match: '/admin', label: 'Dashboard', icon: 'dashboard' },

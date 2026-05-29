@@ -1,0 +1,227 @@
+.workspace {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.createRow {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.errorBanner {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid color-mix(in srgb, #ef4444 38%, transparent);
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+  color: color-mix(in srgb, #ef4444 72%, #f8fafc);
+  font-size: 0.82rem;
+}
+
+.drawerBody {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.typeCards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.typeCard {
+  text-align: left;
+  border-radius: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--line-subtle) 84%, transparent);
+  padding: 0.7rem;
+  background: color-mix(in srgb, var(--surface-soft) 88%, transparent);
+  color: inherit;
+  display: grid;
+  gap: 0.3rem;
+  cursor: pointer;
+}
+
+.typeCard p,
+.typeCard small {
+  margin: 0;
+  opacity: 0.82;
+  font-size: 0.79rem;
+}
+
+.typeCardActive {
+  border-color: color-mix(in srgb, var(--brand-primary) 68%, transparent);
+  background: color-mix(in srgb, var(--brand-primary) 12%, var(--surface-soft));
+}
+
+.selectionList {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.selectionLabel {
+  margin: 0;
+  font-size: 0.79rem;
+  opacity: 0.8;
+}
+
+.selectionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--line-subtle) 82%, transparent);
+  border-radius: 0.75rem;
+  padding: 0.55rem 0.6rem;
+}
+
+.selectionRow p {
+  margin: 0.2rem 0 0;
+  font-size: 0.75rem;
+  opacity: 0.8;
+}
+
+.selectionActions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.selectionActions input {
+  width: 72px;
+}
+
+.quantityLabel {
+  font-size: 0.72rem;
+  opacity: 0.76;
+}
+
+.catalogToolbar {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.catalogToolbar input {
+  flex: 1;
+}
+
+.catalogList {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.catalogProduct {
+  border: 1px solid color-mix(in srgb, var(--line-subtle) 84%, transparent);
+  border-radius: 0.75rem;
+  padding: 0.55rem 0.6rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.catalogProductHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.catalogProductHeader p {
+  margin: 0.2rem 0 0;
+  font-size: 0.75rem;
+  opacity: 0.76;
+}
+
+.catalogVariantList {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.catalogVariantRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  border-radius: 0.6rem;
+  border: 1px dashed color-mix(in srgb, var(--line-subtle) 78%, transparent);
+  padding: 0.45rem 0.5rem;
+  font-size: 0.79rem;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.previewText {
+  margin: 0;
+  font-size: 0.84rem;
+}
+
+.previewGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.previewGrid p {
+  margin: 0;
+  font-size: 0.79rem;
+}
+
+.inlineHint {
+  margin: 0;
+  font-size: 0.76rem;
+  opacity: 0.78;
+}
+
+.inlineError {
+  margin: 0;
+  font-size: 0.76rem;
+  color: color-mix(in srgb, #ef4444 72%, #f8fafc);
+}
+
+.fieldError {
+  color: color-mix(in srgb, #ef4444 72%, #f8fafc);
+  font-size: 0.72rem;
+  margin-top: 0.25rem;
+}
+
+.inlineErrorList {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.4rem;
+}
+
+.inlineErrorList p {
+  margin: 0;
+  font-size: 0.74rem;
+  color: color-mix(in srgb, #ef4444 72%, #f8fafc);
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+@media (max-width: 980px) {
+  .typeCards {
+    grid-template-columns: 1fr;
+  }
+
+  .previewGrid,
+  .formGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .catalogToolbar {
+    flex-direction: column;
+  }
+
+  .selectionRow,
+  .catalogVariantRow,
+  .catalogProductHeader {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

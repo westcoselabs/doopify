@@ -4,6 +4,31 @@
   gap: 0.75rem;
 }
 
+.segmentedControl {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  border: 1px solid color-mix(in srgb, var(--line-subtle) 84%, transparent);
+  background: color-mix(in srgb, var(--surface-soft) 88%, transparent);
+  border-radius: 999px;
+  padding: 0.2rem;
+}
+
+.segmentedButton {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  border-radius: 999px;
+  padding: 0.38rem 0.82rem;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+
+.segmentedButtonActive {
+  background: color-mix(in srgb, var(--brand-primary) 16%, var(--surface-soft));
+  color: color-mix(in srgb, var(--brand-primary) 68%, #f8fafc);
+}
+
 .field {
   min-width: 160px;
 }
@@ -34,5 +59,13 @@
   .detailGrid,
   .formGrid {
     grid-template-columns: 1fr;
+  }
+
+  .segmentedControl {
+    width: 100%;
+  }
+
+  .segmentedButton {
+    flex: 1;
   }
 }
