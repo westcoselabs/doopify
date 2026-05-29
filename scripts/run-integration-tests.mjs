@@ -27,11 +27,49 @@ function resolveSchemaName(databaseUrlTest) {
 
 const prismaPgSchema = resolveSchemaName(process.env.DATABASE_URL_TEST)
 
+function normalizeCredential(value) {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim()
+  return normalized ? normalized : null
+}
+
+function hasRealCredential(value) {
+  const normalized = normalizeCredential(value)?.toLowerCase()
+  if (!normalized) return false
+  if (
+    normalized === 'sk_test_replace_me' ||
+    normalized === 'pk_test_replace_me' ||
+    normalized === 'whsec_replace_me'
+  ) {
+    return false
+  }
+  return !(
+    normalized.includes('replace_me') ||
+    normalized.includes('replace-with') ||
+    normalized.includes('replace_with') ||
+    normalized.includes('example_key') ||
+    normalized.includes('example_secret')
+  )
+}
+
+const stripeSecretKey = hasRealCredential(process.env.STRIPE_SECRET_KEY)
+  ? process.env.STRIPE_SECRET_KEY
+  : 'sk_test_integration_runner'
+const stripePublishableKey = hasRealCredential(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY)
+  ? process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+  : 'pk_test_integration_runner'
+const stripeWebhookSecret = hasRealCredential(process.env.STRIPE_WEBHOOK_SECRET)
+  ? process.env.STRIPE_WEBHOOK_SECRET
+  : 'whsec_integration_runner'
+
 const runEnv = {
   ...process.env,
   DATABASE_URL: process.env.DATABASE_URL_TEST,
   DATABASE_URL_TEST: process.env.DATABASE_URL_TEST,
   PRISMA_PG_SCHEMA: prismaPgSchema,
+  STRIPE_SECRET_KEY: stripeSecretKey,
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: stripePublishableKey,
+  STRIPE_WEBHOOK_SECRET: stripeWebhookSecret,
   NODE_ENV: 'test',
 }
 
