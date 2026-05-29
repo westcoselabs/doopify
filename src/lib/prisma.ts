@@ -21,12 +21,20 @@ function normalizePgConnectionString(connectionString: string) {
   return connectionString
 }
 
+function getPrismaSchemaOverride() {
+  const schema = String(process.env.PRISMA_PG_SCHEMA || '').trim()
+  return schema || undefined
+}
+
 function getPrismaAdapter() {
+  const connectionString = normalizePgConnectionString(env.DATABASE_URL)
+  const schema = getPrismaSchemaOverride()
+
   return (
     globalForPrisma.prismaAdapter ??
     new PrismaPg({
-      connectionString: normalizePgConnectionString(env.DATABASE_URL),
-    })
+      connectionString,
+    }, schema ? { schema } : undefined)
   )
 }
 

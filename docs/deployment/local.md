@@ -120,10 +120,13 @@ npm run build
 Run integration tests when a disposable test database is configured:
 
 ```bash
+npm run db:test:reset
 DATABASE_URL_TEST="postgresql://..." npm run test:integration
 ```
 
 Never point `DATABASE_URL_TEST` at your development or production database.
+`npm run db:test:reset` rebuilds the integration schema and runs `prisma db push` against `DATABASE_URL_TEST`, so use a disposable test target.
+Use a dedicated test schema in `DATABASE_URL_TEST` (for example `...?schema=doopify_test`) unless you intentionally set `ALLOW_PUBLIC_TEST_SCHEMA=1`.
 
 ---
 
