@@ -127,6 +127,10 @@ function buildOrder(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function countOccurrences(input: string, needle: string): number {
+  return input.split(needle).length - 1
+}
+
 describe('OrderDetailView', () => {
   it('renders loading skeleton while order detail is still loading', () => {
     const html = renderToStaticMarkup(
@@ -207,6 +211,10 @@ describe('OrderDetailView', () => {
     const html = renderToStaticMarkup(
       <OrderDetailView
         order={buildOrder({
+          availableActions: {
+            canBuyShippingLabel: true,
+            canMarkFulfilled: true,
+          },
           lineItems: [
             {
               id: 'item_digital',
@@ -251,12 +259,15 @@ describe('OrderDetailView', () => {
     expect(html).not.toContain('Carrier')
     expect(html).not.toContain('Tracking number')
     expect(html).not.toContain('Tracking URL')
+    expect(html).not.toContain('Mark shipped')
   })
 
   it('shows a digital fulfillment summary for digital-only orders', () => {
     const html = renderToStaticMarkup(
       <OrderDetailView
         order={buildOrder({
+          shippingStatus: 'unknown',
+          fulfillmentStatus: 'unknown',
           lineItems: [
             {
               id: 'item_digital',
@@ -288,6 +299,19 @@ describe('OrderDetailView', () => {
                 deliveryTokenAvailable: true,
                 events: [],
               },
+              {
+                grantId: 'grant_2',
+                title: 'Bonus Download',
+                fileName: 'bonus.pdf',
+                status: 'REVOKED',
+                downloadCount: 0,
+                downloadLimit: 5,
+                expiresAt: '2098-12-31T20:00:00.000Z',
+                lastDownloadedAt: null,
+                deliveryEmailStatus: null,
+                deliveryTokenAvailable: true,
+                events: [],
+              },
             ],
           },
         })}
@@ -295,11 +319,22 @@ describe('OrderDetailView', () => {
     )
 
     expect(html).toContain('Digital fulfillment')
-    expect(html).toContain('This order is delivered by secure download link. No shipping or tracking is required.')
-    expect(html).toContain('Digital Field Guide')
-    expect(html).toContain('Downloads used: 1 of 5')
-    expect(html).toContain('Delivery email: SENT')
-    expect(html).toContain('Manage download access in the Digital delivery card.')
+    expect(html).toContain('This order is fulfilled by secure download access. No shipping or tracking is required.')
+    expect(html).toContain('No physical fulfillment required')
+    expect(html).toContain('Digital products are delivered by secure download link.')
+    expect(html).toContain('2 files prepared')
+    expect(html).toContain('1 active · 1 revoked')
+    expect(html).toContain('Manage download links and resend access in the Digital delivery card.')
+    expect(html).toContain('Copy link')
+    expect(html).toContain('Resend email')
+    expect(html).toContain('Regenerate link')
+    expect(html).toContain('Revoke access')
+    expect(countOccurrences(html, 'guide.pdf')).toBe(1)
+    expect(countOccurrences(html, 'bonus.pdf')).toBe(1)
+    expect(html).toContain('Delivery')
+    expect(html).toContain('Shipping - Not required')
+    expect(html).toContain('$0.00')
+    expect(html).not.toContain('unknown')
   })
 
   it('shows shipping not required for digital-only orders', () => {
@@ -336,7 +371,16 @@ describe('OrderDetailView', () => {
   })
 
   it('preserves physical fulfillment controls for physical orders', () => {
-    const html = renderToStaticMarkup(<OrderDetailView order={buildOrder()} />)
+    const html = renderToStaticMarkup(
+      <OrderDetailView
+        order={buildOrder({
+          availableActions: {
+            canBuyShippingLabel: true,
+            canMarkFulfilled: true,
+          },
+        })}
+      />
+    )
 
     expect(html).toContain('Create fulfillment')
     expect(html).toContain('Fulfillment method')
@@ -346,6 +390,8 @@ describe('OrderDetailView', () => {
     expect(html).toContain('Tracking number')
     expect(html).toContain('Tracking URL')
     expect(html).toContain('Shipment')
+    expect(html).toContain('Mark shipped')
+    expect(html).not.toContain('No physical fulfillment required')
   })
 
   it('renders shipment card after manual tracking exists', () => {

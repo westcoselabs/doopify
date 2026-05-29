@@ -48,6 +48,10 @@ function normalizeLineItemFulfillmentType(item) {
   return String(rawType || "").trim().toUpperCase() === "DIGITAL" ? "DIGITAL" : "PHYSICAL";
 }
 
+function pluralize(value, singular, plural) {
+  return value === 1 ? singular : plural;
+}
+
 export function isDigitalOnlyOrder(order) {
   const items = Array.isArray(order?.lineItems)
     ? order.lineItems
@@ -414,6 +418,33 @@ export default function OrderDetailView({
   const hasDigitalDelivery = Boolean(digitalDelivery?.hasDigitalItems);
   const digitalOnlyOrder = useMemo(() => isDigitalOnlyOrder(currentOrder), [currentOrder]);
   const digitalDeliveryPanelReady = digitalDeliveryLoaded && !digitalDeliveryLoading;
+  const digitalFulfillmentSummary = (() => {
+    const grants = Array.isArray(digitalDelivery?.grants) ? digitalDelivery.grants : [];
+    const counts = grants.reduce(
+      (accumulator, grant) => {
+        const normalized = String(grant.status || "PENDING").toUpperCase();
+        if (normalized === "ACTIVE") accumulator.active += 1;
+        else if (normalized === "REVOKED") accumulator.revoked += 1;
+        else if (normalized === "EXPIRED") accumulator.expired += 1;
+        else if (normalized === "EXHAUSTED") accumulator.exhausted += 1;
+        else accumulator.pending += 1;
+        return accumulator;
+      },
+      { active: 0, revoked: 0, pending: 0, expired: 0, exhausted: 0 }
+    );
+    const statusParts = [
+      counts.active ? `${counts.active} active` : "",
+      counts.revoked ? `${counts.revoked} revoked` : "",
+      counts.pending ? `${counts.pending} pending` : "",
+      counts.expired ? `${counts.expired} expired` : "",
+      counts.exhausted ? `${counts.exhausted} limit reached` : "",
+    ].filter(Boolean);
+
+    return {
+      preparedCount: grants.length,
+      statusSummary: statusParts.join(" · ") || "No access grants prepared yet.",
+    };
+  })();
   const emailProviderConfigured = Boolean(currentOrder?.emailCapabilities?.providerConfigured);
   const fulfillmentPanelReady = fulfillmentLoaded && !fulfillmentLoading;
   const timelinePanelReady = timelineLoaded && !timelineLoading;
@@ -453,9 +484,11 @@ export default function OrderDetailView({
         prefix: "Payment",
       },
       {
-        key: "shipping",
-        label: currentOrder?.shippingStatus || currentOrder?.fulfillmentStatus || "unknown",
-        prefix: "Shipping",
+        key: digitalOnlyOrder ? "delivery" : "shipping",
+        label: digitalOnlyOrder
+          ? "Digital"
+          : currentOrder?.shippingStatus || currentOrder?.fulfillmentStatus || "unknown",
+        prefix: digitalOnlyOrder ? "Delivery" : "Shipping",
       },
       {
         key: "order",
@@ -463,7 +496,7 @@ export default function OrderDetailView({
         prefix: "Order",
       },
     ],
-    [currentOrder]
+    [currentOrder, digitalOnlyOrder]
   );
 
   const fulfillableItems = useMemo(() => {
@@ -1064,10 +1097,12 @@ export default function OrderDetailView({
     );
   }
 
+  const canMarkFulfilledAction =
+    !digitalOnlyOrder && currentOrder?.availableActions?.canMarkFulfilled;
   const hasStatusActions =
     currentOrder?.availableActions?.canMarkPaid ||
     currentOrder?.availableActions?.canMarkPaymentPending ||
-    currentOrder?.availableActions?.canMarkFulfilled ||
+    canMarkFulfilledAction ||
     currentOrder?.availableActions?.canMarkUnfulfilled;
 
   return (
@@ -1138,7 +1173,7 @@ export default function OrderDetailView({
                 Mark payment pending
               </AdminButton>
             ) : null}
-            {currentOrder?.availableActions?.canMarkFulfilled ? (
+            {canMarkFulfilledAction ? (
               <AdminButton
                 loading={statusActionLoading === "markFulfilled"}
                 onClick={() => updateOrderStatusPatch({ fulfillmentStatus: "FULFILLED" }, "markFulfilled", "Order marked shipped.")}
@@ -1200,9 +1235,13 @@ export default function OrderDetailView({
               </div>
             ) : (
               <AdminEmptyState
-                description="No fulfillments have been created for this order yet."
+                description={
+                  digitalOnlyOrder
+                    ? "Digital products are delivered by secure download link."
+                    : "No fulfillments have been created for this order yet."
+                }
                 icon="local_shipping"
-                title="No fulfillment records"
+                title={digitalOnlyOrder ? "No physical fulfillment required" : "No fulfillment records"}
               />
             )}
 
@@ -1235,47 +1274,22 @@ export default function OrderDetailView({
             <AdminCard className={styles.card} variant="panel">
               <h3 className={styles.cardTitle}>Digital fulfillment</h3>
               <p className={styles.cardSubtitle}>
-                This order is delivered by secure download link. No shipping or tracking is required.
+                This order is fulfilled by secure download access. No shipping or tracking is required.
               </p>
 
               {!digitalDeliveryPanelReady ? (
                 <p className={styles.metaText}>Loading digital fulfillment details...</p>
-              ) : digitalDelivery?.grants?.length ? (
-                <div className={styles.digitalFulfillmentList}>
-                  {digitalDelivery.grants.map((grant) => (
-                    <div className={styles.digitalFulfillmentRow} key={grant.grantId}>
-                      <div className={styles.digitalDeliveryTitleRow}>
-                        <strong>{grant.title || grant.fileName || "Digital download"}</strong>
-                        <AdminStatusChip tone={digitalDeliveryStatusTone(grant.status)}>
-                          {digitalDeliveryStatusLabel(grant.status)}
-                        </AdminStatusChip>
-                      </div>
-                      {grant.fileName ? <p className={styles.metaText}>{grant.fileName}</p> : null}
-                      <p className={styles.metaText}>
-                        Downloads used: {grant.downloadCount} of {grant.downloadLimit}
-                      </p>
-                      <p className={styles.metaText}>
-                        Delivery email: {grant.deliveryEmailStatus || digitalDelivery.deliveryEmailStatus || "Pending"}
-                      </p>
-                      <p className={styles.metaText}>
-                        Expires:{" "}
-                        {formatDateTimeForDisplay(grant.expiresAt, {
-                          timeZone: storeTimeZone,
-                          fallbackText: "Unknown",
-                        })}
-                      </p>
-                    </div>
-                  ))}
-                </div>
               ) : (
-                <AdminEmptyState
-                  description="Digital items were purchased, but download access is still being prepared."
-                  icon="download"
-                  title="Digital access pending"
-                />
+                <div className={styles.infoBlock}>
+                  <p>
+                    {digitalFulfillmentSummary.preparedCount}{" "}
+                    {pluralize(digitalFulfillmentSummary.preparedCount, "file", "files")} prepared
+                  </p>
+                  <p>{digitalFulfillmentSummary.statusSummary}</p>
+                </div>
               )}
 
-              <p className={styles.helperNote}>Manage download access in the Digital delivery card.</p>
+              <p className={styles.helperNote}>Manage download links and resend access in the Digital delivery card.</p>
             </AdminCard>
           ) : (
           <AdminCard className={styles.card} variant="panel">
@@ -1661,14 +1675,15 @@ export default function OrderDetailView({
                 <span>{formatMoney(currentOrder.subtotal, currency)}</span>
               </div>
               <div className={styles.summaryRowMuted}>
-                <span>Shipping paid by customer
-                  {currentOrder.shippingMethodName ? (
+                <span>
+                  {digitalOnlyOrder ? "Shipping - Not required" : "Shipping paid by customer"}
+                  {!digitalOnlyOrder && currentOrder.shippingMethodName ? (
                     <span style={{ display: "block", fontSize: "0.76rem", marginTop: "0.1rem" }}>
                       {currentOrder.shippingMethodName}
                     </span>
                   ) : null}
                 </span>
-                <span>{formatMoney(currentOrder.shippingAmount, currency)}</span>
+                <span>{formatMoney(digitalOnlyOrder ? 0 : currentOrder.shippingAmount, currency)}</span>
               </div>
               <div className={styles.summaryRowMuted}>
                 <span>Tax</span>
