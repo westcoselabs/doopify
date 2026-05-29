@@ -43,6 +43,22 @@ function digitalDeliveryStatusTone(status) {
   return "neutral";
 }
 
+function normalizeLineItemFulfillmentType(item) {
+  const rawType = item?.fulfillmentType ?? item?.product?.fulfillmentType ?? item?.productFulfillmentType;
+  return String(rawType || "").trim().toUpperCase() === "DIGITAL" ? "DIGITAL" : "PHYSICAL";
+}
+
+export function isDigitalOnlyOrder(order) {
+  const items = Array.isArray(order?.lineItems)
+    ? order.lineItems
+    : Array.isArray(order?.items)
+      ? order.items
+      : [];
+
+  if (!items.length) return false;
+  return items.every((item) => normalizeLineItemFulfillmentType(item) === "DIGITAL");
+}
+
 function formatMoney(value, currency = "USD") {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -396,6 +412,7 @@ export default function OrderDetailView({
     Boolean(currentOrder?.email || currentOrder?.customer?.email);
   const digitalDelivery = currentOrder?.digitalDelivery || null;
   const hasDigitalDelivery = Boolean(digitalDelivery?.hasDigitalItems);
+  const digitalOnlyOrder = useMemo(() => isDigitalOnlyOrder(currentOrder), [currentOrder]);
   const digitalDeliveryPanelReady = digitalDeliveryLoaded && !digitalDeliveryLoading;
   const emailProviderConfigured = Boolean(currentOrder?.emailCapabilities?.providerConfigured);
   const fulfillmentPanelReady = fulfillmentLoaded && !fulfillmentLoading;
@@ -1214,6 +1231,53 @@ export default function OrderDetailView({
           </AdminCard>
 
           {/* Fulfillment setup */}
+          {digitalOnlyOrder ? (
+            <AdminCard className={styles.card} variant="panel">
+              <h3 className={styles.cardTitle}>Digital fulfillment</h3>
+              <p className={styles.cardSubtitle}>
+                This order is delivered by secure download link. No shipping or tracking is required.
+              </p>
+
+              {!digitalDeliveryPanelReady ? (
+                <p className={styles.metaText}>Loading digital fulfillment details...</p>
+              ) : digitalDelivery?.grants?.length ? (
+                <div className={styles.digitalFulfillmentList}>
+                  {digitalDelivery.grants.map((grant) => (
+                    <div className={styles.digitalFulfillmentRow} key={grant.grantId}>
+                      <div className={styles.digitalDeliveryTitleRow}>
+                        <strong>{grant.title || grant.fileName || "Digital download"}</strong>
+                        <AdminStatusChip tone={digitalDeliveryStatusTone(grant.status)}>
+                          {digitalDeliveryStatusLabel(grant.status)}
+                        </AdminStatusChip>
+                      </div>
+                      {grant.fileName ? <p className={styles.metaText}>{grant.fileName}</p> : null}
+                      <p className={styles.metaText}>
+                        Downloads used: {grant.downloadCount} of {grant.downloadLimit}
+                      </p>
+                      <p className={styles.metaText}>
+                        Delivery email: {grant.deliveryEmailStatus || digitalDelivery.deliveryEmailStatus || "Pending"}
+                      </p>
+                      <p className={styles.metaText}>
+                        Expires:{" "}
+                        {formatDateTimeForDisplay(grant.expiresAt, {
+                          timeZone: storeTimeZone,
+                          fallbackText: "Unknown",
+                        })}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <AdminEmptyState
+                  description="Digital items were purchased, but download access is still being prepared."
+                  icon="download"
+                  title="Digital access pending"
+                />
+              )}
+
+              <p className={styles.helperNote}>Manage download access in the Digital delivery card.</p>
+            </AdminCard>
+          ) : (
           <AdminCard className={styles.card} variant="panel">
             <h3 className={styles.cardTitle}>Create fulfillment</h3>
             <p className={styles.cardSubtitle}>Choose how you want to fulfill this order.</p>
@@ -1543,6 +1607,7 @@ export default function OrderDetailView({
               </>
             )}
           </AdminCard>
+          )}
           {/* â”€â”€ Line items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
           <AdminCard className={styles.card} variant="panel">
             <h3 className={styles.cardTitle}>Line items</h3>
@@ -1688,8 +1753,13 @@ export default function OrderDetailView({
         <div className={styles.sideColumn}>
 
           <AdminCard className={styles.sideCard} variant="panel">
-            <h3 className={styles.cardTitle}>Shipment</h3>
-            {!fulfillmentPanelReady ? (
+            <h3 className={styles.cardTitle}>{digitalOnlyOrder ? "Shipping" : "Shipment"}</h3>
+            {digitalOnlyOrder ? (
+              <div className={styles.digitalShippingNotice}>
+                <strong>Not required</strong>
+                <p>Digital orders are delivered by secure download link.</p>
+              </div>
+            ) : !fulfillmentPanelReady ? (
               <p className={styles.metaText}>Loading shipment details...</p>
             ) : shipmentCards.length ? (
               <div className={styles.shipmentCardList}>
@@ -1734,12 +1804,14 @@ export default function OrderDetailView({
                 title="No shipments"
               />
             )}
-            <p className={styles.metaText}>
-              <Link className={styles.inlineLinkButton} href="/admin/webhooks?tab=email">
-                Check delivery logs
-              </Link>{" "}
-              for queued tracking emails.
-            </p>
+            {!digitalOnlyOrder ? (
+              <p className={styles.metaText}>
+                <Link className={styles.inlineLinkButton} href="/admin/webhooks?tab=email">
+                  Check delivery logs
+                </Link>{" "}
+                for queued tracking emails.
+              </p>
+            ) : null}
           </AdminCard>
 
           {digitalDeliveryPanelReady && hasDigitalDelivery ? (

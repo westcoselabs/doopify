@@ -855,6 +855,27 @@
   gap: 0.7rem;
 }
 
+.digitalShippingNotice {
+  border: 1px solid var(--glass-border);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--surface-container-low) 72%, transparent);
+  padding: 0.85rem 0.9rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.digitalShippingNotice strong {
+  color: var(--on-surface);
+  font-size: 0.9rem;
+}
+
+.digitalShippingNotice p {
+  margin: 0;
+  color: var(--on-surface-variant);
+  font-size: 0.83rem;
+  line-height: 1.5;
+}
+
 .digitalDeliveryHeader {
   display: flex;
   align-items: flex-start;
@@ -866,6 +887,21 @@
 .digitalDeliveryList {
   display: grid;
   gap: 0.65rem;
+}
+
+.digitalFulfillmentList {
+  display: grid;
+  gap: 0.65rem;
+  margin-bottom: 0.875rem;
+}
+
+.digitalFulfillmentRow {
+  border: 1px solid var(--glass-border);
+  border-radius: 0.85rem;
+  background: color-mix(in srgb, var(--surface-container-low) 72%, transparent);
+  padding: 0.8rem 0.9rem;
+  display: grid;
+  gap: 0.32rem;
 }
 
 .digitalDeliveryRow {

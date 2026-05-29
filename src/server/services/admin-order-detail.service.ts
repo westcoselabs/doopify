@@ -274,6 +274,11 @@ export async function getAdminOrderCoreByOrderNumber(orderNumber: number) {
       },
       items: {
         include: {
+          product: {
+            select: {
+              fulfillmentType: true,
+            },
+          },
           variant: {
             select: {
               title: true,
@@ -329,6 +334,7 @@ export async function getAdminOrderCoreByOrderNumber(orderNumber: number) {
     variant: item.variantTitle || item.variant?.title || '',
     variantTitle: item.variantTitle || item.variant?.title || '',
     sku: item.sku || item.variant?.sku || '',
+    fulfillmentType: item.product?.fulfillmentType || 'PHYSICAL',
     quantity: item.quantity,
     price: centsToDollars(item.priceCents),
     priceCents: item.priceCents,

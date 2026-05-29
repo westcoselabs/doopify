@@ -20,6 +20,7 @@ vi.mock('../../context/SettingsContext', () => ({
 }))
 
 import OrderDetailView, {
+  isDigitalOnlyOrder,
   orderStatusChipTone,
   resolveOrderLabelProviderSelection,
   STORE_DEFAULT_LABEL_PROVIDER_OPTION,
@@ -73,6 +74,7 @@ function buildOrder(overrides: Record<string, unknown> = {}) {
         id: 'item_1',
         title: 'Hoodie',
         variantTitle: 'Large',
+        fulfillmentType: 'PHYSICAL',
         quantity: 2,
         total: 50,
         totalDiscount: 5,
@@ -199,6 +201,151 @@ describe('OrderDetailView', () => {
     expect(html).toContain('EasyPost')
     expect(html).toContain('Shippo')
     expect(html).toContain('Store default: EasyPost')
+  })
+
+  it('does not show tracking form fields for digital-only orders', () => {
+    const html = renderToStaticMarkup(
+      <OrderDetailView
+        order={buildOrder({
+          lineItems: [
+            {
+              id: 'item_digital',
+              title: 'Digital Field Guide',
+              variantTitle: 'PDF',
+              fulfillmentType: 'DIGITAL',
+              quantity: 1,
+              total: 19,
+              totalDiscount: 0,
+            },
+          ],
+          fulfillments: [],
+          shippingLabels: [],
+          digitalDelivery: {
+            hasDigitalItems: true,
+            pending: false,
+            deliveryEmailStatus: 'SENT',
+            grants: [
+              {
+                grantId: 'grant_1',
+                title: 'Digital Field Guide',
+                fileName: 'guide.pdf',
+                status: 'ACTIVE',
+                downloadCount: 1,
+                downloadLimit: 5,
+                expiresAt: '2098-12-31T20:00:00.000Z',
+                lastDownloadedAt: '2026-05-28T13:00:00.000Z',
+                deliveryEmailStatus: 'SENT',
+                deliveryTokenAvailable: true,
+                events: [],
+              },
+            ],
+          },
+        })}
+      />
+    )
+
+    expect(html).not.toContain('Create fulfillment')
+    expect(html).not.toContain('Fulfillment method')
+    expect(html).not.toContain('Buy shipping label')
+    expect(html).not.toContain('Add tracking manually')
+    expect(html).not.toContain('Carrier')
+    expect(html).not.toContain('Tracking number')
+    expect(html).not.toContain('Tracking URL')
+  })
+
+  it('shows a digital fulfillment summary for digital-only orders', () => {
+    const html = renderToStaticMarkup(
+      <OrderDetailView
+        order={buildOrder({
+          lineItems: [
+            {
+              id: 'item_digital',
+              title: 'Digital Field Guide',
+              variantTitle: 'PDF',
+              fulfillmentType: 'DIGITAL',
+              quantity: 1,
+              total: 19,
+              totalDiscount: 0,
+            },
+          ],
+          fulfillments: [],
+          shippingLabels: [],
+          digitalDelivery: {
+            hasDigitalItems: true,
+            pending: false,
+            deliveryEmailStatus: 'SENT',
+            grants: [
+              {
+                grantId: 'grant_1',
+                title: 'Digital Field Guide',
+                fileName: 'guide.pdf',
+                status: 'ACTIVE',
+                downloadCount: 1,
+                downloadLimit: 5,
+                expiresAt: '2098-12-31T20:00:00.000Z',
+                lastDownloadedAt: null,
+                deliveryEmailStatus: 'SENT',
+                deliveryTokenAvailable: true,
+                events: [],
+              },
+            ],
+          },
+        })}
+      />
+    )
+
+    expect(html).toContain('Digital fulfillment')
+    expect(html).toContain('This order is delivered by secure download link. No shipping or tracking is required.')
+    expect(html).toContain('Digital Field Guide')
+    expect(html).toContain('Downloads used: 1 of 5')
+    expect(html).toContain('Delivery email: SENT')
+    expect(html).toContain('Manage download access in the Digital delivery card.')
+  })
+
+  it('shows shipping not required for digital-only orders', () => {
+    const html = renderToStaticMarkup(
+      <OrderDetailView
+        order={buildOrder({
+          lineItems: [
+            {
+              id: 'item_digital',
+              title: 'Digital Field Guide',
+              variantTitle: 'PDF',
+              fulfillmentType: 'DIGITAL',
+              quantity: 1,
+              total: 19,
+              totalDiscount: 0,
+            },
+          ],
+          fulfillments: [],
+          shippingLabels: [],
+          digitalDelivery: {
+            hasDigitalItems: true,
+            pending: false,
+            grants: [],
+          },
+        })}
+      />
+    )
+
+    expect(html).toContain('Shipping')
+    expect(html).toContain('Not required')
+    expect(html).toContain('Digital orders are delivered by secure download link.')
+    expect(html).not.toContain('No shipments have been created yet.')
+    expect(html).not.toContain('queued tracking emails')
+  })
+
+  it('preserves physical fulfillment controls for physical orders', () => {
+    const html = renderToStaticMarkup(<OrderDetailView order={buildOrder()} />)
+
+    expect(html).toContain('Create fulfillment')
+    expect(html).toContain('Fulfillment method')
+    expect(html).toContain('Buy shipping label')
+    expect(html).toContain('Add tracking manually')
+    expect(html).toContain('Carrier')
+    expect(html).toContain('Tracking number')
+    expect(html).toContain('Tracking URL')
+    expect(html).toContain('Shipment')
   })
 
   it('renders shipment card after manual tracking exists', () => {
@@ -438,6 +585,26 @@ describe('OrderDetailView', () => {
     expect(orderStatusChipTone('PARTIALLY SHIPPED')).toBe('warning')
     expect(orderStatusChipTone('FAILED')).toBe('danger')
     expect(orderStatusChipTone('UNKNOWN_STATE')).toBe('neutral')
+  })
+
+  it('detects digital-only orders only when every line item is explicitly digital', () => {
+    expect(
+      isDigitalOnlyOrder({
+        lineItems: [
+          { id: 'item_1', fulfillmentType: 'DIGITAL' },
+          { id: 'item_2', product: { fulfillmentType: 'DIGITAL' } },
+        ],
+      })
+    ).toBe(true)
+
+    expect(
+      isDigitalOnlyOrder({
+        lineItems: [
+          { id: 'item_1', fulfillmentType: 'DIGITAL' },
+          { id: 'item_2' },
+        ],
+      })
+    ).toBe(false)
   })
 
   it('builds provider override for selected provider and falls back to store default when requested', () => {
