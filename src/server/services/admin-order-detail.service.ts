@@ -113,6 +113,42 @@ function mapShippingLabelList(
   }))
 }
 
+function mapPromotionApplications(
+  applications: Array<{
+    id: string
+    promotionId: string | null
+    nameSnapshot: string
+    typeSnapshot: string
+    rewardTypeSnapshot: string
+    amountCents: number
+    lines: Array<{
+      id: string
+      variantId: string | null
+      orderItemId: string | null
+      quantityDiscounted: number
+      discountCents: number
+    }>
+  }>
+) {
+  return applications.map((application) => ({
+    id: application.id,
+    promotionId: application.promotionId,
+    name: application.nameSnapshot,
+    type: application.typeSnapshot,
+    rewardType: application.rewardTypeSnapshot,
+    amount: centsToDollars(application.amountCents),
+    amountCents: application.amountCents,
+    lineAllocations: application.lines.map((line) => ({
+      id: line.id,
+      variantId: line.variantId,
+      orderItemId: line.orderItemId,
+      quantityDiscounted: line.quantityDiscounted,
+      discountCents: line.discountCents,
+      discount: centsToDollars(line.discountCents),
+    })),
+  }))
+}
+
 function mapFulfillmentList(
   fulfillments: Array<{
     id: string
@@ -301,6 +337,20 @@ export async function getAdminOrderCoreByOrderNumber(orderNumber: number) {
           },
         },
       },
+      promotionApplications: {
+        include: {
+          lines: {
+            select: {
+              id: true,
+              variantId: true,
+              orderItemId: true,
+              quantityDiscounted: true,
+              discountCents: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+      },
       fulfillments: {
         select: {
           status: true,
@@ -367,6 +417,7 @@ export async function getAdminOrderCoreByOrderNumber(orderNumber: number) {
     amount: centsToDollars(application.amountCents),
     amountCents: application.amountCents,
   }))
+  const promotionApplications = mapPromotionApplications(order.promotionApplications ?? [])
 
   const payments = order.payments.map((payment) => ({
     id: payment.id,
@@ -452,6 +503,7 @@ export async function getAdminOrderCoreByOrderNumber(orderNumber: number) {
     items: lineItems,
     discounts,
     discountApplications: discounts,
+    promotionApplications,
     shippingSummary: {
       amount: paymentSummary.shippingAmount,
       amountCents: paymentSummary.shippingAmountCents,

@@ -928,6 +928,7 @@ export async function completeCheckoutFromPaymentIntent(intent: StripePaymentInt
     shippingAddress: payload.shippingAddress,
     billingAddress: payload.billingAddress,
     discountApplications: payload.discountApplications,
+    promotionApplications: payload.promotionApplications,
     taxAmountCents: checkoutSession.taxAmountCents,
     shippingAmountCents: checkoutSession.shippingAmountCents,
     shippingMethodName: selectedShippingRate?.displayName,

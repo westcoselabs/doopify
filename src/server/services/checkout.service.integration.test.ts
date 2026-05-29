@@ -74,6 +74,8 @@ async function cleanTestData() {
   await prisma.promotionReward.deleteMany()
   await prisma.promotionQualifier.deleteMany()
   await prisma.promotion.deleteMany()
+  await prisma.promotionApplicationLine.deleteMany()
+  await prisma.promotionApplication.deleteMany()
   await prisma.discountApplication.deleteMany()
   await prisma.discount.deleteMany()
   await prisma.refund.deleteMany()
@@ -155,6 +157,22 @@ async function createCheckoutSession(input: {
     method: 'PERCENTAGE' | 'FIXED_AMOUNT' | 'FREE_SHIPPING' | 'BUY_X_GET_Y'
     amountCents: number
   }
+  promotionApplications?: Array<{
+    promotionId: string
+    promotionName: string
+    promotionType: 'PRODUCT_GROUP_DISCOUNT' | 'BUY_X_GET_Y' | 'FREE_GIFT'
+    rewardType: 'PERCENTAGE' | 'FIXED_AMOUNT' | 'FREE'
+    amountCents: number
+    summary?: string
+    lineAllocations?: Array<{
+      variantId: string
+      quantityDiscounted: number
+      discountCents: number
+      promotionId?: string
+      promotionName?: string
+      promotionType?: 'PRODUCT_GROUP_DISCOUNT' | 'BUY_X_GET_Y' | 'FREE_GIFT'
+    }>
+  }>
   shippingAmountCents?: number
   includeShippingAddress?: boolean
   itemFulfillmentType?: 'PHYSICAL' | 'DIGITAL'
@@ -164,7 +182,12 @@ async function createCheckoutSession(input: {
   const shippingAmountCents =
     input.shippingAmountCents ?? (subtotalCents >= 7500 ? 0 : 999)
   const discountAmountCents = input.discountApplication?.amountCents ?? 0
-  const totalCents = subtotalCents + shippingAmountCents - discountAmountCents
+  const promotionDiscountAmountCents = (input.promotionApplications ?? []).reduce(
+    (sum, promotion) => sum + Number(promotion.amountCents || 0),
+    0
+  )
+  const totalDiscountAmountCents = discountAmountCents + promotionDiscountAmountCents
+  const totalCents = subtotalCents + shippingAmountCents - totalDiscountAmountCents
 
   const payload = {
     email: input.email,
@@ -191,6 +214,11 @@ async function createCheckoutSession(input: {
           discountApplications: [input.discountApplication],
         }
       : {}),
+    ...(input.promotionApplications?.length
+      ? {
+          promotionApplications: input.promotionApplications,
+        }
+      : {}),
   }
 
   return prisma.checkoutSession.create({
@@ -202,7 +230,7 @@ async function createCheckoutSession(input: {
       subtotalCents,
       shippingAmountCents,
       taxAmountCents: 0,
-      discountAmountCents,
+      discountAmountCents: totalDiscountAmountCents,
       totalCents,
       payload,
     },
@@ -214,11 +242,28 @@ async function seedCheckout({
   inventory,
   quantity,
   discountCode,
+  promotionApplications,
 }: {
   paymentIntentId: string
   inventory: number
   quantity: number
   discountCode?: string
+  promotionApplications?: Array<{
+    promotionId: string
+    promotionName: string
+    promotionType: 'PRODUCT_GROUP_DISCOUNT' | 'BUY_X_GET_Y' | 'FREE_GIFT'
+    rewardType: 'PERCENTAGE' | 'FIXED_AMOUNT' | 'FREE'
+    amountCents: number
+    summary?: string
+    lineAllocations?: Array<{
+      variantId: string
+      quantityDiscounted: number
+      discountCents: number
+      promotionId?: string
+      promotionName?: string
+      promotionType?: 'PRODUCT_GROUP_DISCOUNT' | 'BUY_X_GET_Y' | 'FREE_GIFT'
+    }>
+  }>
 }) {
   await prisma.store.create({
     data: {
@@ -264,7 +309,12 @@ async function seedCheckout({
       })
     : null
   const discountAmountCents = discount ? Math.round(subtotalCents * 0.1) : 0
-  const totalCents = subtotalCents + shippingAmountCents - discountAmountCents
+  const promotionDiscountAmountCents = (promotionApplications ?? []).reduce(
+    (sum, promotion) => sum + Number(promotion.amountCents || 0),
+    0
+  )
+  const totalDiscountAmountCents = discountAmountCents + promotionDiscountAmountCents
+  const totalCents = subtotalCents + shippingAmountCents - totalDiscountAmountCents
 
   await prisma.checkoutSession.create({
     data: {
@@ -274,7 +324,7 @@ async function seedCheckout({
       subtotalCents,
       shippingAmountCents,
       taxAmountCents: 0,
-      discountAmountCents,
+      discountAmountCents: totalDiscountAmountCents,
       totalCents,
       payload: {
         email: 'ada@example.com',
@@ -304,6 +354,11 @@ async function seedCheckout({
               ],
             }
           : {}),
+        ...(promotionApplications?.length
+          ? {
+              promotionApplications,
+            }
+          : {}),
       },
     },
   })
@@ -312,7 +367,7 @@ async function seedCheckout({
     product,
     variant,
     discount,
-    discountAmountCents,
+    discountAmountCents: totalDiscountAmountCents,
     totalCents,
   }
 }
@@ -716,6 +771,173 @@ runIntegration('checkout service integration', () => {
     expect(await prisma.order.count()).toBe(1)
     expect(await prisma.discountApplication.count()).toBe(1)
     expect(updatedDiscount.usageCount).toBe(1)
+  })
+
+  it('persists paid-order promotion applications, line allocations, and usage from checkout snapshot', async () => {
+    const { product, variant } = await seedVariant({
+      paymentIntentId: 'pi_integration_promo_persist',
+      inventory: 5,
+      price: 25,
+    })
+    const promotion = await prisma.promotion.create({
+      data: {
+        name: 'Bundle 20%',
+        status: 'ACTIVE',
+        type: 'PRODUCT_GROUP_DISCOUNT',
+        rewardType: 'PERCENTAGE',
+        value: 20,
+        usageCount: 0,
+        priority: 10,
+      },
+    })
+
+    await createCheckoutSession({
+      paymentIntentId: 'pi_integration_promo_persist',
+      email: 'ada@example.com',
+      productId: product.id,
+      variantId: variant.id,
+      title: product.title,
+      variantTitle: variant.title,
+      sku: variant.sku ?? 'SKU-PROMO',
+      priceCents: variant.priceCents,
+      quantity: 2,
+      promotionApplications: [
+        {
+          promotionId: promotion.id,
+          promotionName: promotion.name,
+          promotionType: promotion.type,
+          rewardType: promotion.rewardType,
+          amountCents: 1000,
+          summary: 'Bundle 20% applied',
+          lineAllocations: [
+            {
+              variantId: variant.id,
+              quantityDiscounted: 2,
+              discountCents: 1000,
+              promotionId: promotion.id,
+              promotionName: promotion.name,
+              promotionType: promotion.type,
+            },
+          ],
+        },
+      ],
+    })
+
+    const firstOrder = await completeCheckoutFromPaymentIntent({
+      id: 'pi_integration_promo_persist',
+      amount: 4999,
+      currency: 'usd',
+      status: 'succeeded',
+    })
+    const secondOrder = await completeCheckoutFromPaymentIntent({
+      id: 'pi_integration_promo_persist',
+      amount: 4999,
+      currency: 'usd',
+      status: 'succeeded',
+    })
+
+    const order = await prisma.order.findUniqueOrThrow({
+      where: { id: firstOrder.id },
+      include: {
+        items: true,
+        promotionApplications: {
+          include: {
+            lines: true,
+          },
+        },
+      },
+    })
+    const updatedPromotion = await prisma.promotion.findUniqueOrThrow({
+      where: { id: promotion.id },
+    })
+
+    expect(secondOrder.id).toBe(firstOrder.id)
+    expect(order.promotionApplications).toHaveLength(1)
+    expect(order.promotionApplications[0]).toMatchObject({
+      promotionId: promotion.id,
+      nameSnapshot: promotion.name,
+      typeSnapshot: promotion.type,
+      rewardTypeSnapshot: promotion.rewardType,
+      amountCents: 1000,
+    })
+    expect(order.promotionApplications[0].lines).toEqual([
+      expect.objectContaining({
+        variantId: variant.id,
+        quantityDiscounted: 2,
+        discountCents: 1000,
+      }),
+    ])
+    expect(order.items[0]?.totalDiscountCents).toBe(1000)
+    expect(await prisma.promotionApplication.count()).toBe(1)
+    expect(await prisma.promotionApplicationLine.count()).toBe(1)
+    expect(updatedPromotion.usageCount).toBe(1)
+  })
+
+  it('does not fail paid finalization when promotion usage cap changed after checkout creation', async () => {
+    const { product, variant } = await seedVariant({
+      paymentIntentId: 'pi_integration_promo_cap',
+      inventory: 5,
+      price: 25,
+    })
+    const promotion = await prisma.promotion.create({
+      data: {
+        name: 'Cap Promo',
+        status: 'ACTIVE',
+        type: 'PRODUCT_GROUP_DISCOUNT',
+        rewardType: 'PERCENTAGE',
+        value: 10,
+        usageLimit: 1,
+        usageCount: 1,
+        priority: 10,
+      },
+    })
+
+    await createCheckoutSession({
+      paymentIntentId: 'pi_integration_promo_cap',
+      email: 'ada@example.com',
+      productId: product.id,
+      variantId: variant.id,
+      title: product.title,
+      variantTitle: variant.title,
+      sku: variant.sku ?? 'SKU-PROMO-CAP',
+      priceCents: variant.priceCents,
+      quantity: 1,
+      promotionApplications: [
+        {
+          promotionId: promotion.id,
+          promotionName: promotion.name,
+          promotionType: promotion.type,
+          rewardType: promotion.rewardType,
+          amountCents: 250,
+          summary: 'Cap Promo applied',
+          lineAllocations: [
+            {
+              variantId: variant.id,
+              quantityDiscounted: 1,
+              discountCents: 250,
+              promotionId: promotion.id,
+              promotionName: promotion.name,
+              promotionType: promotion.type,
+            },
+          ],
+        },
+      ],
+    })
+
+    const order = await completeCheckoutFromPaymentIntent({
+      id: 'pi_integration_promo_cap',
+      amount: 3249,
+      currency: 'usd',
+      status: 'succeeded',
+    })
+
+    const updatedPromotion = await prisma.promotion.findUniqueOrThrow({
+      where: { id: promotion.id },
+    })
+
+    expect(order.paymentStatus).toBe('PAID')
+    expect(await prisma.promotionApplication.count()).toBe(1)
+    expect(updatedPromotion.usageCount).toBe(1)
   })
 
   it('keeps stock and paid-order state deterministic when concurrent checkout creates race near stock-out', async () => {

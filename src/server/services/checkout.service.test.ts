@@ -1455,6 +1455,83 @@ describe('checkout service', () => {
     )
   })
 
+  it('forwards checkout snapshot promotion applications into paid-order creation', async () => {
+    mocks.getOrderByPaymentIntentId.mockResolvedValue(null)
+    mocks.prisma.checkoutSession.findUnique.mockResolvedValue({
+      id: 'checkout_promo_snapshot',
+      paymentIntentId: 'pi_promo_snapshot',
+      email: 'ada@example.com',
+      currency: 'USD',
+      taxAmountCents: 0,
+      shippingAmountCents: 900,
+      discountAmountCents: 300,
+      payload: {
+        email: 'ada@example.com',
+        items: [
+          {
+            productId: 'product_1',
+            variantId: 'variant_1',
+            title: 'Test Shirt',
+            priceCents: 5000,
+            quantity: 1,
+          },
+        ],
+        shippingAddress: address,
+        billingAddress: address,
+        promotionApplications: [
+          {
+            promotionId: 'promo_1',
+            promotionName: 'Bundle Promo',
+            promotionType: 'PRODUCT_GROUP_DISCOUNT',
+            rewardType: 'PERCENTAGE',
+            amountCents: 300,
+            summary: 'Bundle Promo applied',
+            lineAllocations: [
+              {
+                variantId: 'variant_1',
+                quantityDiscounted: 1,
+                discountCents: 300,
+                promotionId: 'promo_1',
+                promotionName: 'Bundle Promo',
+                promotionType: 'PRODUCT_GROUP_DISCOUNT',
+              },
+            ],
+          },
+        ],
+      },
+    })
+    mocks.getCustomerByEmail.mockResolvedValue({
+      id: 'customer_1',
+      email: 'ada@example.com',
+      addresses: [{}],
+    })
+    mocks.createOrder.mockResolvedValue({
+      id: 'order_promo_snapshot',
+      orderNumber: 1200,
+    })
+    mocks.prisma.checkoutSession.update.mockResolvedValue({
+      id: 'checkout_promo_snapshot',
+    })
+
+    await completeCheckoutFromPaymentIntent({
+      id: 'pi_promo_snapshot',
+      amount: 5600,
+      currency: 'usd',
+      status: 'succeeded',
+    })
+
+    expect(mocks.createOrder).toHaveBeenCalledWith(
+      expect.objectContaining({
+        promotionApplications: [
+          expect.objectContaining({
+            promotionId: 'promo_1',
+            amountCents: 300,
+          }),
+        ],
+      })
+    )
+  })
+
   it('marks pending checkout sessions as failed and emits an internal event', async () => {
     mocks.getOrderByPaymentIntentId.mockResolvedValue(null)
     mocks.prisma.checkoutSession.findUnique.mockResolvedValue({

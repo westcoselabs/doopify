@@ -5,6 +5,7 @@ import { prisma } from '@/lib/prisma'
 import type { CheckoutAppliedDiscount } from '@/server/checkout/pricing'
 import { emitInternalEvent } from '@/server/events/dispatcher'
 import { resolveOrderFulfillmentSnapshot } from '@/server/services/fulfillment-status.service'
+import type { PromotionRewardType, PromotionType } from '@/server/promotions/contracts'
 
 const DEFAULT_ORDER_LIST_PAGE_SIZE = 20
 const MAX_ORDER_LIST_PAGE_SIZE = 100
@@ -196,6 +197,200 @@ async function incrementDiscountUsageWithCap(input: {
   }
 }
 
+type OrderPromotionLineAllocationInput = {
+  variantId: string
+  orderItemId?: string | null
+  quantityDiscounted: number
+  discountCents: number
+}
+
+type OrderPromotionApplicationInput = {
+  promotionId?: string | null
+  promotionName: string
+  promotionType: PromotionType
+  rewardType: PromotionRewardType
+  amountCents: number
+  lineAllocations?: OrderPromotionLineAllocationInput[]
+}
+
+function normalizeNonNegativeInt(value: number | null | undefined) {
+  return Math.max(0, Math.round(Number(value || 0)))
+}
+
+function splitDiscountAcrossSegments(input: {
+  totalDiscountCents: number
+  segments: Array<{ orderItemId: string; variantId: string; quantity: number }>
+}) {
+  const totalQuantity = input.segments.reduce((sum, segment) => sum + segment.quantity, 0)
+  if (totalQuantity <= 0 || input.totalDiscountCents <= 0) {
+    return [] as Array<{ orderItemId: string; variantId: string; quantityDiscounted: number; discountCents: number }>
+  }
+
+  const weighted = input.segments.map((segment) => {
+    const raw = (input.totalDiscountCents * segment.quantity) / totalQuantity
+    const floor = Math.floor(raw)
+    return {
+      segment,
+      floor,
+      fraction: raw - floor,
+    }
+  })
+
+  const flooredTotal = weighted.reduce((sum, entry) => sum + entry.floor, 0)
+  let remainder = input.totalDiscountCents - flooredTotal
+
+  const ranked = [...weighted].sort((a, b) => {
+    if (b.fraction !== a.fraction) return b.fraction - a.fraction
+    if (b.segment.quantity !== a.segment.quantity) return b.segment.quantity - a.segment.quantity
+    return a.segment.orderItemId.localeCompare(b.segment.orderItemId)
+  })
+
+  const amountByOrderItem = new Map<string, number>()
+  for (const entry of weighted) {
+    amountByOrderItem.set(entry.segment.orderItemId, entry.floor)
+  }
+  for (const entry of ranked) {
+    if (remainder <= 0) break
+    amountByOrderItem.set(entry.segment.orderItemId, (amountByOrderItem.get(entry.segment.orderItemId) ?? 0) + 1)
+    remainder -= 1
+  }
+
+  return weighted
+    .map((entry) => {
+      const discountCents = Math.max(0, amountByOrderItem.get(entry.segment.orderItemId) ?? 0)
+      if (discountCents <= 0) return null
+      return {
+        orderItemId: entry.segment.orderItemId,
+        variantId: entry.segment.variantId,
+        quantityDiscounted: entry.segment.quantity,
+        discountCents,
+      }
+    })
+    .filter((entry): entry is { orderItemId: string; variantId: string; quantityDiscounted: number; discountCents: number } => entry != null)
+}
+
+function allocatePromotionLineForOrderItems(input: {
+  allocation: OrderPromotionLineAllocationInput
+  orderItemsByVariant: Map<string, Array<{ id: string; quantity: number }>>
+}) {
+  const variantId = String(input.allocation.variantId || '').trim()
+  const quantityDiscounted = normalizeNonNegativeInt(input.allocation.quantityDiscounted)
+  const discountCents = normalizeNonNegativeInt(input.allocation.discountCents)
+
+  if (!variantId || quantityDiscounted <= 0 || discountCents <= 0) {
+    return [] as Array<{
+      orderItemId: string | null
+      variantId: string
+      quantityDiscounted: number
+      discountCents: number
+    }>
+  }
+
+  const orderItemId = String(input.allocation.orderItemId || '').trim() || null
+  if (orderItemId) {
+    return [
+      {
+        orderItemId,
+        variantId,
+        quantityDiscounted,
+        discountCents,
+      },
+    ]
+  }
+
+  const matches = input.orderItemsByVariant.get(variantId) ?? []
+  if (!matches.length) {
+    return [
+      {
+        orderItemId: null,
+        variantId,
+        quantityDiscounted,
+        discountCents,
+      },
+    ]
+  }
+
+  let remainingQuantity = quantityDiscounted
+  const segments: Array<{ orderItemId: string; variantId: string; quantity: number }> = []
+
+  for (const match of matches) {
+    if (remainingQuantity <= 0) break
+    const quantityForItem = Math.min(match.quantity, remainingQuantity)
+    if (quantityForItem <= 0) continue
+    segments.push({
+      orderItemId: match.id,
+      variantId,
+      quantity: quantityForItem,
+    })
+    remainingQuantity -= quantityForItem
+  }
+
+  if (!segments.length) {
+    return [
+      {
+        orderItemId: null,
+        variantId,
+        quantityDiscounted,
+        discountCents,
+      },
+    ]
+  }
+
+  const allocated = splitDiscountAcrossSegments({
+    totalDiscountCents: discountCents,
+    segments,
+  })
+
+  if (!allocated.length) {
+    return [
+      {
+        orderItemId: null,
+        variantId,
+        quantityDiscounted,
+        discountCents,
+      },
+    ]
+  }
+
+  return allocated.map((entry) => ({
+    orderItemId: entry.orderItemId,
+    variantId: entry.variantId,
+    quantityDiscounted: entry.quantityDiscounted,
+    discountCents: entry.discountCents,
+  }))
+}
+
+async function incrementPromotionUsageAfterPaid(input: {
+  tx: Prisma.TransactionClient
+  promotionId: string
+}) {
+  const promotion = await input.tx.promotion.findUnique({
+    where: { id: input.promotionId },
+    select: {
+      id: true,
+      usageLimit: true,
+    },
+  })
+
+  if (!promotion) return
+
+  if (promotion.usageLimit == null) {
+    await input.tx.promotion.update({
+      where: { id: input.promotionId },
+      data: { usageCount: { increment: 1 } },
+    })
+    return
+  }
+
+  await input.tx.promotion.updateMany({
+    where: {
+      id: input.promotionId,
+      usageCount: { lt: promotion.usageLimit },
+    },
+    data: { usageCount: { increment: 1 } },
+  })
+}
+
 export async function getOrders(params: {
   status?: OrderStatus
   paymentStatus?: PaymentStatus
@@ -306,6 +501,11 @@ export async function getOrder(orderNumber: number) {
         orderBy: { createdAt: 'desc' },
       },
       discountApplications: { include: { discount: true } },
+      promotionApplications: {
+        include: {
+          lines: true,
+        },
+      },
     },
   })
 }
@@ -386,6 +586,7 @@ export async function createOrder(data: {
   discountAmountCents?: number
   currency?: string
   discountApplications?: CheckoutAppliedDiscount[]
+  promotionApplications?: OrderPromotionApplicationInput[]
   stripePaymentIntentId?: string
   stripeChargeId?: string
   paymentStatus?: PaymentStatus
@@ -417,6 +618,8 @@ export async function createOrder(data: {
   const orderStatus = data.status ?? 'OPEN'
   const discountApplications = data.discountApplications ?? []
   const paidDiscountApplications = paymentStatus === 'PAID' ? discountApplications : []
+  const promotionApplications = data.promotionApplications ?? []
+  const paidPromotionApplications = paymentStatus === 'PAID' ? promotionApplications : []
 
   try {
     const order = await prisma.$transaction(async (tx) => {
@@ -563,6 +766,110 @@ export async function createOrder(data: {
             tx,
             discountId: discount.discountId,
           })
+        }
+
+        if (paidPromotionApplications.length) {
+          const requestedPromotionIds = Array.from(
+            new Set(
+              paidPromotionApplications
+                .map((promotion) => String(promotion.promotionId || '').trim())
+                .filter(Boolean)
+            )
+          )
+          const existingPromotionIds = new Set(
+            (
+              requestedPromotionIds.length
+                ? await tx.promotion.findMany({
+                    where: {
+                      id: {
+                        in: requestedPromotionIds,
+                      },
+                    },
+                    select: {
+                      id: true,
+                    },
+                  })
+                : []
+            ).map((promotion) => promotion.id)
+          )
+          const orderItemsByVariant = new Map<string, Array<{ id: string; quantity: number }>>()
+          for (const item of createdOrder.items) {
+            const variantId = String(item.variantId || '').trim()
+            if (!variantId) continue
+            const existing = orderItemsByVariant.get(variantId) ?? []
+            existing.push({ id: item.id, quantity: Number(item.quantity || 0) })
+            orderItemsByVariant.set(variantId, existing)
+          }
+
+          const promotionIdsToIncrement = new Set<string>()
+
+          for (const promotion of paidPromotionApplications) {
+            const rawPromotionId = String(promotion.promotionId || '').trim()
+            const promotionId = rawPromotionId && existingPromotionIds.has(rawPromotionId) ? rawPromotionId : null
+            const createdPromotionApplication = await tx.promotionApplication.create({
+              data: {
+                orderId: createdOrder.id,
+                promotionId,
+                nameSnapshot: String(promotion.promotionName || '').trim() || 'Promotion',
+                typeSnapshot: promotion.promotionType,
+                rewardTypeSnapshot: promotion.rewardType,
+                amountCents: normalizeNonNegativeInt(promotion.amountCents),
+              },
+            })
+
+            const rawAllocations = promotion.lineAllocations ?? []
+            const normalizedLineRows = rawAllocations.flatMap((allocation) =>
+              allocatePromotionLineForOrderItems({
+                allocation,
+                orderItemsByVariant,
+              })
+            )
+
+            if (normalizedLineRows.length) {
+              await tx.promotionApplicationLine.createMany({
+                data: normalizedLineRows.map((line) => ({
+                  promotionApplicationId: createdPromotionApplication.id,
+                  orderItemId: line.orderItemId,
+                  variantId: line.variantId,
+                  quantityDiscounted: normalizeNonNegativeInt(line.quantityDiscounted),
+                  discountCents: normalizeNonNegativeInt(line.discountCents),
+                })),
+              })
+
+              const discountByOrderItemId = new Map<string, number>()
+              for (const line of normalizedLineRows) {
+                if (!line.orderItemId) continue
+                discountByOrderItemId.set(
+                  line.orderItemId,
+                  (discountByOrderItemId.get(line.orderItemId) ?? 0) + normalizeNonNegativeInt(line.discountCents)
+                )
+              }
+
+              for (const [orderItemId, discountCents] of discountByOrderItemId.entries()) {
+                if (discountCents <= 0) continue
+                await tx.orderItem.updateMany({
+                  where: {
+                    id: orderItemId,
+                    orderId: createdOrder.id,
+                  },
+                  data: {
+                    totalDiscountCents: { increment: discountCents },
+                  },
+                })
+              }
+            }
+
+            if (promotionId) {
+              promotionIdsToIncrement.add(promotionId)
+            }
+          }
+
+          for (const promotionId of promotionIdsToIncrement) {
+            await incrementPromotionUsageAfterPaid({
+              tx,
+              promotionId,
+            })
+          }
         }
       }
 

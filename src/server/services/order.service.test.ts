@@ -22,6 +22,21 @@ const mocks = vi.hoisted(() => ({
       update: vi.fn(),
       updateMany: vi.fn(),
     },
+    promotion: {
+      findMany: vi.fn(),
+      findUnique: vi.fn(),
+      update: vi.fn(),
+      updateMany: vi.fn(),
+    },
+    orderItem: {
+      updateMany: vi.fn(),
+    },
+    promotionApplication: {
+      create: vi.fn(),
+    },
+    promotionApplicationLine: {
+      createMany: vi.fn(),
+    },
   },
   emitInternalEvent: vi.fn(),
 }))
@@ -79,6 +94,10 @@ describe('createOrder inventory and payment side effects', () => {
         order: mocks.tx.order,
         customer: mocks.tx.customer,
         discount: mocks.tx.discount,
+        promotion: mocks.tx.promotion,
+        orderItem: mocks.tx.orderItem,
+        promotionApplication: mocks.tx.promotionApplication,
+        promotionApplicationLine: mocks.tx.promotionApplicationLine,
       })
     )
 
@@ -92,6 +111,18 @@ describe('createOrder inventory and payment side effects', () => {
     })
     mocks.tx.discount.update.mockResolvedValue({})
     mocks.tx.discount.updateMany.mockResolvedValue({ count: 1 })
+    mocks.tx.promotion.findUnique.mockResolvedValue({
+      id: 'promo_1',
+      usageLimit: null,
+    })
+    mocks.tx.promotion.findMany.mockImplementation(async (input: { where?: { id?: { in?: string[] } } }) =>
+      (input.where?.id?.in ?? []).map((id) => ({ id }))
+    )
+    mocks.tx.promotion.update.mockResolvedValue({})
+    mocks.tx.promotion.updateMany.mockResolvedValue({ count: 1 })
+    mocks.tx.orderItem.updateMany.mockResolvedValue({ count: 1 })
+    mocks.tx.promotionApplication.create.mockResolvedValue({ id: 'promo_app_1' })
+    mocks.tx.promotionApplicationLine.createMany.mockResolvedValue({ count: 1 })
   })
 
   it('does not decrement inventory for pending orders and keeps paid-only side effects off', async () => {
@@ -219,6 +250,187 @@ describe('createOrder inventory and payment side effects', () => {
     expect(
       mocks.emitInternalEvent.mock.calls.filter((call) => call[0] === 'order.paid')
     ).toHaveLength(1)
+  })
+
+  it('persists promotion applications, line allocations, and increments promotion usage for paid orders', async () => {
+    mocks.tx.order.create.mockResolvedValue(
+      createPersistedOrder({
+        items: [
+          {
+            id: 'item_1',
+            variantId: 'var_1',
+            quantity: 2,
+            title: 'Test Shirt',
+            variantTitle: 'Default',
+            priceCents: 1000,
+          },
+        ],
+      })
+    )
+
+    await createOrder({
+      email: 'buyer@example.com',
+      paymentStatus: 'PAID',
+      items: [
+        {
+          productId: 'prod_1',
+          variantId: 'var_1',
+          title: 'Test Shirt',
+          variantTitle: 'Default',
+          priceCents: 1000,
+          quantity: 2,
+        },
+      ],
+      promotionApplications: [
+        {
+          promotionId: 'promo_1',
+          promotionName: 'Bundle Promo',
+          promotionType: 'PRODUCT_GROUP_DISCOUNT',
+          rewardType: 'PERCENTAGE',
+          amountCents: 300,
+          lineAllocations: [
+            {
+              variantId: 'var_1',
+              quantityDiscounted: 2,
+              discountCents: 300,
+            },
+          ],
+        },
+      ],
+    })
+
+    expect(mocks.tx.promotionApplication.create).toHaveBeenCalledWith({
+      data: {
+        orderId: 'ord_1',
+        promotionId: 'promo_1',
+        nameSnapshot: 'Bundle Promo',
+        typeSnapshot: 'PRODUCT_GROUP_DISCOUNT',
+        rewardTypeSnapshot: 'PERCENTAGE',
+        amountCents: 300,
+      },
+    })
+    expect(mocks.tx.promotionApplicationLine.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          promotionApplicationId: 'promo_app_1',
+          orderItemId: 'item_1',
+          variantId: 'var_1',
+          quantityDiscounted: 2,
+          discountCents: 300,
+        },
+      ],
+    })
+    expect(mocks.tx.orderItem.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'item_1',
+        orderId: 'ord_1',
+      },
+      data: {
+        totalDiscountCents: { increment: 300 },
+      },
+    })
+    expect(mocks.tx.promotion.update).toHaveBeenCalledWith({
+      where: { id: 'promo_1' },
+      data: { usageCount: { increment: 1 } },
+    })
+  })
+
+  it('does not fail paid order creation when promotion usage cap is already reached', async () => {
+    mocks.tx.promotion.findUnique.mockResolvedValue({
+      id: 'promo_cap',
+      usageLimit: 1,
+    })
+    mocks.tx.promotion.updateMany.mockResolvedValue({ count: 0 })
+
+    await expect(
+      createOrder({
+        email: 'buyer@example.com',
+        paymentStatus: 'PAID',
+        items: [
+          {
+            productId: 'prod_1',
+            variantId: 'var_1',
+            title: 'Test Shirt',
+            variantTitle: 'Default',
+            priceCents: 1000,
+            quantity: 1,
+          },
+        ],
+        promotionApplications: [
+          {
+            promotionId: 'promo_cap',
+            promotionName: 'Cap Promo',
+            promotionType: 'PRODUCT_GROUP_DISCOUNT',
+            rewardType: 'PERCENTAGE',
+            amountCents: 100,
+            lineAllocations: [
+              {
+                variantId: 'var_1',
+                quantityDiscounted: 1,
+                discountCents: 100,
+              },
+            ],
+          },
+        ],
+      })
+    ).resolves.toMatchObject({
+      id: 'ord_1',
+      paymentStatus: 'PAID',
+    })
+
+    expect(mocks.tx.promotion.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'promo_cap',
+        usageCount: { lt: 1 },
+      },
+      data: { usageCount: { increment: 1 } },
+    })
+  })
+
+  it('persists paid promotion snapshot with null promotionId when source promotion no longer exists', async () => {
+    mocks.tx.promotion.findMany.mockResolvedValue([])
+
+    await createOrder({
+      email: 'buyer@example.com',
+      paymentStatus: 'PAID',
+      items: [
+        {
+          productId: 'prod_1',
+          variantId: 'var_1',
+          title: 'Test Shirt',
+          variantTitle: 'Default',
+          priceCents: 1000,
+          quantity: 1,
+        },
+      ],
+      promotionApplications: [
+        {
+          promotionId: 'promo_deleted',
+          promotionName: 'Deleted Promo',
+          promotionType: 'PRODUCT_GROUP_DISCOUNT',
+          rewardType: 'PERCENTAGE',
+          amountCents: 75,
+          lineAllocations: [
+            {
+              variantId: 'var_1',
+              quantityDiscounted: 1,
+              discountCents: 75,
+            },
+          ],
+        },
+      ],
+    })
+
+    expect(mocks.tx.promotionApplication.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        orderId: 'ord_1',
+        promotionId: null,
+        nameSnapshot: 'Deleted Promo',
+        amountCents: 75,
+      }),
+    })
+    expect(mocks.tx.promotion.update).not.toHaveBeenCalled()
+    expect(mocks.tx.promotion.updateMany).not.toHaveBeenCalled()
   })
 
   it('fails safely for paid orders with insufficient inventory and does not create an order', async () => {

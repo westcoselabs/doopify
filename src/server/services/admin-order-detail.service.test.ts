@@ -132,6 +132,25 @@ describe('getAdminOrderDetailByOrderNumber', () => {
           },
         },
       ],
+      promotionApplications: [
+        {
+          id: 'promo_app_1',
+          promotionId: 'promo_1',
+          nameSnapshot: 'Bundle Promo',
+          typeSnapshot: 'PRODUCT_GROUP_DISCOUNT',
+          rewardTypeSnapshot: 'PERCENTAGE',
+          amountCents: 300,
+          lines: [
+            {
+              id: 'promo_line_1',
+              variantId: 'var_1',
+              orderItemId: 'item_1',
+              quantityDiscounted: 2,
+              discountCents: 300,
+            },
+          ],
+        },
+      ],
     })
 
     const detail = await getAdminOrderDetailByOrderNumber(1001)
@@ -171,6 +190,25 @@ describe('getAdminOrderDetailByOrderNumber', () => {
           id: 'app_1',
           code: 'SPRING10',
           amount: 2,
+        }),
+      ],
+      promotionApplications: [
+        expect.objectContaining({
+          id: 'promo_app_1',
+          promotionId: 'promo_1',
+          name: 'Bundle Promo',
+          type: 'PRODUCT_GROUP_DISCOUNT',
+          rewardType: 'PERCENTAGE',
+          amountCents: 300,
+          lineAllocations: [
+            expect.objectContaining({
+              id: 'promo_line_1',
+              variantId: 'var_1',
+              orderItemId: 'item_1',
+              quantityDiscounted: 2,
+              discountCents: 300,
+            }),
+          ],
         }),
       ],
       customerVisibleNotes: [

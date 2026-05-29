@@ -632,6 +632,7 @@ model ProductVariant {
   orderItems                    OrderItem[]
   promotionQualifiers           PromotionQualifier[]
   promotionRewards              PromotionReward[]
+  promotionApplicationLines     PromotionApplicationLine[]
 
   @@index([productId])
   @@index([sku])
@@ -838,6 +839,7 @@ model Order {
   refunds              Refund[]
   returns              Return[]
   discountApplications DiscountApplication[]
+  promotionApplications PromotionApplication[]
   shippingLabels       ShippingLabel[]
   digitalDownloadGrants DigitalDownloadGrant[]
 
@@ -866,6 +868,7 @@ model OrderItem {
   variant          ProductVariant?  @relation(fields: [variantId], references: [id], onDelete: SetNull)
   fulfillmentItems FulfillmentItem[]
   digitalDownloadGrants DigitalDownloadGrant[]
+  promotionApplicationLines PromotionApplicationLine[]
 
   @@index([orderId])
   @@map("order_items")
@@ -1212,6 +1215,43 @@ model DiscountApplication {
   @@map("discount_applications")
 }
 
+model PromotionApplication {
+  id                 String                    @id @default(cuid())
+  orderId            String
+  promotionId        String?
+  nameSnapshot       String
+  typeSnapshot       PromotionType
+  rewardTypeSnapshot PromotionRewardType
+  amountCents        Int
+  createdAt          DateTime                  @default(now())
+  order              Order                     @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  promotion          Promotion?                @relation(fields: [promotionId], references: [id], onDelete: SetNull)
+  lines              PromotionApplicationLine[]
+
+  @@unique([orderId, promotionId])
+  @@index([orderId])
+  @@index([promotionId])
+  @@map("promotion_applications")
+}
+
+model PromotionApplicationLine {
+  id                     String               @id @default(cuid())
+  promotionApplicationId String
+  orderItemId            String?
+  variantId              String?
+  quantityDiscounted     Int
+  discountCents          Int
+  createdAt              DateTime             @default(now())
+  promotionApplication   PromotionApplication @relation(fields: [promotionApplicationId], references: [id], onDelete: Cascade)
+  orderItem              OrderItem?           @relation(fields: [orderItemId], references: [id], onDelete: SetNull)
+  variant                ProductVariant?      @relation(fields: [variantId], references: [id], onDelete: SetNull)
+
+  @@index([promotionApplicationId])
+  @@index([orderItemId])
+  @@index([variantId])
+  @@map("promotion_application_lines")
+}
+
 model Promotion {
   id         String              @id @default(cuid())
   name       String
@@ -1228,6 +1268,7 @@ model Promotion {
   updatedAt  DateTime            @updatedAt
   qualifiers PromotionQualifier[]
   rewards    PromotionReward[]
+  applications PromotionApplication[]
 
   @@index([status, priority, createdAt])
   @@index([type, status])
