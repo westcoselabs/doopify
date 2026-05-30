@@ -719,6 +719,15 @@ export async function createCheckoutPaymentIntent(input: {
         amountCents: codeDiscountAmountCents,
       }
     : null
+  const discountApplicationsForResponse = appliedDiscount
+    ? [
+        {
+          ...appliedDiscount,
+          amount: centsToDollars(codeDiscountAmountCents),
+          amountCents: codeDiscountAmountCents,
+        },
+      ]
+    : []
 
   const customer = await getCustomerByEmail(normalizedEmail)
   const stripeRuntime = await getStripeRuntimeConnection()
@@ -827,15 +836,24 @@ export async function createCheckoutPaymentIntent(input: {
     ...mapCheckoutPricingForPresentation(pricingWithSelectedShipping),
     shippingAmountCents,
     discountAmountCents,
+    codeDiscountAmountCents,
+    promotionDiscountAmountCents: resolvedPromotionDiscountAmountCents,
     totalCents,
     ...(promotionApplications.length ? { promotionApplications } : {}),
     shippingAmount: centsToDollars(shippingAmountCents),
     discountAmount: centsToDollars(discountAmountCents),
+    codeDiscountAmount: centsToDollars(codeDiscountAmountCents),
+    promotionDiscountAmount: centsToDollars(resolvedPromotionDiscountAmountCents),
     total: centsToDollars(totalCents),
     availableShippingRates: requiresShipping
       ? (shippingResolution as { quotes: ShippingRateQuote[] }).quotes.map(mapShippingQuoteForSnapshot)
       : [selectedShippingRate],
     selectedShippingRate,
+    ...(discountApplicationsForResponse.length
+      ? {
+          discountApplications: discountApplicationsForResponse,
+        }
+      : {}),
     items: payload.items.map((item) => ({
       ...item,
       price: centsToDollars(item.priceCents ?? 0),

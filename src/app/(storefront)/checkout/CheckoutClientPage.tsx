@@ -10,6 +10,10 @@ import {
   isCheckoutEmailValid,
   normalizeCheckoutEmail,
 } from './checkout-create.helpers';
+import {
+  buildCheckoutDiscountRows,
+  buildCheckoutPromotionHighlights,
+} from './checkout-summary.helpers';
 
 const EMPTY_ADDRESS = {
   firstName: '',
@@ -71,7 +75,17 @@ type CheckoutStoreSettings = {
 }
 
 type DiscountApplication = {
+  amount?: number
+  amountCents?: number
   code?: string
+  title?: string
+}
+
+type PromotionApplication = {
+  amount?: number
+  amountCents?: number
+  name?: string
+  promotionName?: string
 }
 
 type CheckoutData = {
@@ -82,7 +96,13 @@ type CheckoutData = {
   taxAmount: number
   total: number
   discountAmount: number
+  discountAmountCents?: number
+  codeDiscountAmount?: number
+  codeDiscountAmountCents?: number
+  promotionDiscountAmount?: number
+  promotionDiscountAmountCents?: number
   discountApplications?: DiscountApplication[]
+  promotionApplications?: PromotionApplication[]
   selectedShippingRate?: ShippingQuote
   availableShippingRates?: ShippingQuote[]
 }
@@ -383,6 +403,27 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
     checkout?.shippingAmount ?? (requiresShipping ? selectedShippingQuote?.amount ?? null : 0);
   const previewTotal =
     checkout?.total ?? (previewSubtotal + (requiresShipping ? selectedShippingQuote?.amount || 0 : 0));
+  const checkoutDiscountRows = useMemo(
+    () =>
+      buildCheckoutDiscountRows({
+        discountAmount: checkout?.discountAmount,
+        discountAmountCents: checkout?.discountAmountCents,
+        codeDiscountAmount: checkout?.codeDiscountAmount,
+        codeDiscountAmountCents: checkout?.codeDiscountAmountCents,
+        promotionDiscountAmount: checkout?.promotionDiscountAmount,
+        promotionDiscountAmountCents: checkout?.promotionDiscountAmountCents,
+        discountApplications: checkout?.discountApplications,
+        promotionApplications: checkout?.promotionApplications,
+      }),
+    [checkout]
+  );
+  const checkoutPromotionHighlights = useMemo(
+    () =>
+      buildCheckoutPromotionHighlights({
+        promotionApplications: checkout?.promotionApplications,
+      }),
+    [checkout?.promotionApplications]
+  );
   const shippingAddressValid = isAddressComplete(shippingAddress);
   const shippingAddressSatisfied = !requiresShipping || shippingAddressValid;
   const billingAddressValid = billingSameAsShipping
@@ -939,6 +980,13 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
         .summary-divider{height:1px;background:color-mix(in srgb, var(--checkout-text) 8%, transparent);margin:22px 0}
         .summary-row{display:flex;align-items:center;justify-content:space-between;font-size:14px;color:var(--checkout-muted);margin-bottom:12px}
         .summary-row.total{font-size:18px;color:var(--checkout-text);font-weight:600;margin-top:12px}
+        .summary-row.discount-code{color:#93c5fd}
+        .summary-row.discount-promo{color:#86efac}
+        .summary-row.discount-total{color:#bbf7d0}
+        .summary-promotion-block{display:grid;gap:8px;margin:4px 0 12px}
+        .summary-promotion-title{font-size:11px;letter-spacing:0.14em;text-transform:uppercase;color:var(--checkout-muted)}
+        .summary-promotion-item{display:flex;align-items:center;justify-content:space-between;font-size:12px;color:rgba(255,255,255,0.82)}
+        .summary-promotion-note{margin:0;font-size:11px;color:rgba(255,255,255,0.56);line-height:1.45}
         .empty-state{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:18px;border-radius:18px;border:1px solid color-mix(in srgb, var(--checkout-text) 12%, transparent);background:color-mix(in srgb, var(--checkout-surface-strong) 68%, transparent)}
         .empty-title{margin:0;font-size:28px;line-height:1;font-family:var(--font-headline),sans-serif;letter-spacing:-0.03em;color:var(--checkout-text)}
         .empty-copy{margin:0;font-size:14px;line-height:1.65;color:var(--checkout-muted)}
@@ -1390,10 +1438,33 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
               <span>Tax</span>
               <span>{checkout ? formatMoney(checkout.taxAmount, currency) : 'Calculated at payment step'}</span>
             </div>
-            {checkout && checkout.discountAmount > 0 ? (
-              <div className="summary-row" style={{ color: '#86efac' }}>
-                <span>Discount{checkout.discountApplications?.[0]?.code ? ` (${checkout.discountApplications[0].code})` : ''}</span>
-                <span>-{formatMoney(checkout.discountAmount, currency)}</span>
+            {checkoutDiscountRows.map((row) => (
+              <div
+                className={`summary-row ${
+                  row.key === 'code'
+                    ? 'discount-code'
+                    : row.key === 'promotion'
+                      ? 'discount-promo'
+                      : 'discount-total'
+                }`}
+                key={row.key}
+              >
+                <span>{row.label}</span>
+                <span>-{formatMoney(row.amount, currency)}</span>
+              </div>
+            ))}
+            {checkoutPromotionHighlights.length ? (
+              <div className="summary-promotion-block">
+                <span className="summary-promotion-title">Promotions applied</span>
+                {checkoutPromotionHighlights.map((promotion) => (
+                  <div className="summary-promotion-item" key={promotion.id}>
+                    <span>{promotion.label}</span>
+                    <span>-{formatMoney(promotion.amount, currency)}</span>
+                  </div>
+                ))}
+                <p className="summary-promotion-note">
+                  Automatic promotions are calculated from items already in your cart.
+                </p>
               </div>
             ) : null}
             <div className="summary-row total">

@@ -1795,13 +1795,13 @@ export default function OrderDetailView({
                     <div className={styles.promotionSummaryRow} key={application.id}>
                       <strong>{application.name || "Promotion"}</strong>
                       <p>
-                        {formatPromotionType(application.type)} -{" "}
+                        {formatPromotionType(application.type)} ·{" "}
                         {formatPromotionRewardSummary(
                           application.rewardType,
                           amountFromSummary(application),
                           currency
                         )}{" "}
-                        - -{formatMoney(amountFromSummary(application), currency)}
+                        · -{formatMoney(amountFromSummary(application), currency)}
                       </p>
                       {application.lineAllocations?.length ? (
                         <div className={styles.promotionAllocationList}>

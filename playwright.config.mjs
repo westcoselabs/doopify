@@ -10,6 +10,12 @@ if (!isLocalBaseURL && process.env.E2E_ALLOW_REMOTE !== '1') {
 }
 
 const useWebServer = isLocalBaseURL && process.env.E2E_SKIP_WEBSERVER !== '1'
+const e2eWebServerEnv = {
+  ...process.env,
+  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || 'sk_test_e2e_visibility_only',
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:
+    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || 'pk_test_e2e_visibility_only',
+}
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -21,8 +27,9 @@ export default defineConfig({
     trace: 'on-first-retry',
   },
   webServer: useWebServer
-    ? {
+      ? {
         command: 'npm run dev -- --hostname 127.0.0.1 --port 3000',
+        env: e2eWebServerEnv,
         url: 'http://127.0.0.1:3000',
         reuseExistingServer: !process.env.CI,
         timeout: 120_000,

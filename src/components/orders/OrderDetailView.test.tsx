@@ -507,6 +507,8 @@ describe('OrderDetailView', () => {
     expect(html).toContain('Hoodie + Hat bundle savings')
     expect(html).toContain('Product group discount')
     expect(html).toContain('12.5% off')
+    expect(html).toContain('Product group discount · 12.5% off · -$12.50')
+    expect(html).not.toContain('- -$12.50')
     expect(html).toContain('-$12.50')
     expect(html).toContain('Applied to:')
     expect(html).toContain('Hoodie (Large): -$8.00')
