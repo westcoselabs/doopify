@@ -130,6 +130,20 @@ Use a dedicated test schema in `DATABASE_URL_TEST` (for example `...?schema=doop
 
 ---
 
+## Local CSP report logging
+
+Set `CSP_REPORT_LOG=1` to print CSP violation reports during local development or e2e debugging.
+Without that flag, local/dev suppresses CSP report log noise.
+
+---
+
+## Playwright Stripe fallback (local e2e)
+
+For Playwright-managed local web-server runs, test-only Stripe fallback keys are injected when Stripe keys are missing or placeholder values are detected.
+This does not change production Stripe runtime behavior.
+
+---
+
 ## Explore the database
 
 ```bash

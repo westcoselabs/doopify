@@ -10,11 +10,31 @@ if (!isLocalBaseURL && process.env.E2E_ALLOW_REMOTE !== '1') {
 }
 
 const useWebServer = isLocalBaseURL && process.env.E2E_SKIP_WEBSERVER !== '1'
+function isPlaceholderStripeValue(value) {
+  if (!value) return true
+  const normalized = String(value).trim().toLowerCase()
+  if (!normalized) return true
+  return (
+    normalized.includes('replace_me') ||
+    normalized.includes('placeholder') ||
+    normalized.includes('visibility_only')
+  )
+}
+
+const stripeSecretKeyForE2E = isPlaceholderStripeValue(process.env.STRIPE_SECRET_KEY)
+  ? 'sk_test_e2e_visibility_only'
+  : process.env.STRIPE_SECRET_KEY
+
+const stripePublishableKeyForE2E = isPlaceholderStripeValue(
+  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+)
+  ? 'pk_test_e2e_visibility_only'
+  : process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY
+
 const e2eWebServerEnv = {
   ...process.env,
-  STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || 'sk_test_e2e_visibility_only',
-  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:
-    process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || 'pk_test_e2e_visibility_only',
+  STRIPE_SECRET_KEY: stripeSecretKeyForE2E,
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: stripePublishableKeyForE2E,
 }
 
 export default defineConfig({

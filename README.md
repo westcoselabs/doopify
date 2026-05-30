@@ -85,6 +85,7 @@ Doopify is a real commerce application built with Next.js 16, Prisma, PostgreSQL
 | Current status | [docs/STATUS.md](./docs/STATUS.md) |
 | Product intent | [docs/PROJECT_INTENT.md](./docs/PROJECT_INTENT.md) |
 | Feature roadmap | [docs/features-roadmap.md](./docs/features-roadmap.md) |
+| Smart Promotions V1 | [docs/smart-promotions-v1.md](./docs/smart-promotions-v1.md) |
 | Security | [docs/security.md](./docs/security.md) |
 | Checkout architecture | [docs/architecture/checkout.md](./docs/architecture/checkout.md) |
 | Event architecture | [docs/architecture/events.md](./docs/architecture/events.md) |
@@ -144,6 +145,8 @@ npm run test:e2e
 - Defaults to `http://127.0.0.1:3000` and starts a local dev server automatically.
 - Refuses non-local base URLs unless `E2E_ALLOW_REMOTE=1` is set.
 - Stripe-specific smoke checks are skipped unless all required Stripe env vars are present **and** `E2E_STRIPE_SMOKE=1`.
+- For local web-server e2e runs, Playwright injects test-only Stripe fallback keys when local Stripe keys are missing or placeholder values (for example `*_replace_me`) are detected.
+- Smart Promotions screenshot captures in `/test-result` are local QA artifacts and are intentionally not committed.
 - To target an existing local server, set `E2E_BASE_URL` and optionally `E2E_SKIP_WEBSERVER=1`.
 
 ---
