@@ -1,5 +1,6 @@
 import '../_styles/shared-base.css';
 import '../_styles/dashboard-theme.css';
+import Script from 'next/script';
 import { inter, manrope } from '../_shared/fonts';
 import { OrdersProvider } from '@/context/OrdersContext';
 import { CustomersProvider } from '@/context/CustomersContext';
@@ -44,7 +45,9 @@ export default function DashboardLayout({ children }) {
     >
       <head>
         <style>{`@import url('https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap');`}</style>
-        <script dangerouslySetInnerHTML={{ __html: themeBootScript }} />
+        <Script id="dashboard-theme-boot" strategy="beforeInteractive">
+          {themeBootScript}
+        </Script>
       </head>
       <body className={`${inter.variable} ${manrope.variable} dashboard-body`} suppressHydrationWarning>
         <AdminThemeProvider>

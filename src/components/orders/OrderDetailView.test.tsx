@@ -69,6 +69,7 @@ function buildOrder(overrides: Record<string, unknown> = {}) {
         amount: 5,
       },
     ],
+    promotionApplications: [],
     lineItems: [
       {
         id: 'item_1',
@@ -477,6 +478,82 @@ describe('OrderDetailView', () => {
     expect(html).toContain('Shipping address')
     expect(html).toContain('Billing address')
     expect(html).toContain('OrderAdjustmentsCardStub')
+  })
+
+  it('renders promotion applications with line allocations in payment summary', () => {
+    const html = renderToStaticMarkup(
+      <OrderDetailView
+        order={buildOrder({
+          discounts: [],
+          discountAmount: 12.5,
+          promotionApplications: [
+            {
+              id: 'promo_app_1',
+              name: 'Hoodie + Hat bundle savings',
+              type: 'PRODUCT_GROUP_DISCOUNT',
+              rewardType: 'PERCENTAGE',
+              amount: 12.5,
+              lineAllocations: [
+                { id: 'alloc_1', orderItemId: 'item_1', discount: 8, quantityDiscounted: 1 },
+                { id: 'alloc_2', variantId: 'var_hat', discount: 4.5, quantityDiscounted: 1 },
+              ],
+            },
+          ],
+        })}
+      />
+    )
+
+    expect(html).toContain('Promotions applied')
+    expect(html).toContain('Hoodie + Hat bundle savings')
+    expect(html).toContain('Product group discount')
+    expect(html).toContain('12.5% off')
+    expect(html).toContain('-$12.50')
+    expect(html).toContain('Applied to:')
+    expect(html).toContain('Hoodie (Large): -$8.00')
+    expect(html).toContain('Variant var_hat: -$4.50')
+  })
+
+  it('shows code, promotion, and total discount rows when both discount sources are present', () => {
+    const html = renderToStaticMarkup(
+      <OrderDetailView
+        order={buildOrder({
+          discountAmount: 7,
+          discounts: [{ id: 'disc_a', title: 'Code 1', code: 'SAVE5', amount: 5 }],
+          promotionApplications: [
+            { id: 'promo_1', name: 'Promo 1', type: 'BUY_X_GET_Y', rewardType: 'FIXED_AMOUNT', amount: 2 },
+          ],
+        })}
+      />
+    )
+
+    expect(html).toContain('Code discounts')
+    expect(html).toContain('Promotion discounts')
+    expect(html).toContain('Total discounts')
+    expect(html).toContain('-$5.00')
+    expect(html).toContain('-$2.00')
+    expect(html).toContain('-$7.00')
+  })
+
+  it('renders line-item discount text from totalDiscountCents when totalDiscount is missing', () => {
+    const html = renderToStaticMarkup(
+      <OrderDetailView
+        order={buildOrder({
+          lineItems: [
+            {
+              id: 'item_cents_1',
+              title: 'Cap',
+              variantTitle: 'Default',
+              fulfillmentType: 'PHYSICAL',
+              quantity: 1,
+              total: 10,
+              totalDiscountCents: 350,
+            },
+          ],
+        })}
+      />
+    )
+
+    expect(html).toContain('Discount: -$3.50')
   })
 
   it('renders digital delivery card with statuses and action copy for digital grants', () => {

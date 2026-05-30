@@ -4,6 +4,7 @@ import {
   buildPromotionListQuery,
   buildPromotionPayloadFromDraft,
   buildPromotionPreview,
+  canSubmitPromotionDraft,
   createPromotionDraft,
   extractPromotionValidationIssues,
   formatRewardSummary,
@@ -205,5 +206,60 @@ describe('promotions UI helpers', () => {
         expect.objectContaining({ path: 'value', message: 'Expected number' }),
       ])
     )
+  })
+
+  it('requires basic minimum fields before allowing submit', () => {
+    const missingName = createPromotionDraft('PRODUCT_GROUP_DISCOUNT')
+    missingName.qualifiers = [
+      {
+        variantId: 'var_q',
+        productTitle: 'Hoodie',
+        variantTitle: 'Black',
+        sku: 'HD-1',
+        fulfillmentType: 'PHYSICAL',
+        quantity: 1,
+      },
+    ]
+    missingName.value = '15'
+
+    expect(canSubmitPromotionDraft(missingName)).toBe(false)
+
+    const readyDraft = {
+      ...missingName,
+      name: 'Bundle savings',
+    }
+
+    expect(canSubmitPromotionDraft(readyDraft)).toBe(true)
+  })
+
+  it('requires reward rows for reward-based promotion types', () => {
+    const buyX = createPromotionDraft('BUY_X_GET_Y')
+    buyX.name = 'Buy hoodie get hat'
+    buyX.value = '20'
+    buyX.qualifiers = [
+      {
+        variantId: 'var_q',
+        productTitle: 'Hoodie',
+        variantTitle: 'Black',
+        sku: 'HD-1',
+        fulfillmentType: 'PHYSICAL',
+        quantity: 1,
+      },
+    ]
+
+    expect(canSubmitPromotionDraft(buyX)).toBe(false)
+
+    buyX.rewards = [
+      {
+        variantId: 'var_r',
+        productTitle: 'Hat',
+        variantTitle: 'Blue',
+        sku: 'HT-1',
+        fulfillmentType: 'PHYSICAL',
+        quantity: 1,
+      },
+    ]
+
+    expect(canSubmitPromotionDraft(buyX)).toBe(true)
   })
 })

@@ -652,6 +652,14 @@
   margin-top: 0.75rem;
 }
 
+.summarySectionLabel {
+  margin: 0.8rem 0 0;
+  font-size: 0.76rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--on-surface-variant);
+}
+
 .discountTagRow {
   display: flex;
   align-items: baseline;
@@ -684,6 +692,44 @@
   color: var(--on-surface);
   font-weight: 600;
   flex-shrink: 0;
+}
+
+.promotionSummaryList {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+}
+
+.promotionSummaryRow {
+  border: 1px solid var(--glass-border);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--surface-container-low) 68%, transparent);
+  padding: 0.7rem 0.75rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.promotionSummaryRow strong {
+  color: var(--on-surface);
+  font-size: 0.84rem;
+}
+
+.promotionSummaryRow p {
+  margin: 0;
+  color: var(--on-surface-variant);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.promotionAllocationList {
+  margin-top: 0.2rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.promotionAllocationList span {
+  color: var(--on-surface-variant);
+  font-size: 0.74rem;
 }
 
 /* â”€â”€â”€ Email log hint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */

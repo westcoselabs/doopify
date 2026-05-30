@@ -25,6 +25,7 @@ describe('Discounts and promotions workspace copy', () => {
     const file = read('src/components/discounts/AutomaticPromotionsWorkspace.js')
     expect(file).toContain('Create automatic promotion')
     expect(file).toContain('Reward product rows are not supported for product group discounts in Smart Promotions V1.')
+    expect(file).toContain("'Discount settings'")
     expect(file).toContain('Reward items must already be in the customer&apos;s cart. Auto-add gifts are not enabled in V1.')
     expect(file).toContain('The free gift must already be in the customer&apos;s cart. Auto-add gifts are not enabled in V1.')
   })
@@ -39,6 +40,7 @@ describe('Discounts and promotions workspace copy', () => {
   it('shows validation errors and V1 stacking note in summary', () => {
     const file = read('src/components/discounts/AutomaticPromotionsWorkspace.js')
     expect(file).toContain('extractPromotionValidationIssues')
+    expect(file).toContain('canSubmitPromotionDraft')
     expect(file).toContain('Smart Promotions do not combine with discount codes in V1.')
     expect(file).toContain('validationIssues.map')
   })

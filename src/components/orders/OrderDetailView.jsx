@@ -71,6 +71,30 @@ function formatMoney(value, currency = "USD") {
   }).format(Number(value || 0));
 }
 
+function formatPromotionType(type) {
+  const normalized = String(type || "").toUpperCase();
+  if (normalized === "PRODUCT_GROUP_DISCOUNT") return "Product group discount";
+  if (normalized === "BUY_X_GET_Y") return "Buy X Get Y";
+  if (normalized === "FREE_GIFT") return "Free gift";
+  return String(type || "Promotion");
+}
+
+function formatPromotionRewardSummary(rewardType, amount, currency) {
+  const normalized = String(rewardType || "").toUpperCase();
+  if (normalized === "FREE") return "Free reward items";
+  if (normalized === "PERCENTAGE") return `${Number(amount || 0)}% off`;
+  if (normalized === "FIXED_AMOUNT") return `${formatMoney(amount, currency)} off`;
+  return "Promotion reward";
+}
+
+function amountFromSummary(summary) {
+  if (typeof summary?.amount === "number") return summary.amount;
+  if (typeof summary?.amountCents === "number") return Number(summary.amountCents) / 100;
+  if (typeof summary?.discount === "number") return summary.discount;
+  if (typeof summary?.discountCents === "number") return Number(summary.discountCents) / 100;
+  return 0;
+}
+
 function formatAddress(address) {
   if (!address) return "Not provided";
   if (typeof address === "string") return address.trim() || "Not provided";
@@ -389,8 +413,24 @@ export default function OrderDetailView({
   const fulfillments = currentOrder?.fulfillments || [];
   const shippingLabels = currentOrder?.shippingLabels || [];
   const discounts = currentOrder?.discounts || currentOrder?.discountApplications || [];
+  const promotionApplications = currentOrder?.promotionApplications || [];
+  const knownCodeDiscountAmount = discounts.reduce(
+    (sum, discount) => sum + amountFromSummary(discount),
+    0
+  );
+  const knownPromotionDiscountAmount = promotionApplications.reduce(
+    (sum, promotion) => sum + amountFromSummary(promotion),
+    0
+  );
+  const totalDiscountAmount = Number(currentOrder?.discountAmount || 0);
+  const showCodeDiscountBreakdown = discounts.length > 0;
+  const showPromotionDiscountBreakdown = promotionApplications.length > 0;
   const customerVisibleNotes = currentOrder?.customerVisibleNotes || [];
   const timeline = currentOrder?.timeline || [];
+  const lineItemById = useMemo(
+    () => new Map(lineItems.map((item) => [item.id, item])),
+    [lineItems]
+  );
   const shippingAddress = currentOrder?.shippingSummary?.address || currentOrder?.shippingAddress || null;
   const billingAddress = currentOrder?.billingAddress || null;
   const shippingCapabilities = currentOrder?.shippingCapabilities || {};
@@ -1689,10 +1729,26 @@ export default function OrderDetailView({
                 <span>Tax</span>
                 <span>{formatMoney(currentOrder.taxAmount, currency)}</span>
               </div>
-              {Number(currentOrder.discountAmount || 0) > 0 ? (
+              {showCodeDiscountBreakdown ? (
                 <div className={styles.summaryRowMuted}>
-                  <span>Discounts</span>
-                  <span>-{formatMoney(currentOrder.discountAmount, currency)}</span>
+                  <span>Code discounts</span>
+                  <span>-{formatMoney(knownCodeDiscountAmount, currency)}</span>
+                </div>
+              ) : null}
+              {showPromotionDiscountBreakdown ? (
+                <div className={styles.summaryRowMuted}>
+                  <span>Promotion discounts</span>
+                  <span>-{formatMoney(knownPromotionDiscountAmount, currency)}</span>
+                </div>
+              ) : null}
+              {totalDiscountAmount > 0 ? (
+                <div className={styles.summaryRowMuted}>
+                  <span>
+                    {showCodeDiscountBreakdown || showPromotionDiscountBreakdown
+                      ? "Total discounts"
+                      : "Discounts"}
+                  </span>
+                  <span>-{formatMoney(totalDiscountAmount, currency)}</span>
                 </div>
               ) : null}
               <div className={styles.summaryDivider} />
@@ -1706,6 +1762,7 @@ export default function OrderDetailView({
             {discounts.length ? (
               <>
                 <div className={styles.summaryDivider} style={{ marginTop: "1rem" }} />
+                <p className={styles.summarySectionLabel}>Discount codes applied</p>
                 <div className={styles.discountTagList}>
                   {discounts.map((discount) => (
                     <div className={styles.discountTagRow} key={discount.id}>
@@ -1720,10 +1777,53 @@ export default function OrderDetailView({
                       </span>
                       <span className={styles.discountTagAmount}>
                         -{formatMoney(
-                          discount.amount ?? Number(discount.amountCents || 0) / 100,
+                          amountFromSummary(discount),
                           currency
                         )}
                       </span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : null}
+            {promotionApplications.length ? (
+              <>
+                <div className={styles.summaryDivider} style={{ marginTop: "1rem" }} />
+                <p className={styles.summarySectionLabel}>Promotions applied</p>
+                <div className={styles.promotionSummaryList}>
+                  {promotionApplications.map((application) => (
+                    <div className={styles.promotionSummaryRow} key={application.id}>
+                      <strong>{application.name || "Promotion"}</strong>
+                      <p>
+                        {formatPromotionType(application.type)} -{" "}
+                        {formatPromotionRewardSummary(
+                          application.rewardType,
+                          amountFromSummary(application),
+                          currency
+                        )}{" "}
+                        - -{formatMoney(amountFromSummary(application), currency)}
+                      </p>
+                      {application.lineAllocations?.length ? (
+                        <div className={styles.promotionAllocationList}>
+                          <span>Applied to:</span>
+                          {application.lineAllocations.map((allocation) => {
+                            const matchedItem = lineItemById.get(allocation.orderItemId);
+                            const allocationLabel = matchedItem
+                              ? `${matchedItem.title} (${matchedItem.variantTitle || matchedItem.variant || "Default variant"})`
+                              : allocation.variantId
+                                ? `Variant ${allocation.variantId}`
+                                : "Order item";
+                            return (
+                              <p key={allocation.id}>
+                                {allocationLabel}: -{formatMoney(
+                                  amountFromSummary(allocation),
+                                  currency
+                                )}
+                              </p>
+                            );
+                          })}
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>

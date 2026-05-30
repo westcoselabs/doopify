@@ -15,6 +15,7 @@ import {
   buildPromotionListQuery,
   buildPromotionPayloadFromDraft,
   buildPromotionPreview,
+  canSubmitPromotionDraft,
   createPromotionDraft,
   extractPromotionValidationIssues,
   formatPromotionStatusLabel,
@@ -188,6 +189,7 @@ export default function AutomaticPromotionsWorkspace() {
     }
     return grouped;
   }, [validationIssues]);
+  const canSubmitPromotion = useMemo(() => canSubmitPromotionDraft(draft), [draft]);
 
   const loadPromotions = useCallback(async () => {
     setLoading(true);
@@ -549,7 +551,19 @@ export default function AutomaticPromotionsWorkspace() {
             >
               Cancel
             </AdminButton>
-            <AdminButton loading={saving} onClick={handleSavePromotion} size="sm" variant="primary">
+            <AdminButton
+              className={styles.drawerSubmitButton}
+              disabled={!canSubmitPromotion}
+              loading={saving}
+              onClick={handleSavePromotion}
+              size="sm"
+              title={
+                canSubmitPromotion
+                  ? undefined
+                  : 'Add a name, qualifier variants, and required reward/value fields before saving.'
+              }
+              variant="primary"
+            >
               {isEditMode ? 'Save promotion' : 'Create promotion'}
             </AdminButton>
           </>
@@ -782,9 +796,13 @@ export default function AutomaticPromotionsWorkspace() {
                 ) : null}
 
                 <AdminFormSection
-                  description="Set the reward method and value for this promotion."
+                  description={
+                    draft.type === 'PRODUCT_GROUP_DISCOUNT'
+                      ? 'Set the discount method and value applied to selected qualifier products.'
+                      : 'Set the reward method and value for this promotion.'
+                  }
                   eyebrow="Reward"
-                  title="Reward settings"
+                  title={draft.type === 'PRODUCT_GROUP_DISCOUNT' ? 'Discount settings' : 'Reward settings'}
                 >
                   <div className={styles.formGrid}>
                     <AdminField label="Reward type">

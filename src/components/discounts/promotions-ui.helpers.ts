@@ -140,6 +140,23 @@ export function buildPromotionPayloadFromDraft(draft: PromotionDraft) {
   }
 }
 
+export function canSubmitPromotionDraft(draft: PromotionDraft) {
+  const normalized = normalizePromotionDraftForType(draft)
+  if (!normalized.name.trim()) return false
+  if (!normalized.qualifiers.length) return false
+
+  if (normalized.type !== 'PRODUCT_GROUP_DISCOUNT' && !normalized.rewards.length) {
+    return false
+  }
+
+  if (normalized.type !== 'FREE_GIFT') {
+    const parsedValue = Number(normalized.value)
+    if (!Number.isFinite(parsedValue) || parsedValue <= 0) return false
+  }
+
+  return true
+}
+
 export function formatPromotionTypeLabel(type: string) {
   if (type === 'PRODUCT_GROUP_DISCOUNT') return 'Product group discount'
   if (type === 'BUY_X_GET_Y') return 'Buy X Get Y'

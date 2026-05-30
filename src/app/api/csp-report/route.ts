@@ -53,9 +53,14 @@ async function getReportSummary(request: Request): Promise<CspReportSummary | nu
   }
 }
 
+function shouldLogCspReport() {
+  if (process.env.CSP_REPORT_LOG === '1') return true
+  return process.env.NODE_ENV === 'production'
+}
+
 export async function POST(request: Request) {
   const summary = await getReportSummary(request)
-  if (summary) {
+  if (summary && shouldLogCspReport()) {
     console.warn('[POST /api/csp-report]', summary)
   }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import AdminDropdown from './AdminDropdown';
 import { useAdminTheme } from './AdminThemeProvider';
 
@@ -16,13 +16,20 @@ const THEME_OPTIONS = [
 
 export default function AdminThemeToggle({ className = '' }: { className?: string }) {
   const { resolvedTheme, setThemePreference, themePreference } = useAdminTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+// eslint-disable-next-line react-hooks/set-state-in-effect -- intentional effect-driven state sync for existing async/load flow
+    setMounted(true);
+  }, []);
 
   const currentLabel = useMemo(() => {
     if (themePreference === 'system') {
+      if (!mounted) return 'System';
       return `System (${resolvedTheme === 'dark' ? 'Dark' : 'Light'})`;
     }
     return themePreference === 'dark' ? 'Dark' : 'Light';
-  }, [resolvedTheme, themePreference]);
+  }, [mounted, resolvedTheme, themePreference]);
 
   return (
     <AdminDropdown
