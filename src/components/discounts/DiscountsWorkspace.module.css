@@ -4,29 +4,11 @@
   gap: 0.75rem;
 }
 
-.helperCopy {
-  margin: 0;
-  font-size: 0.8rem;
-  opacity: 0.8;
-}
-
-.sectionIntro {
-  display: grid;
-  gap: 0.2rem;
-}
-
-.sectionIntro h2,
-.sectionIntro p {
-  margin: 0;
-}
-
-.sectionIntro h2 {
-  font-size: 1rem;
-}
-
-.sectionIntro p {
-  font-size: 0.8rem;
-  opacity: 0.78;
+.listHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
 }
 
 .segmentedControl {
@@ -50,8 +32,8 @@
 }
 
 .segmentedButtonActive {
-  background: color-mix(in srgb, var(--brand-primary) 16%, var(--surface-soft));
-  color: color-mix(in srgb, var(--brand-primary) 68%, #f8fafc);
+  background: color-mix(in srgb, var(--primary) 16%, var(--surface-soft));
+  color: color-mix(in srgb, var(--primary) 68%, #f8fafc);
 }
 
 .detailGrid {
@@ -68,6 +50,7 @@
 .drawerBody {
   display: grid;
   gap: 0.7rem;
+  padding-bottom: 6rem;
 }
 
 .builderHint {
@@ -76,84 +59,227 @@
   opacity: 0.8;
 }
 
-.offerChoiceGrid {
+.offerChoiceGroups {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.7rem;
+}
+
+.offerChoiceGroup {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.offerChoiceGroupHeader {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.offerChoiceGroupHeader h4,
+.offerChoiceGroupHeader p {
+  margin: 0;
+}
+
+.offerChoiceGroupHeader h4 {
+  font-size: 0.92rem;
+}
+
+.offerChoiceGroupHeader p {
+  font-size: 0.77rem;
+  opacity: 0.76;
+}
+
+.offerChoiceList {
+  display: grid;
+  gap: 0.95rem;
+  padding: 0.15rem 0 0.25rem;
 }
 
 .offerChoiceCard {
   text-align: left;
-  border-radius: 0.95rem;
-  border: 1px solid color-mix(in srgb, var(--line-subtle) 84%, transparent);
-  padding: 0.9rem;
-  background: color-mix(in srgb, var(--surface-soft) 92%, transparent);
+  border-radius: 0.85rem;
+  border: 1px solid color-mix(in srgb, #494c58 58%, var(--line-subtle));
+  padding: 1rem 1rem 0.95rem;
+  background: color-mix(in srgb, #26272d 86%, var(--surface-soft));
   color: inherit;
-  display: grid;
-  gap: 0.38rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
   cursor: pointer;
-  transition: border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+  position: relative;
+  transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, #1a1b20 28%, transparent),
+    0 1px 2px color-mix(in srgb, #000 16%, transparent);
 }
 
 .offerChoiceCard:hover {
-  border-color: color-mix(in srgb, var(--brand-primary) 46%, var(--line-subtle));
-  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--primary) 28%, var(--line-subtle));
+  background: color-mix(in srgb, #2a2c33 90%, var(--surface-soft));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, #1a1b20 18%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--primary) 10%, transparent),
+    0 4px 14px color-mix(in srgb, #000 14%, transparent);
 }
 
 .offerChoiceCard:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--brand-primary) 48%, transparent);
+  outline: 2px solid color-mix(in srgb, var(--primary) 48%, transparent);
   outline-offset: 2px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 10%, transparent);
 }
 
-.offerChoiceTopRow {
+.offerChoiceLeading {
   display: flex;
-  justify-content: space-between;
-  gap: 0.65rem;
   align-items: flex-start;
+  gap: 1rem;
+  min-width: 0;
+  flex: 1;
 }
 
-.offerChoiceHeader {
+.offerChoiceCopy {
+  display: grid;
+  gap: 0.22rem;
+  min-width: 0;
+}
+
+.offerChoiceTitleRow {
   display: flex;
   align-items: center;
   gap: 0.4rem;
+  flex-wrap: wrap;
 }
 
 .offerChoiceRadio {
-  width: 0.72rem;
-  height: 0.72rem;
+  width: 1.2rem;
+  height: 1.2rem;
   border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--line-subtle) 78%, transparent);
-  background: color-mix(in srgb, var(--surface-canvas) 88%, transparent);
+  border: 1px solid color-mix(in srgb, #6f7380 66%, var(--line-subtle));
+  background: color-mix(in srgb, #1a1b20 92%, var(--surface-canvas));
   flex-shrink: 0;
-  margin-top: 0.14rem;
+  margin-top: 0.16rem;
+  position: relative;
+  isolation: isolate;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #111216 42%, transparent);
+  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+}
+
+.offerChoiceRadio::after {
+  content: '';
+  position: absolute;
+  inset: 0.28rem;
+  border-radius: 999px;
+  background: transparent;
+  transform: scale(0.72);
+  transition: background 120ms ease, transform 120ms ease;
+}
+
+.offerChoiceRadio::before {
+  content: '';
+  position: absolute;
+  inset: -0.34rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--primary) 54%, transparent);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  opacity: 0;
+  transform: scale(0.88);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 10%, transparent);
+  transition: opacity 120ms ease, transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease;
+  z-index: -1;
 }
 
 .offerChoiceBadge {
   border-radius: 999px;
-  padding: 0.16rem 0.46rem;
-  font-size: 0.69rem;
+  padding: 0;
+  font-size: 0.84rem;
   font-weight: 700;
-  background: color-mix(in srgb, var(--surface-canvas) 92%, transparent);
-  border: 1px solid color-mix(in srgb, var(--line-subtle) 74%, transparent);
+  background: transparent;
+  border: 0;
+  color: color-mix(in srgb, var(--ink-primary) 94%, #f8fafc);
   white-space: nowrap;
+  align-self: center;
+  opacity: 0.96;
 }
 
-.offerChoiceCard p,
+.offerChoiceDescription,
 .offerChoiceCard small {
   margin: 0;
-  opacity: 0.84;
-  font-size: 0.79rem;
+  opacity: 0.9;
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.offerChoiceTitleRow strong {
+  font-size: 0.98rem;
+  line-height: 1.2;
 }
 
 .offerChoiceCardActive {
-  border-color: color-mix(in srgb, var(--brand-primary) 68%, transparent);
-  background: color-mix(in srgb, var(--brand-primary) 12%, var(--surface-soft));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand-primary) 28%, transparent);
+  border-color: color-mix(in srgb, var(--primary) 88%, #5da8ff);
+  background: color-mix(in srgb, #2a2c33 92%, var(--surface-soft));
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--primary) 14%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--primary) 34%, transparent),
+    0 6px 18px color-mix(in srgb, #000 14%, transparent);
 }
 
 .offerChoiceCardActive .offerChoiceRadio {
-  border-color: color-mix(in srgb, var(--brand-primary) 70%, transparent);
-  background: color-mix(in srgb, var(--brand-primary) 72%, #f8fafc);
+  border-color: color-mix(in srgb, var(--primary) 92%, #5da8ff);
+  background: color-mix(in srgb, var(--surface-canvas) 98%, transparent);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, #ffffff 18%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--primary) 18%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent),
+    0 0 16px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.offerChoiceCardActive .offerChoiceRadio::before {
+  opacity: 1;
+  transform: scale(1);
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--primary) 12%, transparent),
+    0 0 12px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+.offerChoiceCardActive .offerChoiceRadio::after {
+  background: var(--primary);
+  transform: scale(1);
+}
+
+.offerChoiceCardActive::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
+  pointer-events: none;
+}
+
+.offerChoiceCardActive .offerChoiceBadge {
+  color: var(--primary);
+}
+
+.offerChoiceSelectionTag {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 0.16rem 0.48rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: color-mix(in srgb, var(--primary) 76%, #f8fafc);
+  background: color-mix(in srgb, var(--primary) 12%, var(--surface-canvas));
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, transparent);
+}
+
+.offerChoiceNote {
+  margin: 0.7rem 0 0;
+  padding: 0.72rem 0.84rem;
+  border-radius: 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--primary) 20%, var(--line-subtle));
+  background: color-mix(in srgb, var(--primary) 7%, var(--surface-soft));
+  color: color-mix(in srgb, var(--ink-primary) 92%, #f8fafc);
+  font-size: 0.78rem;
+  line-height: 1.45;
 }
 
 .formGrid {
@@ -177,6 +303,35 @@
   font-size: 0.82rem;
 }
 
+.rowActions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.methodPill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 82px;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border: 1px solid color-mix(in srgb, var(--line-subtle) 76%, transparent);
+}
+
+.methodPillCode {
+  background: color-mix(in srgb, var(--surface-canvas) 92%, transparent);
+  color: inherit;
+}
+
+.methodPillAutomatic {
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface-canvas));
+  border-color: color-mix(in srgb, var(--primary) 28%, transparent);
+  color: color-mix(in srgb, var(--primary) 72%, #f8fafc);
+}
+
 .inlineHint {
   margin: 0;
   font-size: 0.76rem;
@@ -185,8 +340,7 @@
 
 @media (max-width: 980px) {
   .detailGrid,
-  .formGrid,
-  .offerChoiceGrid {
+  .formGrid {
     grid-template-columns: 1fr;
   }
 
@@ -198,8 +352,17 @@
     flex: 1;
   }
 
-  .offerChoiceTopRow {
+  .listHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .offerChoiceCard {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .offerChoiceBadge {
+    align-self: flex-start;
   }
 }

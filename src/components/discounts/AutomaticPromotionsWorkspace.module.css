@@ -21,6 +21,7 @@
 .drawerBody {
   display: grid;
   gap: 0.7rem;
+  padding-bottom: 6rem;
 }
 
 .typeCards {
@@ -114,12 +115,18 @@
 
 .selectionRow {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.65rem;
   border: 1px solid color-mix(in srgb, var(--line-subtle) 82%, transparent);
   border-radius: 0.75rem;
   padding: 0.55rem 0.6rem;
+  background: color-mix(in srgb, var(--surface-soft) 90%, transparent);
+}
+
+.selectionContent {
+  display: grid;
+  gap: 0.18rem;
 }
 
 .selectionRow p {
@@ -143,6 +150,32 @@
   opacity: 0.76;
 }
 
+.pickerPanel {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 0.65rem;
+  padding: 0.8rem;
+  border-radius: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 18%, var(--line-subtle));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface-soft) 94%, transparent), color-mix(in srgb, var(--surface-canvas) 94%, transparent));
+}
+
+.pickerToolbar {
+  display: flex;
+  gap: 0.45rem;
+}
+
+.pickerToolbar input {
+  flex: 1;
+}
+
+.pickerActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+}
+
 .catalogToolbar {
   display: flex;
   gap: 0.45rem;
@@ -163,6 +196,7 @@
   padding: 0.55rem 0.6rem;
   display: grid;
   gap: 0.45rem;
+  background: color-mix(in srgb, var(--surface-canvas) 90%, transparent);
 }
 
 .catalogProductHeader {
@@ -187,11 +221,44 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.4rem;
+  gap: 0.6rem;
   border-radius: 0.6rem;
-  border: 1px dashed color-mix(in srgb, var(--line-subtle) 78%, transparent);
-  padding: 0.45rem 0.5rem;
+  border: 1px solid color-mix(in srgb, var(--line-subtle) 78%, transparent);
+  padding: 0.55rem 0.6rem;
   font-size: 0.79rem;
+}
+
+.catalogVariantChoice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+}
+
+.catalogVariantChoice input {
+  margin-top: 0.1rem;
+}
+
+.catalogVariantChoice span {
+  display: grid;
+  gap: 0.14rem;
+}
+
+.catalogVariantChoice small {
+  margin: 0;
+  font-size: 0.72rem;
+  opacity: 0.76;
+}
+
+.catalogVariantStatus {
+  font-size: 0.72rem;
+  font-weight: 600;
+  opacity: 0.76;
+  white-space: nowrap;
+}
+
+.catalogVariantRowDisabled {
+  opacity: 0.72;
+  background: color-mix(in srgb, var(--surface-soft) 84%, transparent);
 }
 
 .formGrid {
@@ -272,11 +339,21 @@
     flex-direction: column;
   }
 
+  .pickerToolbar,
+  .pickerActions {
+    flex-direction: column;
+  }
+
   .typeCardTopRow,
   .selectionRow,
   .catalogVariantRow,
   .catalogProductHeader {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .selectionActions {
+    width: 100%;
+    flex-wrap: wrap;
   }
 }

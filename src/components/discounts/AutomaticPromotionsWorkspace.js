@@ -126,6 +126,41 @@ function parseApiErrorMessage(payload, fallback) {
   return fallback;
 }
 
+function togglePendingVariantSelection(setCatalogState, section, product, variant) {
+  setCatalogState((current) => {
+    const pendingRows = current.pendingSelections[section] || [];
+    const exists = pendingRows.some((row) => row.variantId === variant.id);
+    return {
+      ...current,
+      pendingSelections: {
+        ...current.pendingSelections,
+        [section]: exists
+          ? pendingRows.filter((row) => row.variantId !== variant.id)
+          : pendingRows.concat({
+              productId: product.id,
+              productTitle: product.title,
+              variantId: variant.id,
+              variantTitle: variant.title || 'Default',
+              sku: variant.sku || null,
+              fulfillmentType: product.fulfillmentType || 'PHYSICAL',
+            }),
+      },
+    };
+  });
+}
+
+function closePromotionCatalogPicker(setCatalogState) {
+  setCatalogState((current) => ({
+    ...current,
+    openSection: null,
+    pendingSelections: {
+      ...current.pendingSelections,
+      qualifiers: [],
+      rewards: [],
+    },
+  }));
+}
+
 export function createPromotionCatalogState() {
   return {
     query: '',
@@ -133,6 +168,11 @@ export function createPromotionCatalogState() {
     loading: false,
     error: '',
     productDetailsById: {},
+    openSection: null,
+    pendingSelections: {
+      qualifiers: [],
+      rewards: [],
+    },
   };
 }
 
@@ -150,16 +190,17 @@ function VariantRowList({
       {rows.length ? (
         rows.map((row) => (
           <div className={styles.selectionRow} key={row.variantId}>
-            <div>
+            <div className={styles.selectionContent}>
               <strong>{row.productTitle}</strong>
               <p>
                 {row.variantTitle}
-                {row.sku ? ` | SKU ${row.sku}` : ''}
-                {row.fulfillmentType ? ` | ${row.fulfillmentType}` : ''}
+                {row.sku ? ` - SKU ${row.sku}` : ''}
+                {row.fulfillmentType ? ` - ${row.fulfillmentType}` : ''}
               </p>
             </div>
             <div className={styles.selectionActions}>
               <AdminInput
+                aria-label={`${quantityLabel} for ${row.productTitle} ${row.variantTitle}`}
                 min="1"
                 onChange={(event) => onChangeQuantity(row.variantId, Number(event.target.value || 1))}
                 type="number"
@@ -175,6 +216,122 @@ function VariantRowList({
       ) : (
         <p className={styles.inlineHint}>{emptyText}</p>
       )}
+    </div>
+  );
+}
+
+function hasPendingSelection(pendingSelections, section, variantId) {
+  return pendingSelections[section].some((entry) => entry.variantId === variantId);
+}
+
+function PromotionVariantPicker({
+  addButtonLabel,
+  browseButtonLabel,
+  catalogError,
+  catalogLoading,
+  catalogQuery,
+  catalogRows,
+  emptyText,
+  loadProductDetail,
+  onAddSelected,
+  onCancel,
+  onSearch,
+  onTogglePendingVariant,
+  open,
+  pendingSelections,
+  productDetailsById,
+  searchPlaceholder,
+  section,
+  selectedRows,
+  setCatalogQuery,
+}) {
+  if (!open) {
+    return (
+      <AdminButton onClick={onSearch} size="sm" variant="secondary">
+        {browseButtonLabel}
+      </AdminButton>
+    );
+  }
+
+  const pendingCount = pendingSelections[section].length;
+
+  return (
+    <div className={styles.pickerPanel}>
+      <div className={styles.pickerToolbar}>
+        <AdminInput
+          onChange={(event) => setCatalogQuery(event.target.value)}
+          placeholder={searchPlaceholder}
+          type="search"
+          value={catalogQuery}
+        />
+        <AdminButton onClick={onSearch} size="sm" variant="secondary">
+          Search
+        </AdminButton>
+      </div>
+      {catalogError ? <p className={styles.inlineError}>{catalogError}</p> : null}
+      <div className={styles.catalogList}>
+        {catalogLoading ? <p className={styles.inlineHint}>Loading product catalog...</p> : null}
+        {!catalogLoading && !catalogRows.length ? <p className={styles.inlineHint}>{emptyText}</p> : null}
+        {catalogRows.map((product) => {
+          const detail = productDetailsById[product.id];
+          const isPhysical = (product.fulfillmentType || 'PHYSICAL') === 'PHYSICAL';
+          return (
+            <div className={styles.catalogProduct} key={product.id}>
+              <div className={styles.catalogProductHeader}>
+                <div>
+                  <strong>{product.title}</strong>
+                  <p>{isPhysical ? 'Physical product' : `Fulfillment: ${product.fulfillmentType || 'Unknown'}`}</p>
+                </div>
+                <AdminButton
+                  disabled={!isPhysical}
+                  onClick={() => void loadProductDetail(product.id)}
+                  size="sm"
+                  variant="ghost"
+                >
+                  {detail?.variants?.length ? 'Refresh variants' : 'Show variants'}
+                </AdminButton>
+              </div>
+              {!isPhysical ? <p className={styles.inlineHint}>Only physical products are eligible in V1.</p> : null}
+              {detail?.variants?.length ? (
+                <div className={styles.catalogVariantList} role="group" aria-label={`${product.title} variants`}>
+                  {detail.variants.map((variant) => {
+                    const alreadySelected = selectedRows.some((row) => row.variantId === variant.id);
+                    const checked = hasPendingSelection(pendingSelections, section, variant.id);
+                    return (
+                      <label className={`${styles.catalogVariantRow} ${alreadySelected ? styles.catalogVariantRowDisabled : ''}`} key={variant.id}>
+                        <div className={styles.catalogVariantChoice}>
+                          <input
+                            aria-label={`${product.title} ${variant.title || 'Default'}`}
+                            checked={alreadySelected || checked}
+                            disabled={alreadySelected || !isPhysical}
+                            onChange={() => onTogglePendingVariant(section, product, variant)}
+                            type="checkbox"
+                          />
+                          <span>
+                            <strong>{variant.title || 'Default'}</strong>
+                            <small>{variant.sku ? `SKU ${variant.sku}` : 'No SKU'}</small>
+                          </span>
+                        </div>
+                        <span className={styles.catalogVariantStatus}>
+                          {alreadySelected ? 'Already selected' : checked ? 'Ready to add' : 'Select'}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+      <div className={styles.pickerActions}>
+        <AdminButton onClick={onCancel} size="sm" variant="ghost">
+          Cancel
+        </AdminButton>
+        <AdminButton disabled={!pendingCount} onClick={onAddSelected} size="sm" variant="primary">
+          {pendingCount ? `${addButtonLabel} (${pendingCount})` : addButtonLabel}
+        </AdminButton>
+      </div>
     </div>
   );
 }
@@ -282,11 +439,15 @@ function PromotionCatalogSection({
 export function SmartPromotionFormSections({
   catalogState,
   draft,
+  onAddPendingSelections,
   onAddVariant,
   onCatalogQueryChange,
+  onCancelPicker,
   onLoadProductDetail,
+  onOpenPicker,
   onRemoveSelection,
   onSearchCatalog,
+  onTogglePendingVariant,
   onTypeChange,
   onUpdateDraft,
   onUpdateSelectionQuantity,
@@ -336,72 +497,90 @@ export function SmartPromotionFormSections({
 
       {visible.has('qualifiers') ? (
         <AdminFormSection
-          description="Select qualifier products and quantities customers must have in their cart."
-          eyebrow="Customer must buy"
-          title="Customer must buy"
+          description="Choose the products customers must have in their cart for this promotion to apply."
+          eyebrow="Required cart items"
+          title="Required cart items"
         >
           <VariantRowList
-            emptyText="No qualifier variants selected yet."
-            fieldLabel="Qualifier variants"
+            emptyText="No required items selected. Browse products to choose what customers must have in their cart."
+            fieldLabel="Selected required items"
             onChangeQuantity={(variantId, quantity) => onUpdateSelectionQuantity('qualifiers', variantId, quantity)}
             onRemove={(variantId) => onRemoveSelection('qualifiers', variantId)}
             quantityLabel="Required quantity"
             rows={draft.qualifiers}
           />
+          <PromotionVariantPicker
+            addButtonLabel="Add selected"
+            browseButtonLabel="Browse products"
+            catalogError={catalogState.error}
+            catalogLoading={catalogState.loading}
+            catalogQuery={catalogState.query}
+            catalogRows={catalogState.rows}
+            emptyText="Search to find physical products and choose variants."
+            loadProductDetail={onLoadProductDetail}
+            onAddSelected={() => onAddPendingSelections('qualifiers')}
+            onCancel={onCancelPicker}
+            onSearch={() => onOpenPicker('qualifiers')}
+            onTogglePendingVariant={onTogglePendingVariant}
+            open={catalogState.openSection === 'qualifiers'}
+            pendingSelections={catalogState.pendingSelections}
+            productDetailsById={catalogState.productDetailsById}
+            searchPlaceholder="Search products..."
+            section="qualifiers"
+            selectedRows={draft.qualifiers}
+            setCatalogQuery={onCatalogQueryChange}
+          />
         </AdminFormSection>
-      ) : null}
-
-      {visible.has('qualifier-catalog') ? (
-        <PromotionCatalogSection
-          addLabel="Add qualifier"
-          catalogError={catalogState.error}
-          catalogLoading={catalogState.loading}
-          catalogQuery={catalogState.query}
-          catalogRows={catalogState.rows}
-          emptyText="Search to find products and variants."
-          loadProductDetail={onLoadProductDetail}
-          onAdd={(product, variant) => onAddVariant('qualifiers', product, variant)}
-          productDetailsById={catalogState.productDetailsById}
-          searchCatalog={onSearchCatalog}
-          setCatalogQuery={onCatalogQueryChange}
-          title="Add qualifier variants"
-        />
       ) : null}
 
       {visible.has('reward-settings') ? (
         <AdminFormSection
           description={
             draft.type === 'PRODUCT_GROUP_DISCOUNT'
-              ? 'Choose the discount value applied to the selected qualifier products.'
-              : 'Select reward products and configure how the discount should apply.'
+              ? 'This discount applies to the required cart items selected above.'
+              : 'Choose the products that receive the discount when the required cart items are present.'
           }
-          eyebrow={draft.type === 'PRODUCT_GROUP_DISCOUNT' ? 'Discount settings' : 'Customer receives'}
-          title={draft.type === 'PRODUCT_GROUP_DISCOUNT' ? 'Discount settings' : 'Customer receives'}
+          eyebrow={draft.type === 'PRODUCT_GROUP_DISCOUNT' ? 'Discount settings' : 'Reward items'}
+          title={draft.type === 'PRODUCT_GROUP_DISCOUNT' ? 'Discount settings' : 'Reward items'}
         >
           {draft.type === 'PRODUCT_GROUP_DISCOUNT' ? (
             <p className={styles.inlineHint}>
-              Product group discounts apply to the selected qualifier products only in V1.
+              This discount applies to the required cart items selected above.
             </p>
           ) : (
             <>
               <VariantRowList
-                emptyText="No reward variants selected yet."
-                fieldLabel="Reward variants"
+                emptyText="No reward items selected. Browse rewards to choose what receives the discount."
+                fieldLabel="Selected reward items"
                 onChangeQuantity={(variantId, quantity) => onUpdateSelectionQuantity('rewards', variantId, quantity)}
                 onRemove={(variantId) => onRemoveSelection('rewards', variantId)}
                 quantityLabel="Reward quantity"
                 rows={draft.rewards}
               />
-              {draft.type === 'BUY_X_GET_Y' ? (
-                <p className={styles.inlineHint}>
-                  Reward items must already be in the customer&apos;s cart. Auto-add gifts are not enabled in V1.
-                </p>
-              ) : null}
-              {draft.type === 'FREE_GIFT' ? (
-                <p className={styles.inlineHint}>
-                  Gift items must already be in the customer&apos;s cart. Auto-add gifts are not enabled in V1.
-                </p>
-              ) : null}
+              <PromotionVariantPicker
+                addButtonLabel="Add selected"
+                browseButtonLabel="Browse rewards"
+                catalogError={catalogState.error}
+                catalogLoading={catalogState.loading}
+                catalogQuery={catalogState.query}
+                catalogRows={catalogState.rows}
+                emptyText="Search to find physical reward products and choose variants."
+                loadProductDetail={onLoadProductDetail}
+                onAddSelected={() => onAddPendingSelections('rewards')}
+                onCancel={onCancelPicker}
+                onSearch={() => onOpenPicker('rewards')}
+                onTogglePendingVariant={onTogglePendingVariant}
+                open={catalogState.openSection === 'rewards'}
+                pendingSelections={catalogState.pendingSelections}
+                productDetailsById={catalogState.productDetailsById}
+                searchPlaceholder="Search rewards..."
+                section="rewards"
+                selectedRows={draft.rewards}
+                setCatalogQuery={onCatalogQueryChange}
+              />
+              <p className={styles.inlineHint}>
+                Reward items must already be in the customer&apos;s cart. Auto-add is not enabled in V1.
+              </p>
             </>
           )}
           <div className={styles.formGrid}>
@@ -427,23 +606,6 @@ export function SmartPromotionFormSections({
             </AdminField>
           </div>
         </AdminFormSection>
-      ) : null}
-
-      {visible.has('reward-catalog') && showRewards ? (
-        <PromotionCatalogSection
-          addLabel="Add reward"
-          catalogError={catalogState.error}
-          catalogLoading={catalogState.loading}
-          catalogQuery={catalogState.query}
-          catalogRows={catalogState.rows}
-          emptyText="Search to find products and variants."
-          loadProductDetail={onLoadProductDetail}
-          onAdd={(product, variant) => onAddVariant('rewards', product, variant)}
-          productDetailsById={catalogState.productDetailsById}
-          searchCatalog={onSearchCatalog}
-          setCatalogQuery={onCatalogQueryChange}
-          title="Add reward variants"
-        />
       ) : null}
 
       {visible.has('schedule') ? (
@@ -700,6 +862,39 @@ export default function AutomaticPromotionsWorkspace({
         }),
       };
     });
+  }
+
+  function openCatalogPicker(section) {
+    setCatalogState((current) => ({
+      ...current,
+      openSection: section,
+      error: '',
+      pendingSelections: {
+        ...current.pendingSelections,
+        [section]: [],
+      },
+    }));
+    void searchCatalog();
+  }
+
+  function addPendingSelections(section) {
+    const pendingRows = catalogState.pendingSelections[section] || [];
+    for (const row of pendingRows) {
+      addVariantToSelection(
+        section,
+        {
+          id: row.productId,
+          title: row.productTitle,
+          fulfillmentType: row.fulfillmentType || 'PHYSICAL',
+        },
+        {
+          id: row.variantId,
+          title: row.variantTitle,
+          sku: row.sku || null,
+        }
+      );
+    }
+    closePromotionCatalogPicker(setCatalogState);
   }
 
   async function searchCatalog() {
@@ -976,6 +1171,7 @@ export default function AutomaticPromotionsWorkspace({
           <SmartPromotionFormSections
             catalogState={catalogState}
             draft={draft}
+            onAddPendingSelections={addPendingSelections}
             onAddVariant={addVariantToSelection}
             onCatalogQueryChange={(value) =>
               setCatalogState((current) => ({
@@ -983,9 +1179,14 @@ export default function AutomaticPromotionsWorkspace({
                 query: value,
               }))
             }
+            onCancelPicker={() => closePromotionCatalogPicker(setCatalogState)}
             onLoadProductDetail={loadProductDetail}
+            onOpenPicker={openCatalogPicker}
             onRemoveSelection={removeSelection}
             onSearchCatalog={searchCatalog}
+            onTogglePendingVariant={(section, product, variant) =>
+              togglePendingVariantSelection(setCatalogState, section, product, variant)
+            }
             onTypeChange={onTypeChange}
             onUpdateDraft={updateDraft}
             onUpdateSelectionQuantity={updateSelectionQuantity}

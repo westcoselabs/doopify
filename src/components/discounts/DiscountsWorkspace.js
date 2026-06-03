@@ -1,9 +1,8 @@
 "use client";
 
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import AppShell from '../AppShell';
 import { useDiscounts } from '../../context/DiscountsContext';
-import { DISCOUNT_METHODS, DISCOUNT_STATUSES, DISCOUNT_TYPES } from '../../lib/discountsData';
 import AdminButton from '../admin/ui/AdminButton';
 import AdminCard from '../admin/ui/AdminCard';
 import AdminDrawer from '../admin/ui/AdminDrawer';
@@ -17,17 +16,20 @@ import AdminSelect from '../admin/ui/AdminSelect';
 import AdminStatusChip from '../admin/ui/AdminStatusChip';
 import AdminTable from '../admin/ui/AdminTable';
 import AdminToolbar from '../admin/ui/AdminToolbar';
-import AutomaticPromotionsWorkspace, {
+import {
   createPromotionCatalogState,
   SmartPromotionFormSections,
 } from './AutomaticPromotionsWorkspace';
 import styles from './DiscountsWorkspace.module.css';
 import {
   buildPromotionPayloadFromDraft,
-  buildPromotionPreview,
   canSubmitPromotionDraft,
   createPromotionDraft,
   extractPromotionValidationIssues,
+  formatPromotionStatusLabel,
+  formatPromotionTypeLabel,
+  getPromotionStatusTone,
+  normalizePromotionDraftForType,
 } from './promotions-ui.helpers';
 
 const LEGACY_DISCOUNT_METHODS = ['amount off products', 'amount off order', 'free shipping'];
@@ -36,65 +38,90 @@ const BROWSE_FILTERS = [
   { id: 'discount-codes', label: 'Discount codes' },
   { id: 'automatic', label: 'Automatic' },
 ];
-const CREATE_STEPS = ['type', 'details', 'schedule'];
+const CREATE_METHODS = {
+  LEGACY: 'discount-code',
+  SMART: 'automatic-offer',
+};
+const CREATE_STEPS = ['method', 'type', 'details'];
+const METHOD_CHOICES = [
+  {
+    id: CREATE_METHODS.LEGACY,
+    badge: 'Code',
+    description: 'Customer enters a code at checkout.',
+    bestFor: 'Best for: SUMMER20, VIP offers, free shipping.',
+    title: 'Discount code',
+  },
+  {
+    id: CREATE_METHODS.SMART,
+    badge: 'Automatic',
+    description: 'Applies automatically when cart rules are met.',
+    bestFor: 'Best for: bundles, Buy X Get Y, free gifts.',
+    title: 'Automatic offer',
+  },
+];
 const OFFER_TYPE_DEFINITIONS = [
   {
     id: 'amount-off-products',
-    badge: 'Code or automatic',
-    description: 'Discount specific products or variants.',
-    example: 'Example: 15% off selected shirts.',
+    badge: 'Code',
+    description: 'Discount selected products or variants.',
     flow: 'legacy',
     legacyMethod: 'amount off products',
     title: 'Amount off products',
+    typeKey: 'legacy_amount_off_products',
   },
   {
     id: 'amount-off-order',
-    badge: 'Code or automatic',
+    badge: 'Code',
     description: 'Discount the order subtotal.',
-    example: 'Example: $10 off orders over $75.',
     flow: 'legacy',
     legacyMethod: 'amount off order',
     title: 'Amount off order',
+    typeKey: 'legacy_amount_off_order',
   },
   {
     id: 'free-shipping',
     badge: 'Code',
-    description: 'Remove shipping cost with a customer-entered code.',
-    example: 'Example: FREESHIP.',
+    description: 'Remove shipping cost with a code.',
     flow: 'legacy',
     legacyMethod: 'free shipping',
     title: 'Free shipping',
+    typeKey: 'legacy_free_shipping',
   },
   {
     id: 'product-group-discount',
     badge: 'Automatic',
     description: 'Discount selected products when bought together.',
-    example: 'Example: Buy Hoodie + Hat and save 15%.',
     flow: 'smart',
     promotionType: 'PRODUCT_GROUP_DISCOUNT',
     title: 'Product group discount',
+    typeKey: 'PRODUCT_GROUP_DISCOUNT',
   },
   {
     id: 'buy-x-get-y',
     badge: 'Automatic',
-    description: 'Discount a reward product when qualifying products are also in the cart.',
-    example: 'Example: Buy a Hoodie, get a Hat 50% off.',
+    description: 'Discount reward products when qualifiers are in cart.',
     flow: 'smart',
-    note: 'Reward item must already be in cart.',
     promotionType: 'BUY_X_GET_Y',
     title: 'Buy X Get Y',
+    typeKey: 'BUY_X_GET_Y',
   },
   {
     id: 'free-gift',
     badge: 'Automatic',
-    description: 'Make selected reward products free when qualifying products are also in the cart.',
-    example: 'Example: Buy a Hoodie, get a Sticker Pack free.',
+    description: 'Make selected reward products free.',
     flow: 'smart',
-    note: 'Gift item must already be in cart.',
     promotionType: 'FREE_GIFT',
     title: 'Free gift',
+    typeKey: 'FREE_GIFT',
   },
 ];
+const AUTOMATIC_TYPE_NOTE =
+  "V1 note: Buy X Get Y and Free Gift do not auto-add reward items. Reward items must already be in the customer's cart.";
+const LEGACY_TYPE_BY_METHOD = {
+  'amount off products': 'Amount off products',
+  'amount off order': 'Amount off order',
+  'free shipping': 'Free shipping',
+};
 
 function createDiscountDraft(type) {
   return {
@@ -117,6 +144,7 @@ function createDiscountDraft(type) {
     minimumRequirementValue: '',
     usageLimit: '',
     appliesTo: 'All products',
+    updatedAt: '',
   };
 }
 
@@ -149,42 +177,377 @@ function deriveLegacyStatus(draft) {
   return draft.status || 'active';
 }
 
+function formatLegacyTypeLabel(method) {
+  return LEGACY_TYPE_BY_METHOD[method] || method;
+}
+
+function formatUpdatedDisplayLabel(value) {
+  const fallbackLabel = '\u2014';
+  if (!value) return fallbackLabel;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return fallbackLabel;
+  return date.toLocaleDateString();
+}
+
+function formatUpdatedLabel(value) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString();
+}
+
+function toLegacyTypeKey(method) {
+  if (method === 'amount off products') return 'legacy_amount_off_products';
+  if (method === 'amount off order') return 'legacy_amount_off_order';
+  if (method === 'free shipping') return 'legacy_free_shipping';
+  return `legacy_${String(method || '').replace(/\s+/g, '_')}`;
+}
+
+function toSmartDraftFromDetail(promotion) {
+  return {
+    id: promotion.id,
+    name: String(promotion.name || ''),
+    status: promotion.status || 'DRAFT',
+    type: promotion.type || 'PRODUCT_GROUP_DISCOUNT',
+    rewardType: promotion.rewardType || 'PERCENTAGE',
+    value: String(promotion.value ?? ''),
+    startsAt: promotion.startsAt ? new Date(new Date(promotion.startsAt).getTime() - new Date(promotion.startsAt).getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : '',
+    endsAt: promotion.endsAt ? new Date(new Date(promotion.endsAt).getTime() - new Date(promotion.endsAt).getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : '',
+    usageLimit: promotion.usageLimit == null ? '' : String(promotion.usageLimit),
+    priority: promotion.priority == null ? '100' : String(promotion.priority),
+    qualifiers: (promotion.qualifiers || []).map((qualifier) => ({
+      variantId: qualifier.variantId,
+      productTitle: qualifier.productTitle,
+      variantTitle: qualifier.variantTitle,
+      sku: qualifier.sku || null,
+      fulfillmentType: qualifier.fulfillmentType || 'PHYSICAL',
+      quantity: Number(qualifier.requiredQuantity || 1),
+    })),
+    rewards: (promotion.rewards || []).map((reward) => ({
+      variantId: reward.variantId,
+      productTitle: reward.productTitle,
+      variantTitle: reward.variantTitle,
+      sku: reward.sku || null,
+      fulfillmentType: reward.fulfillmentType || 'PHYSICAL',
+      quantity: Number(reward.rewardQuantity || 1),
+    })),
+  };
+}
+
+function removePromotionSelection(setDraft, section, variantId) {
+  setDraft((current) => ({
+    ...current,
+    [section]: current[section].filter((row) => row.variantId !== variantId),
+  }));
+}
+
+function updatePromotionSelectionQuantity(setDraft, section, variantId, quantity) {
+  const nextQuantity = Number.isFinite(quantity) ? Math.max(1, Math.round(quantity)) : 1;
+  setDraft((current) => ({
+    ...current,
+    [section]: current[section].map((row) =>
+      row.variantId === variantId
+        ? {
+            ...row,
+            quantity: nextQuantity,
+          }
+        : row
+    ),
+  }));
+}
+
+function addPromotionVariantToSelection(setDraft, setCatalogState, section, product, variant) {
+  if (product.fulfillmentType !== 'PHYSICAL') {
+    setCatalogState((current) => ({
+      ...current,
+      error: 'Only physical variants are eligible for Smart Promotions in V1.',
+    }));
+    return;
+  }
+
+  setCatalogState((current) => ({ ...current, error: '' }));
+  setDraft((current) => {
+    const existing = current[section].find((row) => row.variantId === variant.id);
+    if (existing) {
+      return current;
+    }
+
+    return {
+      ...current,
+      [section]: current[section].concat({
+        variantId: variant.id,
+        productTitle: product.title,
+        variantTitle: variant.title || 'Default',
+        sku: variant.sku || null,
+        fulfillmentType: product.fulfillmentType || 'PHYSICAL',
+        quantity: 1,
+      }),
+    };
+  });
+}
+
+function togglePromotionPendingVariant(setCatalogState, section, product, variant) {
+  setCatalogState((current) => {
+    const pendingRows = current.pendingSelections[section] || [];
+    const exists = pendingRows.some((row) => row.variantId === variant.id);
+    return {
+      ...current,
+      pendingSelections: {
+        ...current.pendingSelections,
+        [section]: exists
+          ? pendingRows.filter((row) => row.variantId !== variant.id)
+          : pendingRows.concat({
+              productId: product.id,
+              productTitle: product.title,
+              variantId: variant.id,
+              variantTitle: variant.title || 'Default',
+              sku: variant.sku || null,
+              fulfillmentType: product.fulfillmentType || 'PHYSICAL',
+            }),
+      },
+    };
+  });
+}
+
+function closePromotionCatalogPicker(setCatalogState) {
+  setCatalogState((current) => ({
+    ...current,
+    openSection: null,
+    pendingSelections: {
+      ...current.pendingSelections,
+      qualifiers: [],
+      rewards: [],
+    },
+  }));
+}
+
+function openPromotionCatalogPicker(setCatalogState, searchCatalog, section) {
+  setCatalogState((current) => ({
+    ...current,
+    openSection: section,
+    error: '',
+    pendingSelections: {
+      ...current.pendingSelections,
+      [section]: [],
+    },
+  }));
+  void searchCatalog();
+}
+
+async function searchPromotionCatalog(catalogState, setCatalogState) {
+  setCatalogState((current) => ({
+    ...current,
+    loading: true,
+    error: '',
+  }));
+  try {
+    const query = new URLSearchParams({
+      page: '1',
+      pageSize: '20',
+      status: 'ACTIVE',
+    });
+    if (catalogState.query.trim()) {
+      query.set('search', catalogState.query.trim());
+    }
+
+    const response = await fetch(`/api/products?${query.toString()}`);
+    const payload = await response.json();
+    if (!payload?.success) {
+      setCatalogState((current) => ({
+        ...current,
+        rows: [],
+        error: payload?.error || 'Failed to search product catalog.',
+        loading: false,
+      }));
+      return;
+    }
+
+    const physicalProducts = (payload.data?.products || []).filter(
+      (product) => (product.fulfillmentType || 'PHYSICAL') === 'PHYSICAL'
+    );
+    setCatalogState((current) => ({
+      ...current,
+      rows: physicalProducts,
+      loading: false,
+    }));
+  } catch (error) {
+    console.error('[DiscountsWorkspace] catalog search failed', error);
+    setCatalogState((current) => ({
+      ...current,
+      rows: [],
+      error: 'Failed to search product catalog.',
+      loading: false,
+    }));
+  }
+}
+
+async function loadPromotionProductDetail(catalogState, setCatalogState, productId) {
+  if (catalogState.productDetailsById[productId]) return;
+
+  try {
+    const response = await fetch(`/api/products/${productId}`);
+    const payload = await response.json();
+    if (!payload?.success) {
+      setCatalogState((current) => ({
+        ...current,
+        error: payload?.error || 'Failed to load product variants.',
+      }));
+      return;
+    }
+
+    setCatalogState((current) => ({
+      ...current,
+      productDetailsById: {
+        ...current.productDetailsById,
+        [productId]: payload.data,
+      },
+    }));
+  } catch (error) {
+    console.error('[DiscountsWorkspace] failed to load product detail', error);
+    setCatalogState((current) => ({
+      ...current,
+      error: 'Failed to load product variants.',
+    }));
+  }
+}
+
 export default function DiscountsWorkspace() {
   const { discounts, addDiscount, updateDiscount } = useDiscounts();
   const [browseFilter, setBrowseFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
   const [methodFilter, setMethodFilter] = useState('all');
-  const [selectedDiscountId, setSelectedDiscountId] = useState(discounts[0]?.id || null);
+  const [typeFilter, setTypeFilter] = useState('all');
   const [builderMode, setBuilderMode] = useState(null);
   const [draftDiscount, setDraftDiscount] = useState(null);
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
-  const [createStep, setCreateStep] = useState('type');
+  const [createStep, setCreateStep] = useState('method');
+  const [selectedMethod, setSelectedMethod] = useState(null);
   const [selectedPromotionType, setSelectedPromotionType] = useState(null);
   const [smartDraft, setSmartDraft] = useState(() => createPromotionDraft());
   const [smartSaving, setSmartSaving] = useState(false);
   const [smartValidationIssues, setSmartValidationIssues] = useState([]);
   const [smartErrorMessage, setSmartErrorMessage] = useState('');
   const [smartCatalogState, setSmartCatalogState] = useState(() => createPromotionCatalogState());
-  const [automaticPromotionRefreshToken, setAutomaticPromotionRefreshToken] = useState(0);
+  const [smartPromotions, setSmartPromotions] = useState([]);
+  const [smartPromotionsLoading, setSmartPromotionsLoading] = useState(true);
+  const [smartPromotionsError, setSmartPromotionsError] = useState('');
+  const [smartEditOpen, setSmartEditOpen] = useState(false);
+  const [smartEditDraft, setSmartEditDraft] = useState(() => createPromotionDraft());
+  const [smartEditSaving, setSmartEditSaving] = useState(false);
+  const [smartEditValidationIssues, setSmartEditValidationIssues] = useState([]);
+  const [smartEditErrorMessage, setSmartEditErrorMessage] = useState('');
+  const [smartEditCatalogState, setSmartEditCatalogState] = useState(() => createPromotionCatalogState());
 
-  const visibleDiscounts = useMemo(() => discounts.filter((discount) => {
-    const searchMatch = [discount.title, discount.method, discount.summary].join(' ').toLowerCase().includes(searchQuery.trim().toLowerCase());
-    const typeMatch = typeFilter === 'all' || discount.type === typeFilter;
-    const statusMatch = statusFilter === 'all' || discount.status === statusFilter;
-    const methodMatch = methodFilter === 'all' || discount.method === methodFilter;
-    return searchMatch && typeMatch && statusMatch && methodMatch;
-  }), [discounts, searchQuery, statusFilter, typeFilter, methodFilter]);
+  const loadSmartPromotions = useCallback(async () => {
+    setSmartPromotionsLoading(true);
+    setSmartPromotionsError('');
+    try {
+      const query = new URLSearchParams({
+        page: '1',
+        pageSize: '50',
+      });
+      const response = await fetch(`/api/promotions?${query.toString()}`);
+      const payload = await response.json();
+      if (!payload?.success) {
+        setSmartPromotions([]);
+        setSmartPromotionsError(payload?.error || 'Failed to load promotions.');
+        return;
+      }
+      setSmartPromotions(payload.data?.promotions || []);
+    } catch (error) {
+      console.error('[DiscountsWorkspace] failed to load smart promotions', error);
+      setSmartPromotions([]);
+      setSmartPromotionsError('Failed to load promotions.');
+    } finally {
+      setSmartPromotionsLoading(false);
+    }
+  }, []);
 
-  const selectedDiscount = visibleDiscounts.find((discount) => discount.id === selectedDiscountId) || discounts.find((discount) => discount.id === selectedDiscountId) || null;
+  useEffect(() => {
+    void loadSmartPromotions();
+  }, [loadSmartPromotions]);
+
   const selectedOfferDefinition = OFFER_TYPE_DEFINITIONS.find((offer) => offer.id === selectedPromotionType) || null;
   const isLegacyCreate = selectedOfferDefinition?.flow === 'legacy';
   const isSmartCreate = selectedOfferDefinition?.flow === 'smart';
   const canSubmitSmartPromotion = useMemo(() => canSubmitPromotionDraft(smartDraft), [smartDraft]);
-  const typeOptions = [{ value: 'all', label: 'All types' }, ...DISCOUNT_TYPES.map((type) => ({ value: type, label: type }))];
-  const statusOptions = [{ value: 'all', label: 'All status' }, ...DISCOUNT_STATUSES.map((status) => ({ value: status, label: status }))];
-  const methodOptions = [{ value: 'all', label: 'All methods' }, ...DISCOUNT_METHODS.map((method) => ({ value: method, label: method }))];
+  const canSubmitSmartEdit = useMemo(() => canSubmitPromotionDraft(smartEditDraft), [smartEditDraft]);
+
+  const normalizedLegacyRows = useMemo(() => discounts.map((discount) => ({
+    id: `discount-${discount.id}`,
+    source: 'discount-code',
+    sourceId: discount.id,
+    name: discount.title,
+    method: 'Code',
+    typeLabel: formatLegacyTypeLabel(discount.method),
+    typeKey: toLegacyTypeKey(discount.method),
+    status: discount.status,
+    statusLabel: formatPromotionStatusLabel(discount.status),
+    usageLabel: `${discount.usageCount || 0} / ${discount.usageLimit || 'No cap'}`,
+    updatedLabel: formatUpdatedDisplayLabel(discount.updatedAt),
+    summary: discount.summary || '',
+    raw: discount,
+  })), [discounts]);
+
+  const normalizedSmartRows = useMemo(() => smartPromotions.map((promotion) => ({
+    id: `promotion-${promotion.id}`,
+    source: 'smart-promotion',
+    sourceId: promotion.id,
+    name: promotion.name,
+    method: 'Automatic',
+    typeLabel: formatPromotionTypeLabel(promotion.type),
+    typeKey: promotion.type,
+    status: String(promotion.status || '').toLowerCase(),
+    statusLabel: formatPromotionStatusLabel(promotion.status),
+    usageLabel: `${promotion.usageCount || 0} / ${promotion.usageLimit == null ? 'No cap' : promotion.usageLimit}`,
+    updatedLabel: formatUpdatedDisplayLabel(promotion.updatedAt),
+    summary: formatPromotionTypeLabel(promotion.type),
+    raw: promotion,
+  })), [smartPromotions]);
+
+  const unifiedRows = useMemo(() => {
+    const combined = normalizedLegacyRows.concat(normalizedSmartRows);
+    return combined.filter((row) => {
+      const segmentMatch =
+        browseFilter === 'all' ||
+        (browseFilter === 'discount-codes' && row.source === 'discount-code') ||
+        (browseFilter === 'automatic' && row.source === 'smart-promotion');
+      const methodMatch = methodFilter === 'all' || row.method.toLowerCase() === methodFilter;
+      const typeMatch = typeFilter === 'all' || row.typeKey === typeFilter;
+      const statusMatch = statusFilter === 'all' || row.status === statusFilter;
+      const searchNeedle = searchQuery.trim().toLowerCase();
+      const searchMatch = !searchNeedle || [row.name, row.method, row.typeLabel, row.summary].join(' ').toLowerCase().includes(searchNeedle);
+      return segmentMatch && methodMatch && typeMatch && statusMatch && searchMatch;
+    });
+  }, [browseFilter, methodFilter, normalizedLegacyRows, normalizedSmartRows, searchQuery, statusFilter, typeFilter]);
+
+  const statusOptions = useMemo(() => {
+    const options = [
+      { value: 'all', label: 'All statuses' },
+      { value: 'active', label: 'Active' },
+      { value: 'scheduled', label: 'Scheduled' },
+      { value: 'expired', label: 'Expired' },
+      { value: 'draft', label: 'Draft' },
+      { value: 'disabled', label: 'Disabled' },
+    ];
+    return options;
+  }, []);
+
+  const methodOptions = [
+    { value: 'all', label: 'All methods' },
+    { value: 'code', label: 'Code' },
+    { value: 'automatic', label: 'Automatic' },
+  ];
+
+  const typeOptions = useMemo(() => [
+    { value: 'all', label: 'All types' },
+    ...OFFER_TYPE_DEFINITIONS.map((offer) => ({
+      value: offer.typeKey,
+      label: offer.title,
+    })),
+  ], []);
+
   const valueTypeOptions = [
     { value: 'percentage', label: 'Percentage' },
     { value: 'fixed', label: 'Fixed amount' },
@@ -195,9 +558,31 @@ export default function DiscountsWorkspace() {
     { value: 'quantity', label: 'Minimum quantity of items' },
   ];
 
+  const isUnifiedListLoading = smartPromotionsLoading;
+  const unifiedListError = smartPromotionsError || '';
+  const emptyStateContent = (() => {
+    if (browseFilter === 'discount-codes') {
+      return {
+        title: 'No discount codes yet.',
+        description: 'Create a code customers can enter at checkout.',
+      };
+    }
+    if (browseFilter === 'automatic') {
+      return {
+        title: 'No automatic offers yet.',
+        description: 'Create product group discounts, Buy X Get Y offers, or free gift promotions.',
+      };
+    }
+    return {
+      title: 'No promotions yet.',
+      description: 'Create a discount code or automatic offer to start.',
+    };
+  })();
+
   function resetCreateFlow() {
     setCreateDrawerOpen(false);
-    setCreateStep('type');
+    setCreateStep('method');
+    setSelectedMethod(null);
     setSelectedPromotionType(null);
     setDraftDiscount(null);
     setSmartDraft(createPromotionDraft());
@@ -209,7 +594,8 @@ export default function DiscountsWorkspace() {
 
   function openCreateFlow() {
     setCreateDrawerOpen(true);
-    setCreateStep('type');
+    setCreateStep('method');
+    setSelectedMethod(null);
     setSelectedPromotionType(null);
     setDraftDiscount(null);
     setSmartDraft(createPromotionDraft());
@@ -219,10 +605,48 @@ export default function DiscountsWorkspace() {
     setSmartCatalogState(createPromotionCatalogState());
   }
 
-  function openEditor(discount) {
+  function openLegacyEditor(discount) {
     setBuilderMode(discount.type);
     setDraftDiscount({ ...discount });
-    setSelectedDiscountId(discount.id);
+  }
+
+  function resetSmartEditDrawer() {
+    setSmartEditOpen(false);
+    setSmartEditDraft(createPromotionDraft());
+    setSmartEditSaving(false);
+    setSmartEditValidationIssues([]);
+    setSmartEditErrorMessage('');
+    setSmartEditCatalogState(createPromotionCatalogState());
+  }
+
+  async function openSmartEditDrawer(promotionId) {
+    setSmartEditErrorMessage('');
+    setSmartEditValidationIssues([]);
+    try {
+      const response = await fetch(`/api/promotions/${promotionId}`);
+      const payload = await response.json();
+      if (!payload?.success) {
+        setSmartEditErrorMessage(payload?.error || 'Failed to load promotion details.');
+        return;
+      }
+      setSmartEditDraft(toSmartDraftFromDetail(payload.data?.promotion || {}));
+      setSmartEditCatalogState(createPromotionCatalogState());
+      setSmartEditOpen(true);
+    } catch (error) {
+      console.error('[DiscountsWorkspace] failed to load promotion detail', error);
+      setSmartEditErrorMessage('Failed to load promotion details.');
+    }
+  }
+
+  function onSelectMethod(methodId) {
+    setSelectedMethod(methodId);
+    setSelectedPromotionType(null);
+    setDraftDiscount(null);
+    setSmartDraft(createPromotionDraft());
+    setSmartSaving(false);
+    setSmartValidationIssues([]);
+    setSmartErrorMessage('');
+    setSmartCatalogState(createPromotionCatalogState());
   }
 
   function onSelectOfferType(offerId) {
@@ -262,7 +686,6 @@ export default function DiscountsWorkspace() {
     if (isExisting) updateDiscount(nextDiscount.id, () => nextDiscount);
     else addDiscount(nextDiscount);
 
-    setSelectedDiscountId(nextDiscount.id);
     setBuilderMode(null);
     setDraftDiscount(null);
     resetCreateFlow();
@@ -289,8 +712,7 @@ export default function DiscountsWorkspace() {
         return;
       }
 
-      setAutomaticPromotionRefreshToken((current) => current + 1);
-      setBrowseFilter('automatic');
+      await loadSmartPromotions();
       resetCreateFlow();
     } catch (error) {
       console.error('[DiscountsWorkspace] failed to save smart promotion', error);
@@ -300,167 +722,84 @@ export default function DiscountsWorkspace() {
     }
   }
 
-  async function searchSmartCatalog() {
-    setSmartCatalogState((current) => ({
-      ...current,
-      loading: true,
-      error: '',
-    }));
+  async function saveSmartEditPromotion() {
+    setSmartEditSaving(true);
+    setSmartEditValidationIssues([]);
+    setSmartEditErrorMessage('');
     try {
-      const query = new URLSearchParams({
-        page: '1',
-        pageSize: '20',
-        status: 'ACTIVE',
+      const payload = buildPromotionPayloadFromDraft(smartEditDraft);
+      const response = await fetch(`/api/promotions/${smartEditDraft.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
       });
-      if (smartCatalogState.query.trim()) {
-        query.set('search', smartCatalogState.query.trim());
-      }
+      const responsePayload = await response.json();
 
-      const response = await fetch(`/api/products?${query.toString()}`);
-      const payload = await response.json();
-      if (!payload?.success) {
-        setSmartCatalogState((current) => ({
-          ...current,
-          rows: [],
-          error: payload?.error || 'Failed to search product catalog.',
-          loading: false,
-        }));
+      if (!response.ok || !responsePayload?.success) {
+        if (response.status === 422) {
+          setSmartEditValidationIssues(extractPromotionValidationIssues(responsePayload?.details));
+        }
+        setSmartEditErrorMessage(responsePayload?.error || 'Failed to save promotion.');
         return;
       }
 
-      const physicalProducts = (payload.data?.products || []).filter(
-        (product) => (product.fulfillmentType || 'PHYSICAL') === 'PHYSICAL'
-      );
-      setSmartCatalogState((current) => ({
-        ...current,
-        rows: physicalProducts,
-        loading: false,
-      }));
+      await loadSmartPromotions();
+      resetSmartEditDrawer();
     } catch (error) {
-      console.error('[DiscountsWorkspace] catalog search failed', error);
-      setSmartCatalogState((current) => ({
-        ...current,
-        rows: [],
-        error: 'Failed to search product catalog.',
-        loading: false,
-      }));
+      console.error('[DiscountsWorkspace] failed to save promotion edit', error);
+      setSmartEditErrorMessage('Failed to save promotion.');
+    } finally {
+      setSmartEditSaving(false);
     }
   }
 
-  async function loadSmartProductDetail(productId) {
-    if (smartCatalogState.productDetailsById[productId]) return;
+  async function disableSmartPromotion(promotionId) {
+    const confirmed = window.confirm(
+      'Disable this promotion? It will stop applying at checkout, but past orders will keep their promotion history.'
+    );
+    if (!confirmed) return;
 
     try {
-      const response = await fetch(`/api/products/${productId}`);
+      const response = await fetch(`/api/promotions/${promotionId}`, { method: 'DELETE' });
       const payload = await response.json();
       if (!payload?.success) {
-        setSmartCatalogState((current) => ({
-          ...current,
-          error: payload?.error || 'Failed to load product variants.',
-        }));
+        setSmartPromotionsError(payload?.error || 'Failed to disable promotion.');
         return;
       }
-
-      setSmartCatalogState((current) => ({
-        ...current,
-        productDetailsById: {
-          ...current.productDetailsById,
-          [productId]: payload.data,
-        },
-      }));
+      await loadSmartPromotions();
     } catch (error) {
-      console.error('[DiscountsWorkspace] failed to load product detail', error);
-      setSmartCatalogState((current) => ({
-        ...current,
-        error: 'Failed to load product variants.',
-      }));
+      console.error('[DiscountsWorkspace] failed to disable promotion', error);
+      setSmartPromotionsError('Failed to disable promotion.');
     }
-  }
-
-  function updateSmartDraft(field, value) {
-    setSmartDraft((current) => ({ ...current, [field]: value }));
-    setSmartValidationIssues([]);
-  }
-
-  function removeSmartSelection(section, variantId) {
-    setSmartDraft((current) => ({
-      ...current,
-      [section]: current[section].filter((row) => row.variantId !== variantId),
-    }));
-  }
-
-  function updateSmartSelectionQuantity(section, variantId, quantity) {
-    const nextQuantity = Number.isFinite(quantity) ? Math.max(1, Math.round(quantity)) : 1;
-    setSmartDraft((current) => ({
-      ...current,
-      [section]: current[section].map((row) =>
-        row.variantId === variantId
-          ? {
-              ...row,
-              quantity: nextQuantity,
-            }
-          : row
-      ),
-    }));
-  }
-
-  function addSmartVariantToSelection(section, product, variant) {
-    if (product.fulfillmentType !== 'PHYSICAL') {
-      setSmartCatalogState((current) => ({
-        ...current,
-        error: 'Only physical variants are eligible for Smart Promotions in V1.',
-      }));
-      return;
-    }
-
-    setSmartCatalogState((current) => ({ ...current, error: '' }));
-    setSmartDraft((current) => {
-      const existing = current[section].find((row) => row.variantId === variant.id);
-      if (existing) {
-        return current;
-      }
-
-      return {
-        ...current,
-        [section]: current[section].concat({
-          variantId: variant.id,
-          productTitle: product.title,
-          variantTitle: variant.title || 'Default',
-          sku: variant.sku || null,
-          fulfillmentType: product.fulfillmentType || 'PHYSICAL',
-          quantity: 1,
-        }),
-      };
-    });
   }
 
   const createDrawerActions = (() => {
-    if (createStep === 'type') {
+    if (createStep === 'method') {
       return (
         <>
           <AdminButton onClick={resetCreateFlow} size="sm" variant="ghost">
             Cancel
           </AdminButton>
           <AdminButton
-            disabled={!selectedOfferDefinition}
-            onClick={() => setCreateStep('details')}
+            disabled={!selectedMethod}
+            onClick={() => setCreateStep('type')}
             size="sm"
             variant="primary"
           >
-            Continue
+            Continue to type
           </AdminButton>
         </>
       );
     }
 
-    if (createStep === 'details') {
+    if (createStep === 'type') {
       return (
         <>
-          <AdminButton onClick={() => setCreateStep('type')} size="sm" variant="ghost">
+          <AdminButton onClick={() => setCreateStep('method')} size="sm" variant="ghost">
             Back
           </AdminButton>
-          <AdminButton onClick={() => setCreateStep('schedule')} size="sm" variant="primary">
-            Continue
+          <AdminButton disabled={!selectedOfferDefinition} onClick={() => setCreateStep('details')} size="sm" variant="primary">
+            Continue to details
           </AdminButton>
         </>
       );
@@ -468,7 +807,7 @@ export default function DiscountsWorkspace() {
 
     return (
       <>
-        <AdminButton onClick={() => setCreateStep('details')} size="sm" variant="ghost">
+        <AdminButton onClick={() => setCreateStep('type')} size="sm" variant="ghost">
           Back
         </AdminButton>
         <AdminButton
@@ -499,138 +838,192 @@ export default function DiscountsWorkspace() {
           title="Promotions"
         />
 
-        <div className={styles.segmentedControl} role="tablist" aria-label="Promotion filters">
-          {BROWSE_FILTERS.map((filter) => (
-            <button
-              className={`${styles.segmentedButton} ${browseFilter === filter.id ? styles.segmentedButtonActive : ''}`}
-              key={filter.id}
-              onClick={() => setBrowseFilter(filter.id)}
-              type="button"
-            >
-              {filter.label}
-            </button>
-          ))}
-        </div>
-        <p className={styles.helperCopy}>
-          Browse discount codes and automatic offers from one promotions workspace.
-        </p>
+        {unifiedListError ? <p className={styles.errorBanner}>{unifiedListError}</p> : null}
 
-        {browseFilter !== 'automatic' ? (
-          <AdminCard className={styles.panel} variant="panel">
-            {browseFilter === 'all' ? (
-              <div className={styles.sectionIntro}>
-                <h2>Discount codes</h2>
-                <p>Customer-entered codes for order, product, or shipping discounts.</p>
-              </div>
-            ) : null}
-            <AdminToolbar>
-              <AdminInput onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search discount codes..." type="search" value={searchQuery} />
-              <AdminSelect onChange={setTypeFilter} options={typeOptions} value={typeFilter} />
-              <AdminSelect onChange={setStatusFilter} options={statusOptions} value={statusFilter} />
-              <AdminSelect onChange={setMethodFilter} options={methodOptions} value={methodFilter} />
-            </AdminToolbar>
+        <AdminCard className={styles.panel} variant="panel">
+          <div className={styles.listHeader}>
+            <div className={styles.segmentedControl} role="tablist" aria-label="Promotion filters">
+              {BROWSE_FILTERS.map((filter) => (
+                <button
+                  className={`${styles.segmentedButton} ${browseFilter === filter.id ? styles.segmentedButtonActive : ''}`}
+                  key={filter.id}
+                  onClick={() => setBrowseFilter(filter.id)}
+                  type="button"
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+            <AdminButton onClick={openCreateFlow} size="sm" variant="primary">
+              Create promotion
+            </AdminButton>
+          </div>
 
-            {visibleDiscounts.length ? (
-              <AdminTable
-                columns={[
-                  { key: 'title', header: 'Name', render: (discount) => discount.title },
-                  { key: 'methodType', header: 'Method', render: () => 'Code' },
-                  { key: 'summary', header: 'Type', render: (discount) => discount.method },
-                  { key: 'status', header: 'Status', render: (discount) => <AdminStatusChip tone={discount.status === 'active' ? 'success' : discount.status === 'scheduled' ? 'warning' : 'neutral'}>{discount.status}</AdminStatusChip> },
-                  { key: 'usage', header: 'Usage', render: (discount) => `${discount.usageCount || 0} / ${discount.usageLimit || 'No cap'}` },
-                  { key: 'updated', header: 'Updated', render: () => 'Draft session' },
-                ]}
-                onRowClick={(discount) => setSelectedDiscountId(discount.id)}
-                rows={visibleDiscounts}
-                selectedId={selectedDiscount?.id || null}
-              />
-            ) : (
-              <AdminEmptyState
-                actionLabel="Create promotion"
-                description="Create a code discount to start promotions."
-                icon="sell"
-                onAction={openCreateFlow}
-                title="No discount codes yet"
-              />
-            )}
-            {selectedDiscount ? (
-              <AdminFormSection description="Current discount configuration and performance" eyebrow="Discount detail" title={selectedDiscount.title}>
-                <div className={styles.detailGrid}>
-                  <div><strong>Method:</strong> Code</div>
-                  <div><strong>Type:</strong> {selectedDiscount.method}</div>
-                  <div><strong>Status:</strong> {selectedDiscount.status}</div>
-                  <div><strong>Usage:</strong> {selectedDiscount.usageCount || 0}</div>
-                  <div><strong>Customer eligibility:</strong> {selectedDiscount.customerEligibility}</div>
-                  <div><strong>Sales channels:</strong> {selectedDiscount.salesChannel}</div>
-                </div>
-                <div className={styles.detailActions}><AdminButton onClick={() => openEditor(selectedDiscount)} size="sm" variant="secondary">Edit discount</AdminButton></div>
-              </AdminFormSection>
-            ) : null}
-          </AdminCard>
-        ) : null}
+          <AdminToolbar>
+            <AdminInput onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search promotions..." type="search" value={searchQuery} />
+            <AdminSelect onChange={setStatusFilter} options={statusOptions} value={statusFilter} />
+            <AdminSelect onChange={setMethodFilter} options={methodOptions} value={methodFilter} />
+            <AdminSelect onChange={setTypeFilter} options={typeOptions} value={typeFilter} />
+          </AdminToolbar>
 
-        {browseFilter !== 'discount-codes' ? (
-          <AdminCard className={styles.panel} variant="panel">
-            {browseFilter === 'all' ? (
-              <div className={styles.sectionIntro}>
-                <h2>Automatic offers</h2>
-                <p>Cart-aware Smart Promotions powered by the existing promotions service.</p>
-              </div>
-            ) : null}
-            <AutomaticPromotionsWorkspace
-              externalCreateToken={automaticPromotionRefreshToken}
-              hideCreateAction
+          {unifiedRows.length || isUnifiedListLoading ? (
+            <AdminTable
+              columns={[
+                { key: 'name', header: 'Name', render: (row) => row.name },
+                {
+                  key: 'method',
+                  header: 'Method',
+                  render: (row) => (
+                    <span className={`${styles.methodPill} ${row.method === 'Automatic' ? styles.methodPillAutomatic : styles.methodPillCode}`}>
+                      {row.method}
+                    </span>
+                  ),
+                },
+                { key: 'type', header: 'Type', render: (row) => row.typeLabel },
+                {
+                  key: 'status',
+                  header: 'Status',
+                  render: (row) => (
+                    <AdminStatusChip tone={getPromotionStatusTone(String(row.status).toUpperCase())}>
+                      {row.statusLabel}
+                    </AdminStatusChip>
+                  ),
+                },
+                { key: 'usage', header: 'Usage', render: (row) => row.usageLabel },
+                { key: 'updated', header: 'Updated', render: (row) => row.updatedLabel },
+                {
+                  key: 'actions',
+                  header: 'Actions',
+                  render: (row) => (
+                    <div className={styles.rowActions}>
+                      {row.source === 'discount-code' ? (
+                        <AdminButton onClick={() => openLegacyEditor(row.raw)} size="sm" variant="secondary">
+                          Edit
+                        </AdminButton>
+                      ) : (
+                        <>
+                          <AdminButton onClick={() => void openSmartEditDrawer(row.sourceId)} size="sm" variant="secondary">
+                            Edit
+                          </AdminButton>
+                          <AdminButton onClick={() => void disableSmartPromotion(row.sourceId)} size="sm" variant="ghost">
+                            Disable
+                          </AdminButton>
+                        </>
+                      )}
+                    </div>
+                  ),
+                },
+              ]}
+              emptyDescription={emptyStateContent.description}
+              emptyTitle={emptyStateContent.title}
+              isLoading={isUnifiedListLoading}
+              rows={unifiedRows}
             />
-          </AdminCard>
-        ) : null}
+          ) : (
+            <AdminEmptyState
+              actionLabel="Create promotion"
+              description={emptyStateContent.description}
+              icon="sell"
+              onAction={openCreateFlow}
+              title={emptyStateContent.title}
+            />
+          )}
+        </AdminCard>
 
         <AdminDrawer
           actions={createDrawerActions}
           contextItems={[
             { label: 'Promotions' },
             { label: 'Create promotion' },
-            { current: true, label: createStep === 'type' ? 'Type' : createStep === 'details' ? 'Details' : 'Schedule & publish' },
+            { current: true, label: createStep === 'method' ? 'Method' : createStep === 'type' ? 'Type' : 'Details' },
           ]}
           onClose={resetCreateFlow}
           open={createDrawerOpen}
           subtitle={
-            createStep === 'type'
-              ? 'Choose how this offer should work.'
-              : createStep === 'details'
-                ? 'Add the offer details based on the promotion type you selected.'
-                : 'Set timing, limits, and review what customers will experience.'
+            createStep === 'method'
+              ? 'Choose whether customers enter a code or Doopify applies the offer automatically.'
+              : createStep === 'type'
+                ? selectedMethod === CREATE_METHODS.LEGACY
+                  ? 'These offers require customers to enter a code at checkout.'
+                  : "These offers apply when the customer's cart matches your rules."
+                : 'Add the offer details based on the promotion type you selected.'
           }
           title="Create promotion"
         >
           <div className={styles.drawerBody}>
-            {createStep === 'type' ? (
+            {createStep === 'method' ? (
               <AdminFormSection
-                description="Choose how this offer should work."
-                eyebrow="Type"
-                title="Choose your promotion type"
+                description="Choose whether customers enter a code or Doopify applies the offer automatically."
+                eyebrow="Method"
+                title="How should this promotion work?"
               >
-                <div className={styles.offerChoiceGrid}>
-                  {OFFER_TYPE_DEFINITIONS.map((offer) => (
+                <div className={styles.offerChoiceList} aria-label="Promotion method" role="radiogroup">
+                  {METHOD_CHOICES.map((choice) => (
                     <button
-                      aria-pressed={selectedPromotionType === offer.id}
-                      className={`${styles.offerChoiceCard} ${selectedPromotionType === offer.id ? styles.offerChoiceCardActive : ''}`}
-                      key={offer.id}
-                      onClick={() => onSelectOfferType(offer.id)}
+                      aria-checked={selectedMethod === choice.id}
+                      className={`${styles.offerChoiceCard} ${selectedMethod === choice.id ? styles.offerChoiceCardActive : ''}`}
+                      data-selected={selectedMethod === choice.id ? 'true' : 'false'}
+                      key={choice.id}
+                      onClick={() => onSelectMethod(choice.id)}
+                      role="radio"
                       type="button"
                     >
-                      <div className={styles.offerChoiceTopRow}>
-                        <div className={styles.offerChoiceHeader}>
-                          <span className={styles.offerChoiceRadio} aria-hidden="true" />
-                          <strong>{offer.title}</strong>
+                      <div className={styles.offerChoiceLeading}>
+                        <span className={styles.offerChoiceRadio} aria-hidden="true" />
+                        <div className={styles.offerChoiceCopy}>
+                          <div className={styles.offerChoiceTitleRow}>
+                            <strong>{choice.title}</strong>
+                            {selectedMethod === choice.id ? <span className={styles.offerChoiceSelectionTag}>Selected</span> : null}
+                          </div>
+                          <p className={styles.offerChoiceDescription}>{choice.description}</p>
+                          <small>{choice.bestFor}</small>
                         </div>
-                        <span className={styles.offerChoiceBadge}>{offer.badge}</span>
                       </div>
-                      <p>{offer.description}</p>
-                      <small>{offer.example}</small>
-                      {offer.note ? <small>{offer.note}</small> : null}
+                      <span className={styles.offerChoiceBadge}>{choice.badge}</span>
                     </button>
                   ))}
                 </div>
+              </AdminFormSection>
+            ) : null}
+
+            {createStep === 'type' ? (
+              <AdminFormSection
+                description={
+                  selectedMethod === CREATE_METHODS.LEGACY
+                    ? 'These offers require customers to enter a code at checkout.'
+                    : "These offers apply when the customer's cart matches your rules."
+                }
+                eyebrow="Type"
+                title={selectedMethod === CREATE_METHODS.LEGACY ? 'Choose discount code type' : 'Choose automatic offer type'}
+              >
+                <div className={styles.offerChoiceList} aria-label="Promotion type" role="radiogroup">
+                  {OFFER_TYPE_DEFINITIONS.filter((offer) =>
+                    selectedMethod === CREATE_METHODS.LEGACY ? offer.flow === 'legacy' : offer.flow === 'smart'
+                  ).map((offer) => (
+                    <button
+                      aria-checked={selectedPromotionType === offer.id}
+                      className={`${styles.offerChoiceCard} ${selectedPromotionType === offer.id ? styles.offerChoiceCardActive : ''}`}
+                      data-selected={selectedPromotionType === offer.id ? 'true' : 'false'}
+                      key={offer.id}
+                      onClick={() => onSelectOfferType(offer.id)}
+                      role="radio"
+                      type="button"
+                    >
+                      <div className={styles.offerChoiceLeading}>
+                        <span className={styles.offerChoiceRadio} aria-hidden="true" />
+                        <div className={styles.offerChoiceCopy}>
+                          <div className={styles.offerChoiceTitleRow}>
+                            <strong>{offer.title}</strong>
+                            {selectedPromotionType === offer.id ? <span className={styles.offerChoiceSelectionTag}>Selected</span> : null}
+                          </div>
+                          <p className={styles.offerChoiceDescription}>{offer.description}</p>
+                        </div>
+                      </div>
+                      <span className={styles.offerChoiceBadge}>{offer.badge}</span>
+                    </button>
+                  ))}
+                </div>
+                {selectedMethod === CREATE_METHODS.SMART ? <p className={styles.offerChoiceNote}>{AUTOMATIC_TYPE_NOTE}</p> : null}
               </AdminFormSection>
             ) : null}
 
@@ -695,35 +1088,6 @@ export default function DiscountsWorkspace() {
                     </AdminField>
                   </div>
                 </AdminFormSection>
-              </>
-            ) : null}
-
-            {createStep === 'details' && isSmartCreate ? (
-              <>
-                {smartErrorMessage ? <p className={styles.errorBanner}>{smartErrorMessage}</p> : null}
-                <SmartPromotionFormSections
-                  catalogState={smartCatalogState}
-                  draft={smartDraft}
-                  onAddVariant={addSmartVariantToSelection}
-                  onCatalogQueryChange={(value) =>
-                    setSmartCatalogState((current) => ({
-                      ...current,
-                      query: value,
-                    }))
-                  }
-                  onLoadProductDetail={loadSmartProductDetail}
-                  onRemoveSelection={removeSmartSelection}
-                  onSearchCatalog={searchSmartCatalog}
-                  onUpdateDraft={updateSmartDraft}
-                  onUpdateSelectionQuantity={updateSmartSelectionQuantity}
-                  validationIssues={smartValidationIssues}
-                  visibleSections={['offer-details', 'qualifiers', 'qualifier-catalog', 'reward-settings', 'reward-catalog']}
-                />
-              </>
-            ) : null}
-
-            {createStep === 'schedule' && isLegacyCreate && draftDiscount ? (
-              <>
                 <AdminFormSection
                   description="Set timing, usage limits, and current status."
                   eyebrow="Schedule & publish"
@@ -754,34 +1118,62 @@ export default function DiscountsWorkspace() {
               </>
             ) : null}
 
-            {createStep === 'schedule' && isSmartCreate ? (
+            {createStep === 'details' && isSmartCreate ? (
               <>
                 {smartErrorMessage ? <p className={styles.errorBanner}>{smartErrorMessage}</p> : null}
                 <SmartPromotionFormSections
                   catalogState={smartCatalogState}
                   draft={smartDraft}
-                  onAddVariant={addSmartVariantToSelection}
+                  onAddPendingSelections={(section) => {
+                    const pendingRows = smartCatalogState.pendingSelections[section] || [];
+                    for (const row of pendingRows) {
+                      addPromotionVariantToSelection(
+                        setSmartDraft,
+                        setSmartCatalogState,
+                        section,
+                        {
+                          id: row.productId,
+                          title: row.productTitle,
+                          fulfillmentType: row.fulfillmentType || 'PHYSICAL',
+                        },
+                        {
+                          id: row.variantId,
+                          title: row.variantTitle,
+                          sku: row.sku || null,
+                        }
+                      );
+                    }
+                    closePromotionCatalogPicker(setSmartCatalogState);
+                  }}
+                  onAddVariant={(section, product, variant) => addPromotionVariantToSelection(setSmartDraft, setSmartCatalogState, section, product, variant)}
                   onCatalogQueryChange={(value) =>
                     setSmartCatalogState((current) => ({
                       ...current,
                       query: value,
                     }))
                   }
-                  onLoadProductDetail={loadSmartProductDetail}
-                  onRemoveSelection={removeSmartSelection}
-                  onSearchCatalog={searchSmartCatalog}
-                  onUpdateDraft={updateSmartDraft}
-                  onUpdateSelectionQuantity={updateSmartSelectionQuantity}
+                  onCancelPicker={() => closePromotionCatalogPicker(setSmartCatalogState)}
+                  onLoadProductDetail={(productId) => void loadPromotionProductDetail(smartCatalogState, setSmartCatalogState, productId)}
+                  onOpenPicker={(section) =>
+                    openPromotionCatalogPicker(
+                      setSmartCatalogState,
+                      () => searchPromotionCatalog(smartCatalogState, setSmartCatalogState),
+                      section
+                    )
+                  }
+                  onRemoveSelection={(section, variantId) => removePromotionSelection(setSmartDraft, section, variantId)}
+                  onSearchCatalog={() => void searchPromotionCatalog(smartCatalogState, setSmartCatalogState)}
+                  onTogglePendingVariant={(section, product, variant) =>
+                    togglePromotionPendingVariant(setSmartCatalogState, section, product, variant)
+                  }
+                  onUpdateDraft={(field, value) => {
+                    setSmartDraft((current) => ({ ...current, [field]: value }));
+                    setSmartValidationIssues([]);
+                  }}
+                  onUpdateSelectionQuantity={(section, variantId, quantity) => updatePromotionSelectionQuantity(setSmartDraft, section, variantId, quantity)}
                   validationIssues={smartValidationIssues}
-                  visibleSections={['schedule', 'preview']}
+                  visibleSections={['offer-details', 'qualifiers', 'qualifier-catalog', 'reward-settings', 'reward-catalog', 'schedule', 'preview']}
                 />
-                <AdminFormSection
-                  description="Preview the cart behavior in plain English."
-                  eyebrow="Summary"
-                  title="Promotion summary"
-                >
-                  <p className={styles.previewText}>{buildPromotionPreview(smartDraft)}</p>
-                </AdminFormSection>
               </>
             ) : null}
           </div>
@@ -845,6 +1237,98 @@ export default function DiscountsWorkspace() {
               </AdminFormSection>
             </div>
           ) : null}
+        </AdminDrawer>
+
+        <AdminDrawer
+          actions={(
+            <>
+              <AdminButton disabled={smartEditSaving} onClick={resetSmartEditDrawer} size="sm" variant="ghost">
+                Cancel
+              </AdminButton>
+              <AdminButton
+                disabled={!canSubmitSmartEdit}
+                loading={smartEditSaving}
+                onClick={() => void saveSmartEditPromotion()}
+                size="sm"
+                variant="primary"
+              >
+                Save promotion
+              </AdminButton>
+            </>
+          )}
+          contextItems={[
+            { label: 'Promotions' },
+            { label: 'Automatic' },
+            { current: true, label: smartEditDraft.name || 'Edit promotion' },
+          ]}
+          onClose={resetSmartEditDrawer}
+          open={smartEditOpen}
+          subtitle="Review the promotion details, reward logic, and scheduling before saving."
+          title="Edit promotion"
+        >
+          <div className={styles.drawerBody}>
+            {smartEditErrorMessage ? <p className={styles.errorBanner}>{smartEditErrorMessage}</p> : null}
+            <SmartPromotionFormSections
+              catalogState={smartEditCatalogState}
+              draft={smartEditDraft}
+              onAddPendingSelections={(section) => {
+                const pendingRows = smartEditCatalogState.pendingSelections[section] || [];
+                for (const row of pendingRows) {
+                  addPromotionVariantToSelection(
+                    setSmartEditDraft,
+                    setSmartEditCatalogState,
+                    section,
+                    {
+                      id: row.productId,
+                      title: row.productTitle,
+                      fulfillmentType: row.fulfillmentType || 'PHYSICAL',
+                    },
+                    {
+                      id: row.variantId,
+                      title: row.variantTitle,
+                      sku: row.sku || null,
+                    }
+                  );
+                }
+                closePromotionCatalogPicker(setSmartEditCatalogState);
+              }}
+              onAddVariant={(section, product, variant) => addPromotionVariantToSelection(setSmartEditDraft, setSmartEditCatalogState, section, product, variant)}
+              onCatalogQueryChange={(value) =>
+                setSmartEditCatalogState((current) => ({
+                  ...current,
+                  query: value,
+                }))
+              }
+              onCancelPicker={() => closePromotionCatalogPicker(setSmartEditCatalogState)}
+              onLoadProductDetail={(productId) => void loadPromotionProductDetail(smartEditCatalogState, setSmartEditCatalogState, productId)}
+              onOpenPicker={(section) =>
+                openPromotionCatalogPicker(
+                  setSmartEditCatalogState,
+                  () => searchPromotionCatalog(smartEditCatalogState, setSmartEditCatalogState),
+                  section
+                )
+              }
+              onRemoveSelection={(section, variantId) => removePromotionSelection(setSmartEditDraft, section, variantId)}
+              onSearchCatalog={() => void searchPromotionCatalog(smartEditCatalogState, setSmartEditCatalogState)}
+              onTogglePendingVariant={(section, product, variant) =>
+                togglePromotionPendingVariant(setSmartEditCatalogState, section, product, variant)
+              }
+              onTypeChange={(nextType) => {
+                setSmartEditDraft((current) => normalizePromotionDraftForType({
+                  ...current,
+                  type: nextType,
+                }));
+                setSmartEditValidationIssues([]);
+              }}
+              onUpdateDraft={(field, value) => {
+                setSmartEditDraft((current) => ({ ...current, [field]: value }));
+                setSmartEditValidationIssues([]);
+              }}
+              onUpdateSelectionQuantity={(section, variantId, quantity) => updatePromotionSelectionQuantity(setSmartEditDraft, section, variantId, quantity)}
+              showTypeCards
+              validationIssues={smartEditValidationIssues}
+            />
+          </div>
         </AdminDrawer>
       </AdminPage>
     </AppShell>

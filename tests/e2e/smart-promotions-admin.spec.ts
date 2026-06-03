@@ -159,6 +159,45 @@ function promotionsListPayload() {
   }
 }
 
+function discountCodesListPayload() {
+  return {
+    discounts: [
+      {
+        id: 'disc_welcome10',
+        title: 'WELCOME10',
+        code: 'WELCOME10',
+        type: 'CODE',
+        method: 'PERCENTAGE',
+        status: 'ACTIVE',
+        value: 10,
+        usageCount: 24,
+        usageLimit: null,
+        startsAt: '2026-05-01T00:00:00.000Z',
+        endsAt: null,
+        combinesWithOrders: false,
+        combinesWithProducts: true,
+        combinesWithShipping: false,
+      },
+      {
+        id: 'disc_freeship',
+        title: 'FREESHIP',
+        code: 'FREESHIP',
+        type: 'CODE',
+        method: 'FREE_SHIPPING',
+        status: 'SCHEDULED',
+        value: 0,
+        usageCount: 3,
+        usageLimit: 50,
+        startsAt: '2026-05-20T00:00:00.000Z',
+        endsAt: null,
+        combinesWithOrders: false,
+        combinesWithProducts: false,
+        combinesWithShipping: false,
+      },
+    ],
+  }
+}
+
 function orderWithPromotionsPayload() {
   return {
     id: 'ord_promotions_visibility',
@@ -298,6 +337,14 @@ function orderWithPromotionsPayload() {
 }
 
 async function mockPromotionsPageApis(page: import('@playwright/test').Page) {
+  await page.route('**/api/discounts?*', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ success: true, data: discountCodesListPayload() }),
+    })
+  })
+
   await page.route('**/api/promotions?*', async (route) => {
     await route.fulfill({
       status: 200,
@@ -405,36 +452,78 @@ test.describe('Smart Promotions visibility smoke screenshots', () => {
       const page = await context.newPage()
       await mockPromotionsPageApis(page)
 
-      await page.goto('/discounts', { waitUntil: 'domcontentloaded' })
+      await page.goto('/discounts', { waitUntil: 'networkidle' })
       await expect(page.getByRole('heading', { name: 'Promotions' })).toBeVisible()
       await expect(page.getByRole('button', { name: 'All', exact: true })).toBeVisible()
       await expect(page.getByRole('button', { name: 'Discount codes', exact: true })).toBeVisible()
       await expect(page.getByRole('button', { name: 'Automatic', exact: true })).toBeVisible()
+      await expect(page.getByPlaceholder('Search promotions...')).toBeVisible()
+      await expect(page.getByRole('columnheader', { name: 'Method' })).toBeVisible()
+      await expect(page.getByRole('columnheader', { name: 'Type' })).toBeVisible()
+      await expect(page.getByText('Hoodie + Hat bundle savings')).toBeVisible({ timeout: 15000 })
+      await expect(page.getByText('WELCOME10')).toBeVisible({ timeout: 15000 })
+      await expect(page.locator('tbody').getByText('Code', { exact: true })).toHaveCount(2)
+      await expect(page.locator('tbody').getByText('Automatic', { exact: true })).toHaveCount(2)
+      await expect(page.getByText('Amount off products')).toBeVisible()
+      await expect(page.getByText('Product group discount')).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Edit' }).first()).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Disable' }).first()).toBeVisible()
 
       await page.screenshot({
-        path: screenshotPath('phase-9-2-promotions-page.png'),
+        path: screenshotPath('phase-9-5-unified-promotions-list.png'),
         fullPage: true,
       })
 
+      await page.getByRole('button', { name: 'Automatic', exact: true }).click()
+      await expect(page.getByText('WELCOME10')).toHaveCount(0)
       await expect(page.getByText('Hoodie + Hat bundle savings')).toBeVisible()
+
+      await page.screenshot({
+        path: screenshotPath('phase-9-5-filter-automatic.png'),
+        fullPage: true,
+      })
+
+      await page.getByRole('button', { name: 'All', exact: true }).click()
       await page.getByRole('banner').getByRole('button', { name: 'Create promotion' }).click()
       await expect(page.getByRole('heading', { name: 'Create promotion' })).toBeVisible()
-      await expect(page.getByRole('button', { name: /Amount off products/i })).toBeVisible()
-      await expect(page.getByRole('button', { name: /Amount off order/i })).toBeVisible()
-      await expect(page.getByRole('button', { name: /Free shipping/i })).toBeVisible()
-      await expect(page.getByRole('button', { name: /Product group discount/i })).toBeVisible()
-      await expect(page.getByRole('button', { name: /Buy X Get Y/i })).toBeVisible()
-      await expect(page.getByRole('button', { name: /Free gift/i })).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Continue' })).toBeDisabled()
+      const createDrawer = page.getByRole('dialog', { name: 'Create promotion' })
+      await expect(createDrawer.getByRole('heading', { name: 'How should this promotion work?' })).toBeVisible()
+      await expect(createDrawer.getByRole('radio', { name: /Discount code/i })).toBeVisible()
+      await expect(createDrawer.getByRole('radio', { name: /Automatic offer/i })).toBeVisible()
+      await expect(createDrawer.getByText('Customer enters a code at checkout.')).toBeVisible()
+      await expect(createDrawer.getByText('Applies automatically when cart rules are met.')).toBeVisible()
+      await expect(createDrawer.getByText('Best for: SUMMER20, VIP offers, free shipping.')).toBeVisible()
+      await expect(createDrawer.getByText('Best for: bundles, Buy X Get Y, free gifts.')).toBeVisible()
+      await expect(createDrawer.getByText('Reward items must already be in cart for Buy X Get Y and Free Gift in V1.')).toHaveCount(0)
+      await expect(createDrawer.getByText('Code', { exact: true })).toHaveCount(1)
+      await expect(createDrawer.getByText('Automatic', { exact: true })).toHaveCount(1)
+      await expect(page.getByRole('button', { name: 'Continue to type' })).toBeDisabled()
 
       await page.screenshot({
-        path: screenshotPath('phase-9-2-create-type-selection.png'),
+        path: screenshotPath('phase-9-5-create-method-selection.png'),
         fullPage: true,
       })
 
-      await page.getByRole('button', { name: /Amount off order/i }).click()
-      await expect(page.getByRole('button', { name: 'Continue' })).toBeEnabled()
-      await page.getByRole('button', { name: 'Continue' }).click()
+      await createDrawer.getByRole('radio', { name: /Discount code/i }).click()
+      await expect(createDrawer.getByRole('radio', { name: /Discount code/i })).toHaveAttribute('aria-checked', 'true')
+      await expect(page.getByRole('button', { name: 'Continue to type' })).toBeEnabled()
+      await page.getByRole('button', { name: 'Continue to type' }).click()
+      await expect(createDrawer.getByRole('heading', { name: 'Choose discount code type' })).toBeVisible()
+      await expect(page.getByRole('radio', { name: /Amount off products/i })).toBeVisible()
+      await expect(page.getByRole('radio', { name: /Amount off order/i })).toBeVisible()
+      await expect(page.getByRole('radio', { name: /Free shipping/i })).toBeVisible()
+      await expect(createDrawer.getByText('Discount selected products or variants.')).toBeVisible()
+      await expect(createDrawer.getByText('Remove shipping cost with a code.')).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Continue to details' })).toBeDisabled()
+
+      await page.screenshot({
+        path: screenshotPath('phase-9-4-code-type-selection.png'),
+        fullPage: true,
+      })
+
+      await page.getByRole('radio', { name: /Amount off order/i }).click()
+      await expect(page.getByRole('button', { name: 'Continue to details' })).toBeEnabled()
+      await page.getByRole('button', { name: 'Continue to details' }).click()
       await expect(page.getByRole('heading', { name: 'Discount code details' })).toBeVisible()
       await expect(page.getByText('Looking for Buy X Get Y, Free Gift, or product group savings? Use an automatic promotion type.')).toBeVisible()
 
@@ -444,32 +533,50 @@ test.describe('Smart Promotions visibility smoke screenshots', () => {
       })
 
       await page.getByRole('button', { name: 'Back' }).click()
-      await page.getByRole('button', { name: /Product group discount/i }).click()
-      await page.getByRole('button', { name: 'Continue' }).click()
+      await expect(createDrawer.getByRole('heading', { name: 'Choose discount code type' })).toBeVisible()
+      await page.getByRole('button', { name: 'Back' }).click()
+      await expect(createDrawer.getByRole('heading', { name: 'How should this promotion work?' })).toBeVisible()
+      await createDrawer.getByRole('radio', { name: /Automatic offer/i }).click()
+      await expect(createDrawer.getByRole('radio', { name: /Automatic offer/i })).toHaveAttribute('aria-checked', 'true')
+      await page.getByRole('button', { name: 'Continue to type' }).click()
+      await expect(createDrawer.getByRole('heading', { name: 'Choose automatic offer type' })).toBeVisible()
+      await expect(createDrawer.getByText("These offers apply when the customer's cart matches your rules.").first()).toBeVisible()
+      await expect(createDrawer.getByText("V1 note: Buy X Get Y and Free Gift do not auto-add reward items. Reward items must already be in the customer's cart.")).toBeVisible()
+      await expect(createDrawer.getByText('Reward item must already be in cart.')).toHaveCount(0)
+      await expect(createDrawer.getByText('Gift item must already be in cart.')).toHaveCount(0)
+
+      await page.screenshot({
+        path: screenshotPath('phase-9-4-automatic-type-selection.png'),
+        fullPage: true,
+      })
+
+      await page.getByRole('radio', { name: /Product group discount/i }).click()
+      await page.getByRole('button', { name: 'Continue to details' }).click()
       await expect(
         page.getByText('Product group discounts apply to the selected qualifier products only in V1.')
       ).toBeVisible()
 
       await page.screenshot({
-        path: screenshotPath('phase-9-2-product-group-details.png'),
+        path: screenshotPath('phase-9-4-product-group-details.png'),
         fullPage: true,
       })
 
       await page.getByRole('button', { name: 'Back' }).click()
-      await page.getByRole('button', { name: /Buy X Get Y/i }).click()
-      await page.getByRole('button', { name: 'Continue' }).click()
+      await expect(createDrawer.getByRole('heading', { name: 'Choose automatic offer type' })).toBeVisible()
+      await page.getByRole('radio', { name: /Buy X Get Y/i }).click()
+      await page.getByRole('button', { name: 'Continue to details' }).click()
       await expect(
         page.getByText("Reward items must already be in the customer's cart. Auto-add gifts are not enabled in V1.")
       ).toBeVisible()
 
       await page.screenshot({
-        path: screenshotPath('phase-9-2-buy-x-get-y-details.png'),
+        path: screenshotPath('phase-9-4-buy-x-get-y-details.png'),
         fullPage: true,
       })
 
       await page.getByRole('button', { name: 'Back' }).click()
-      await page.getByRole('button', { name: /Free gift/i }).click()
-      await page.getByRole('button', { name: 'Continue' }).click()
+      await page.getByRole('radio', { name: /Free gift/i }).click()
+      await page.getByRole('button', { name: 'Continue to details' }).click()
       await expect(
         page.getByText("Gift items must already be in the customer's cart. Auto-add gifts are not enabled in V1.")
       ).toBeVisible()
@@ -504,11 +611,11 @@ test.describe('Smart Promotions visibility smoke screenshots', () => {
       const page = await context.newPage()
       await mockOrderDetailApis(page)
 
-      await page.goto('/orders/7001', { waitUntil: 'domcontentloaded' })
-      await expect(page.getByRole('heading', { name: '#7001' })).toBeVisible()
-      await expect(page.getByText('Promotions applied')).toBeVisible()
-      await expect(page.getByText('Hoodie + Hat bundle savings')).toBeVisible()
-      await expect(page.getByText('Product group discount')).toBeVisible()
+      await page.goto('/orders/7001', { waitUntil: 'networkidle' })
+      await expect(page.getByRole('heading', { name: '#7001' })).toBeVisible({ timeout: 15000 })
+      await expect(page.getByText('Promotions applied')).toBeVisible({ timeout: 15000 })
+      await expect(page.getByText('Hoodie + Hat bundle savings')).toBeVisible({ timeout: 15000 })
+      await expect(page.getByText('Product group discount')).toBeVisible({ timeout: 15000 })
 
       await page.screenshot({
         path: screenshotPath('phase-7-order-promotion-summary.png'),
