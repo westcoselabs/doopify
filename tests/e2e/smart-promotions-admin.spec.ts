@@ -406,52 +406,76 @@ test.describe('Smart Promotions visibility smoke screenshots', () => {
       await mockPromotionsPageApis(page)
 
       await page.goto('/discounts', { waitUntil: 'domcontentloaded' })
-      await expect(page.getByRole('heading', { name: 'Discounts & Promotions' })).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Discount codes' })).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Automatic promotions' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Promotions' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'All', exact: true })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Discount codes', exact: true })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Automatic', exact: true })).toBeVisible()
 
       await page.screenshot({
-        path: screenshotPath('phase-7-discounts-promotions-tabs.png'),
+        path: screenshotPath('phase-9-2-promotions-page.png'),
         fullPage: true,
       })
 
-      await page.getByRole('button', { name: 'Automatic promotions' }).click()
-      await expect(page.getByRole('button', { name: 'Create automatic promotion' })).toBeVisible()
       await expect(page.getByText('Hoodie + Hat bundle savings')).toBeVisible()
+      await page.getByRole('banner').getByRole('button', { name: 'Create promotion' }).click()
+      await expect(page.getByRole('heading', { name: 'Create promotion' })).toBeVisible()
+      await expect(page.getByRole('button', { name: /Amount off products/i })).toBeVisible()
+      await expect(page.getByRole('button', { name: /Amount off order/i })).toBeVisible()
+      await expect(page.getByRole('button', { name: /Free shipping/i })).toBeVisible()
+      await expect(page.getByRole('button', { name: /Product group discount/i })).toBeVisible()
+      await expect(page.getByRole('button', { name: /Buy X Get Y/i })).toBeVisible()
+      await expect(page.getByRole('button', { name: /Free gift/i })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Continue' })).toBeDisabled()
 
       await page.screenshot({
-        path: screenshotPath('phase-7-automatic-promotions-list.png'),
+        path: screenshotPath('phase-9-2-create-type-selection.png'),
         fullPage: true,
       })
 
-      await page.getByRole('button', { name: 'Create automatic promotion' }).click()
-      await expect(page.getByRole('heading', { name: 'Create automatic promotion' })).toBeVisible()
-      await expect(page.getByRole('button', { name: 'Product group discount' })).toBeVisible()
+      await page.getByRole('button', { name: /Amount off order/i }).click()
+      await expect(page.getByRole('button', { name: 'Continue' })).toBeEnabled()
+      await page.getByRole('button', { name: 'Continue' }).click()
+      await expect(page.getByRole('heading', { name: 'Discount code details' })).toBeVisible()
+      await expect(page.getByText('Looking for Buy X Get Y, Free Gift, or product group savings? Use an automatic promotion type.')).toBeVisible()
 
       await page.screenshot({
-        path: screenshotPath('phase-7-promotion-type-drawer.png'),
+        path: screenshotPath('phase-9-2-discount-code-details.png'),
         fullPage: true,
       })
 
-      await page.getByRole('button', { name: 'Customer gets' }).click()
+      await page.getByRole('button', { name: 'Back' }).click()
+      await page.getByRole('button', { name: /Product group discount/i }).click()
+      await page.getByRole('button', { name: 'Continue' }).click()
       await expect(
-        page.getByText('Reward product rows are not supported for product group discounts in Smart Promotions V1.')
+        page.getByText('Product group discounts apply to the selected qualifier products only in V1.')
       ).toBeVisible()
 
       await page.screenshot({
-        path: screenshotPath('phase-7-product-group-no-rewards.png'),
+        path: screenshotPath('phase-9-2-product-group-details.png'),
         fullPage: true,
       })
 
-      await page.getByRole('button', { name: 'Promotion type' }).click()
-      await page.getByRole('button', { name: 'Buy X Get Y' }).click()
-      await page.getByRole('button', { name: 'Customer gets' }).click()
+      await page.getByRole('button', { name: 'Back' }).click()
+      await page.getByRole('button', { name: /Buy X Get Y/i }).click()
+      await page.getByRole('button', { name: 'Continue' }).click()
       await expect(
         page.getByText("Reward items must already be in the customer's cart. Auto-add gifts are not enabled in V1.")
       ).toBeVisible()
 
       await page.screenshot({
-        path: screenshotPath('phase-7-buy-x-get-y-cart-note.png'),
+        path: screenshotPath('phase-9-2-buy-x-get-y-details.png'),
+        fullPage: true,
+      })
+
+      await page.getByRole('button', { name: 'Back' }).click()
+      await page.getByRole('button', { name: /Free gift/i }).click()
+      await page.getByRole('button', { name: 'Continue' }).click()
+      await expect(
+        page.getByText("Gift items must already be in the customer's cart. Auto-add gifts are not enabled in V1.")
+      ).toBeVisible()
+
+      await page.screenshot({
+        path: screenshotPath('phase-9-2-free-gift-details.png'),
         fullPage: true,
       })
     } finally {

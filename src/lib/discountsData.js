@@ -1,5 +1,5 @@
 export const DISCOUNT_TYPES = ['discount code', 'automatic'];
-export const DISCOUNT_METHODS = ['amount off products', 'amount off order', 'buy x get y', 'free shipping'];
+export const DISCOUNT_METHODS = ['amount off products', 'amount off order', 'free shipping'];
 export const DISCOUNT_STATUSES = ['active', 'scheduled', 'expired'];
 
 export function createSeedDiscounts() {

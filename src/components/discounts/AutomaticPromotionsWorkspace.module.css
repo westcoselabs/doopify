@@ -25,32 +25,80 @@
 
 .typeCards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 0.55rem;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.65rem;
 }
 
 .typeCard {
   text-align: left;
-  border-radius: 0.75rem;
-  border: 1px solid color-mix(in srgb, var(--line-subtle) 84%, transparent);
-  padding: 0.7rem;
-  background: color-mix(in srgb, var(--surface-soft) 88%, transparent);
+  border-radius: 0.95rem;
+  border: 1px solid color-mix(in srgb, var(--line-subtle) 82%, transparent);
+  padding: 0.85rem;
+  background: color-mix(in srgb, var(--surface-soft) 92%, transparent);
   color: inherit;
   display: grid;
-  gap: 0.3rem;
+  gap: 0.35rem;
   cursor: pointer;
+  transition: border-color 120ms ease, transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.typeCard:hover {
+  border-color: color-mix(in srgb, var(--brand-primary) 42%, var(--line-subtle));
+  transform: translateY(-1px);
+}
+
+.typeCard:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--brand-primary) 48%, transparent);
+  outline-offset: 2px;
+}
+
+.typeCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.typeCardTopRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.typeCardDot {
+  width: 0.58rem;
+  height: 0.58rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--line-subtle) 70%, transparent);
+  background: color-mix(in srgb, var(--surface-canvas) 86%, transparent);
 }
 
 .typeCard p,
 .typeCard small {
   margin: 0;
-  opacity: 0.82;
+  opacity: 0.84;
   font-size: 0.79rem;
+}
+
+.typeCardBadge {
+  border-radius: 999px;
+  padding: 0.16rem 0.46rem;
+  font-size: 0.69rem;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--surface-canvas) 92%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line-subtle) 74%, transparent);
+  white-space: nowrap;
 }
 
 .typeCardActive {
   border-color: color-mix(in srgb, var(--brand-primary) 68%, transparent);
   background: color-mix(in srgb, var(--brand-primary) 12%, var(--surface-soft));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand-primary) 28%, transparent);
+}
+
+.typeCardActive .typeCardDot {
+  border-color: color-mix(in srgb, var(--brand-primary) 70%, transparent);
+  background: color-mix(in srgb, var(--brand-primary) 72%, #f8fafc);
 }
 
 .selectionList {
@@ -224,6 +272,7 @@
     flex-direction: column;
   }
 
+  .typeCardTopRow,
   .selectionRow,
   .catalogVariantRow,
   .catalogProductHeader {

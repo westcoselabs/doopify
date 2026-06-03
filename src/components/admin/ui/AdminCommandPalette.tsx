@@ -19,7 +19,7 @@ export const STATIC_COMMANDS: AdminCommand[] = [
   { id: "go-products", label: "Go to Products", path: "/products", keywords: ["catalog"] },
   { id: "go-collections", label: "Go to Collections", path: "/admin/collections", keywords: ["merchandising"] },
   { id: "go-media", label: "Go to Media", path: "/media", keywords: ["assets", "library"] },
-  { id: "go-discounts", label: "Go to Discounts", path: "/discounts", keywords: ["codes"] },
+  { id: "go-discounts", label: "Go to Promotions", path: "/discounts", keywords: ["codes", "discounts", "automatic offers"] },
   { id: "go-abandoned", label: "Go to Abandoned", path: "/admin/abandoned-checkouts", keywords: ["recovery"] },
   { id: "go-analytics", label: "Go to Analytics", path: "/analytics", keywords: ["reports"] },
   { id: "go-webhooks", label: "Open Delivery logs", path: "/admin/webhooks", keywords: ["events", "observability", "logs"] },

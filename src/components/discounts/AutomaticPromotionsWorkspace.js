@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AdminButton from '../admin/ui/AdminButton';
 import AdminDrawer from '../admin/ui/AdminDrawer';
 import AdminField from '../admin/ui/AdminField';
@@ -22,6 +22,7 @@ import {
   formatPromotionTypeLabel,
   formatRewardSummary,
   getPromotionStatusTone,
+  normalizePromotionDraftForType,
   PROMOTION_STATUSES,
   PROMOTION_TYPES,
 } from './promotions-ui.helpers';
@@ -51,20 +52,25 @@ const REWARD_TYPE_OPTIONS = [
   { value: 'FREE', label: 'Free' },
 ];
 
-const TYPE_CARD_COPY = {
+export const TYPE_CARD_COPY = {
   PRODUCT_GROUP_DISCOUNT: {
-    description: 'Discount selected products when they are bought together.',
-    example: 'Buy Hoodie + Hat together and save 15%.',
+    badge: 'Automatic',
+    description: 'Discount selected products when bought together.',
+    example: 'Example: Buy Hoodie + Hat and save 15%.',
     title: 'Product group discount',
   },
   BUY_X_GET_Y: {
-    description: 'Discount reward products when qualifying products are also in the cart.',
-    example: 'Buy a Hoodie, get a Hat 50% off.',
+    badge: 'Automatic',
+    description: 'Discount a reward product when qualifying products are also in the cart.',
+    example: 'Example: Buy a Hoodie, get a Hat 50% off.',
+    note: 'Reward item must already be in cart.',
     title: 'Buy X Get Y',
   },
   FREE_GIFT: {
+    badge: 'Automatic',
     description: 'Make selected reward products free when qualifying products are also in the cart.',
-    example: 'Buy a Hoodie and get a Sticker Pack free.',
+    example: 'Example: Buy a Hoodie, get a Sticker Pack free.',
+    note: 'Gift item must already be in cart.',
     title: 'Free gift',
   },
 };
@@ -120,6 +126,16 @@ function parseApiErrorMessage(payload, fallback) {
   return fallback;
 }
 
+export function createPromotionCatalogState() {
+  return {
+    query: '',
+    rows: [],
+    loading: false,
+    error: '',
+    productDetailsById: {},
+  };
+}
+
 function VariantRowList({
   emptyText,
   fieldLabel,
@@ -163,7 +179,375 @@ function VariantRowList({
   );
 }
 
-export default function AutomaticPromotionsWorkspace() {
+function PromotionTypeCards({ draft, onTypeChange }) {
+  return (
+    <div className={styles.typeCards}>
+      {PROMOTION_TYPES.map((type) => {
+        const copy = TYPE_CARD_COPY[type];
+        return (
+          <button
+            className={`${styles.typeCard} ${draft.type === type ? styles.typeCardActive : ''}`}
+            key={type}
+            onClick={() => onTypeChange(type)}
+            type="button"
+          >
+            <div className={styles.typeCardTopRow}>
+              <div className={styles.typeCardHeader}>
+                <span className={styles.typeCardDot} aria-hidden="true" />
+                <strong>{copy.title}</strong>
+              </div>
+              <span className={styles.typeCardBadge}>{copy.badge}</span>
+            </div>
+            <p>{copy.description}</p>
+            <small>{copy.example}</small>
+            {copy.note ? <small>{copy.note}</small> : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function PromotionCatalogSection({
+  addLabel,
+  catalogError,
+  catalogLoading,
+  catalogQuery,
+  catalogRows,
+  emptyText,
+  loadProductDetail,
+  onAdd,
+  productDetailsById,
+  searchCatalog,
+  setCatalogQuery,
+  title,
+}) {
+  return (
+    <AdminFormSection
+      description="Search products and load variants to add eligible items."
+      eyebrow="Catalog"
+      title={title}
+    >
+      <div className={styles.catalogToolbar}>
+        <AdminInput
+          onChange={(event) => setCatalogQuery(event.target.value)}
+          placeholder="Search products..."
+          type="search"
+          value={catalogQuery}
+        />
+        <AdminButton onClick={searchCatalog} size="sm" variant="secondary">
+          Search
+        </AdminButton>
+      </div>
+      {catalogError ? <p className={styles.inlineError}>{catalogError}</p> : null}
+      <div className={styles.catalogList}>
+        {catalogLoading ? <p className={styles.inlineHint}>Loading product catalog...</p> : null}
+        {!catalogLoading && !catalogRows.length ? <p className={styles.inlineHint}>{emptyText}</p> : null}
+        {catalogRows.map((product) => {
+          const detail = productDetailsById[product.id];
+          return (
+            <div className={styles.catalogProduct} key={product.id}>
+              <div className={styles.catalogProductHeader}>
+                <div>
+                  <strong>{product.title}</strong>
+                  <p>Fulfillment: {product.fulfillmentType || 'PHYSICAL'}</p>
+                </div>
+                <AdminButton onClick={() => void loadProductDetail(product.id)} size="sm" variant="ghost">
+                  Load variants
+                </AdminButton>
+              </div>
+              {detail?.variants?.length ? (
+                <div className={styles.catalogVariantList}>
+                  {detail.variants.map((variant) => (
+                    <div className={styles.catalogVariantRow} key={variant.id}>
+                      <span>
+                        {variant.title || 'Default'}
+                        {variant.sku ? ` | SKU ${variant.sku}` : ''}
+                      </span>
+                      <AdminButton onClick={() => onAdd(detail, variant)} size="sm" variant="secondary">
+                        {addLabel}
+                      </AdminButton>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </AdminFormSection>
+  );
+}
+
+export function SmartPromotionFormSections({
+  catalogState,
+  draft,
+  onAddVariant,
+  onCatalogQueryChange,
+  onLoadProductDetail,
+  onRemoveSelection,
+  onSearchCatalog,
+  onTypeChange,
+  onUpdateDraft,
+  onUpdateSelectionQuantity,
+  showTypeCards = false,
+  validationIssues = [],
+  visibleSections = ['offer-details', 'qualifiers', 'qualifier-catalog', 'reward-settings', 'reward-catalog', 'schedule', 'preview'],
+}) {
+  const validationByPath = useMemo(() => {
+    const grouped = {};
+    for (const issue of validationIssues) {
+      const key = String(issue.path || 'general');
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(issue.message || 'Invalid value');
+    }
+    return grouped;
+  }, [validationIssues]);
+  const topValidationMessages = validationByPath.general || [];
+  const showRewards = draft.type !== 'PRODUCT_GROUP_DISCOUNT';
+  const visible = new Set(visibleSections);
+
+  return (
+    <>
+      {visible.has('offer-details') ? (
+        <AdminFormSection
+          description="Set the offer name and promotion status."
+          eyebrow="Offer details"
+          title="Offer details"
+        >
+          <div className={styles.formGrid}>
+            <AdminField label="Name">
+              <AdminInput
+                onChange={(event) => onUpdateDraft('name', event.target.value)}
+                placeholder="Hoodie + Hat bundle savings"
+                value={draft.name}
+              />
+              {validationByPath.name?.length ? (
+                <small className={styles.fieldError}>{validationByPath.name[0]}</small>
+              ) : null}
+            </AdminField>
+            <AdminField label="Status">
+              <AdminSelect onChange={(value) => onUpdateDraft('status', value)} options={STATUS_OPTIONS} value={draft.status} />
+            </AdminField>
+          </div>
+          {showTypeCards && onTypeChange ? <PromotionTypeCards draft={draft} onTypeChange={onTypeChange} /> : null}
+        </AdminFormSection>
+      ) : null}
+
+      {visible.has('qualifiers') ? (
+        <AdminFormSection
+          description="Select qualifier products and quantities customers must have in their cart."
+          eyebrow="Customer must buy"
+          title="Customer must buy"
+        >
+          <VariantRowList
+            emptyText="No qualifier variants selected yet."
+            fieldLabel="Qualifier variants"
+            onChangeQuantity={(variantId, quantity) => onUpdateSelectionQuantity('qualifiers', variantId, quantity)}
+            onRemove={(variantId) => onRemoveSelection('qualifiers', variantId)}
+            quantityLabel="Required quantity"
+            rows={draft.qualifiers}
+          />
+        </AdminFormSection>
+      ) : null}
+
+      {visible.has('qualifier-catalog') ? (
+        <PromotionCatalogSection
+          addLabel="Add qualifier"
+          catalogError={catalogState.error}
+          catalogLoading={catalogState.loading}
+          catalogQuery={catalogState.query}
+          catalogRows={catalogState.rows}
+          emptyText="Search to find products and variants."
+          loadProductDetail={onLoadProductDetail}
+          onAdd={(product, variant) => onAddVariant('qualifiers', product, variant)}
+          productDetailsById={catalogState.productDetailsById}
+          searchCatalog={onSearchCatalog}
+          setCatalogQuery={onCatalogQueryChange}
+          title="Add qualifier variants"
+        />
+      ) : null}
+
+      {visible.has('reward-settings') ? (
+        <AdminFormSection
+          description={
+            draft.type === 'PRODUCT_GROUP_DISCOUNT'
+              ? 'Choose the discount value applied to the selected qualifier products.'
+              : 'Select reward products and configure how the discount should apply.'
+          }
+          eyebrow={draft.type === 'PRODUCT_GROUP_DISCOUNT' ? 'Discount settings' : 'Customer receives'}
+          title={draft.type === 'PRODUCT_GROUP_DISCOUNT' ? 'Discount settings' : 'Customer receives'}
+        >
+          {draft.type === 'PRODUCT_GROUP_DISCOUNT' ? (
+            <p className={styles.inlineHint}>
+              Product group discounts apply to the selected qualifier products only in V1.
+            </p>
+          ) : (
+            <>
+              <VariantRowList
+                emptyText="No reward variants selected yet."
+                fieldLabel="Reward variants"
+                onChangeQuantity={(variantId, quantity) => onUpdateSelectionQuantity('rewards', variantId, quantity)}
+                onRemove={(variantId) => onRemoveSelection('rewards', variantId)}
+                quantityLabel="Reward quantity"
+                rows={draft.rewards}
+              />
+              {draft.type === 'BUY_X_GET_Y' ? (
+                <p className={styles.inlineHint}>
+                  Reward items must already be in the customer&apos;s cart. Auto-add gifts are not enabled in V1.
+                </p>
+              ) : null}
+              {draft.type === 'FREE_GIFT' ? (
+                <p className={styles.inlineHint}>
+                  Gift items must already be in the customer&apos;s cart. Auto-add gifts are not enabled in V1.
+                </p>
+              ) : null}
+            </>
+          )}
+          <div className={styles.formGrid}>
+            <AdminField label={draft.type === 'PRODUCT_GROUP_DISCOUNT' ? 'Discount type' : 'Reward type'}>
+              <AdminSelect
+                onChange={(value) => onUpdateDraft('rewardType', value)}
+                options={
+                  draft.type === 'FREE_GIFT'
+                    ? [{ value: 'FREE', label: 'Free' }]
+                    : REWARD_TYPE_OPTIONS.filter((option) => option.value !== 'FREE')
+                }
+                value={draft.type === 'FREE_GIFT' ? 'FREE' : draft.rewardType}
+              />
+            </AdminField>
+            <AdminField label="Value">
+              <AdminInput
+                disabled={draft.type === 'FREE_GIFT'}
+                onChange={(event) => onUpdateDraft('value', event.target.value)}
+                placeholder={draft.rewardType === 'PERCENTAGE' ? '15' : '5.00'}
+                type="number"
+                value={draft.type === 'FREE_GIFT' ? '0' : draft.value}
+              />
+            </AdminField>
+          </div>
+        </AdminFormSection>
+      ) : null}
+
+      {visible.has('reward-catalog') && showRewards ? (
+        <PromotionCatalogSection
+          addLabel="Add reward"
+          catalogError={catalogState.error}
+          catalogLoading={catalogState.loading}
+          catalogQuery={catalogState.query}
+          catalogRows={catalogState.rows}
+          emptyText="Search to find products and variants."
+          loadProductDetail={onLoadProductDetail}
+          onAdd={(product, variant) => onAddVariant('rewards', product, variant)}
+          productDetailsById={catalogState.productDetailsById}
+          searchCatalog={onSearchCatalog}
+          setCatalogQuery={onCatalogQueryChange}
+          title="Add reward variants"
+        />
+      ) : null}
+
+      {visible.has('schedule') ? (
+        <AdminFormSection
+          description="Set activation windows, usage cap, and tie-break priority."
+          eyebrow="Schedule & publish"
+          title="Schedule & publish"
+        >
+          <div className={styles.formGrid}>
+            <AdminField label="Starts at">
+              <AdminInput
+                onChange={(event) => onUpdateDraft('startsAt', event.target.value)}
+                type="datetime-local"
+                value={draft.startsAt}
+              />
+            </AdminField>
+            <AdminField label="Ends at">
+              <AdminInput
+                onChange={(event) => onUpdateDraft('endsAt', event.target.value)}
+                type="datetime-local"
+                value={draft.endsAt}
+              />
+            </AdminField>
+            <AdminField label="Usage limit">
+              <AdminInput
+                min="0"
+                onChange={(event) => onUpdateDraft('usageLimit', event.target.value)}
+                placeholder="Optional"
+                type="number"
+                value={draft.usageLimit}
+              />
+            </AdminField>
+            <AdminField
+              hint="Lower numbers run first when promotions tie. The best discount usually wins automatically."
+              label="Priority"
+            >
+              <AdminInput
+                onChange={(event) => onUpdateDraft('priority', event.target.value)}
+                type="number"
+                value={draft.priority}
+              />
+            </AdminField>
+          </div>
+        </AdminFormSection>
+      ) : null}
+
+      {visible.has('preview') ? (
+        <AdminFormSection
+          description="Review Smart Promotion behavior before saving."
+          eyebrow="Preview"
+          title="Preview"
+        >
+          <p className={styles.previewText}>{buildPromotionPreview(draft)}</p>
+          <div className={styles.previewGrid}>
+            <p>
+              <strong>Type:</strong> {formatPromotionTypeLabel(draft.type)}
+            </p>
+            <p>
+              <strong>Status:</strong> {formatPromotionStatusLabel(draft.status)}
+            </p>
+            <p>
+              <strong>Customer must buy:</strong> {rowsToNameSummary(draft.qualifiers)}
+            </p>
+            <p>
+              <strong>{draft.type === 'PRODUCT_GROUP_DISCOUNT' ? 'Discount settings' : 'Customer receives'}:</strong>{' '}
+              {draft.type === 'PRODUCT_GROUP_DISCOUNT'
+                ? formatRewardSummary({
+                    rewardType: draft.rewardType,
+                    type: draft.type,
+                    value: Number(draft.value || 0),
+                  })
+                : rowsToNameSummary(draft.rewards)}
+            </p>
+          </div>
+          <p className={styles.inlineHint}>
+            Smart Promotions do not combine with discount codes in V1.
+          </p>
+          {topValidationMessages.length ? (
+            <div className={styles.inlineErrorList}>
+              {topValidationMessages.map((message, index) => (
+                <p key={`${message}-${index}`}>{message}</p>
+              ))}
+            </div>
+          ) : null}
+          {validationIssues.length ? (
+            <div className={styles.inlineErrorList}>
+              {validationIssues.map((issue, index) => (
+                <p key={`${issue.path}-${issue.code}-${index}`}>
+                  {issue.path ? `${issue.path}: ` : ''}
+                  {issue.message}
+                </p>
+              ))}
+            </div>
+          ) : null}
+        </AdminFormSection>
+      ) : null}
+    </>
+  );
+}
+
+export default function AutomaticPromotionsWorkspace({
+  externalCreateToken = 0,
+  hideCreateAction = false,
+}) {
   const [promotions, setPromotions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -174,21 +558,9 @@ export default function AutomaticPromotionsWorkspace() {
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [errorMessage, setErrorMessage] = useState('');
   const [validationIssues, setValidationIssues] = useState([]);
-  const [catalogQuery, setCatalogQuery] = useState('');
-  const [catalogRows, setCatalogRows] = useState([]);
-  const [catalogLoading, setCatalogLoading] = useState(false);
-  const [catalogError, setCatalogError] = useState('');
-  const [productDetailsById, setProductDetailsById] = useState({});
+  const [catalogState, setCatalogState] = useState(() => createPromotionCatalogState());
+  const lastCreateTokenRef = useRef(-1);
   const isEditMode = Boolean(draft.id);
-  const validationByPath = useMemo(() => {
-    const grouped = {};
-    for (const issue of validationIssues) {
-      const key = String(issue.path || 'general');
-      if (!grouped[key]) grouped[key] = [];
-      grouped[key].push(issue.message || 'Invalid value');
-    }
-    return grouped;
-  }, [validationIssues]);
   const canSubmitPromotion = useMemo(() => canSubmitPromotionDraft(draft), [draft]);
 
   const loadPromotions = useCallback(async () => {
@@ -223,13 +595,19 @@ export default function AutomaticPromotionsWorkspace() {
     void loadPromotions();
   }, [loadPromotions]);
 
+  useEffect(() => {
+    if (externalCreateToken !== lastCreateTokenRef.current) {
+      lastCreateTokenRef.current = externalCreateToken;
+      if (externalCreateToken > 0) {
+        openCreateDrawer();
+      }
+    }
+  }, [externalCreateToken]);
+
   function resetDrawerState(nextDraft) {
     setDraft(nextDraft);
     setValidationIssues([]);
-    setCatalogRows([]);
-    setCatalogQuery('');
-    setCatalogError('');
-    setProductDetailsById({});
+    setCatalogState(createPromotionCatalogState());
   }
 
   function openCreateDrawer() {
@@ -257,14 +635,13 @@ export default function AutomaticPromotionsWorkspace() {
   }
 
   function onTypeChange(nextType) {
-    setDraft((current) => ({
-      ...createPromotionDraft(nextType),
-      ...current,
-      type: nextType,
-      rewards: nextType === 'PRODUCT_GROUP_DISCOUNT' ? [] : current.rewards,
-      rewardType: nextType === 'FREE_GIFT' ? 'FREE' : current.rewardType,
-      value: nextType === 'FREE_GIFT' ? '0' : current.value,
-    }));
+    setDraft((current) => {
+      const nextDraft = normalizePromotionDraftForType({
+        ...current,
+        type: nextType,
+      });
+      return nextDraft;
+    });
     setValidationIssues([]);
   }
 
@@ -297,11 +674,14 @@ export default function AutomaticPromotionsWorkspace() {
 
   function addVariantToSelection(section, product, variant) {
     if (product.fulfillmentType !== 'PHYSICAL') {
-      setCatalogError('Only physical variants are eligible for Smart Promotions in V1.');
+      setCatalogState((current) => ({
+        ...current,
+        error: 'Only physical variants are eligible for Smart Promotions in V1.',
+      }));
       return;
     }
 
-    setCatalogError('');
+    setCatalogState((current) => ({ ...current, error: '' }));
     setDraft((current) => {
       const existing = current[section].find((row) => row.variantId === variant.id);
       if (existing) {
@@ -323,57 +703,79 @@ export default function AutomaticPromotionsWorkspace() {
   }
 
   async function searchCatalog() {
-    setCatalogLoading(true);
-    setCatalogError('');
+    setCatalogState((current) => ({
+      ...current,
+      loading: true,
+      error: '',
+    }));
     try {
       const query = new URLSearchParams({
         page: '1',
         pageSize: '20',
         status: 'ACTIVE',
       });
-      if (catalogQuery.trim()) {
-        query.set('search', catalogQuery.trim());
+      if (catalogState.query.trim()) {
+        query.set('search', catalogState.query.trim());
       }
 
       const response = await fetch(`/api/products?${query.toString()}`);
       const payload = await response.json();
       if (!payload?.success) {
-        setCatalogRows([]);
-        setCatalogError(parseApiErrorMessage(payload, 'Failed to search product catalog.'));
+        setCatalogState((current) => ({
+          ...current,
+          rows: [],
+          error: parseApiErrorMessage(payload, 'Failed to search product catalog.'),
+          loading: false,
+        }));
         return;
       }
 
       const physicalProducts = (payload.data?.products || []).filter(
         (product) => (product.fulfillmentType || 'PHYSICAL') === 'PHYSICAL'
       );
-      setCatalogRows(physicalProducts);
+      setCatalogState((current) => ({
+        ...current,
+        rows: physicalProducts,
+        loading: false,
+      }));
     } catch (error) {
       console.error('[AutomaticPromotionsWorkspace] catalog search failed', error);
-      setCatalogRows([]);
-      setCatalogError('Failed to search product catalog.');
-    } finally {
-      setCatalogLoading(false);
+      setCatalogState((current) => ({
+        ...current,
+        rows: [],
+        error: 'Failed to search product catalog.',
+        loading: false,
+      }));
     }
   }
 
   async function loadProductDetail(productId) {
-    if (productDetailsById[productId]) return;
+    if (catalogState.productDetailsById[productId]) return;
 
     try {
       const response = await fetch(`/api/products/${productId}`);
       const payload = await response.json();
       if (!payload?.success) {
-        setCatalogError(parseApiErrorMessage(payload, 'Failed to load product variants.'));
+        setCatalogState((current) => ({
+          ...current,
+          error: parseApiErrorMessage(payload, 'Failed to load product variants.'),
+        }));
         return;
       }
 
-      setProductDetailsById((current) => ({
+      setCatalogState((current) => ({
         ...current,
-        [productId]: payload.data,
+        productDetailsById: {
+          ...current.productDetailsById,
+          [productId]: payload.data,
+        },
       }));
     } catch (error) {
       console.error('[AutomaticPromotionsWorkspace] failed to load product detail', error);
-      setCatalogError('Failed to load product variants.');
+      setCatalogState((current) => ({
+        ...current,
+        error: 'Failed to load product variants.',
+      }));
     }
   }
 
@@ -433,8 +835,6 @@ export default function AutomaticPromotionsWorkspace() {
     }
   }
 
-  const topValidationMessages = validationByPath.general || [];
-
   return (
     <div className={styles.workspace}>
       {errorMessage ? <p className={styles.errorBanner}>{errorMessage}</p> : null}
@@ -450,15 +850,22 @@ export default function AutomaticPromotionsWorkspace() {
         <AdminSelect onChange={setTypeFilter} options={TYPE_FILTER_OPTIONS} value={typeFilter} />
       </AdminToolbar>
 
-      <div className={styles.createRow}>
-        <AdminButton onClick={openCreateDrawer} size="sm" variant="primary">
-          Create automatic promotion
-        </AdminButton>
-      </div>
+      {!hideCreateAction ? (
+        <div className={styles.createRow}>
+          <AdminButton onClick={openCreateDrawer} size="sm" variant="primary">
+            Create promotion
+          </AdminButton>
+        </div>
+      ) : null}
 
       <AdminTable
         columns={[
           { key: 'name', header: 'Name', render: (promotion) => promotion.name },
+          {
+            key: 'method',
+            header: 'Method',
+            render: () => 'Automatic',
+          },
           {
             key: 'type',
             header: 'Type',
@@ -474,18 +881,6 @@ export default function AutomaticPromotionsWorkspace() {
             ),
           },
           {
-            key: 'reward',
-            header: 'Reward',
-            render: (promotion) =>
-              formatRewardSummary({
-                rewardType: promotion.rewardType,
-                type: promotion.type,
-                value: Number(promotion.value || 0),
-              }),
-          },
-          { key: 'qualifierCount', header: 'Qualifiers', render: (promotion) => promotion.qualifierCount || 0 },
-          { key: 'rewardCount', header: 'Rewards', render: (promotion) => promotion.rewardCount || 0 },
-          {
             key: 'usage',
             header: 'Usage',
             render: (promotion) => {
@@ -493,7 +888,6 @@ export default function AutomaticPromotionsWorkspace() {
               return `${promotion.usageCount || 0} / ${usageLimit}`;
             },
           },
-          { key: 'priority', header: 'Priority', render: (promotion) => promotion.priority },
           {
             key: 'updatedAt',
             header: 'Updated',
@@ -569,384 +963,37 @@ export default function AutomaticPromotionsWorkspace() {
           </>
         )}
         contextItems={[
-          { label: 'Discounts & Promotions' },
-          { label: 'Automatic promotions' },
+          { label: 'Promotions' },
+          { label: 'Automatic' },
           { current: true, label: draft.name || (isEditMode ? 'Edit promotion' : 'New promotion') },
         ]}
         onClose={() => setDrawerOpen(false)}
         open={drawerOpen}
-        tabs={[
-          {
-            id: 'type',
-            label: 'Promotion type',
-            content: (
-              <div className={styles.drawerBody}>
-                <AdminFormSection
-                  description="Choose a Smart Promotion type for this rule."
-                  eyebrow="Step 1"
-                  title="Promotion type"
-                >
-                  <div className={styles.typeCards}>
-                    {PROMOTION_TYPES.map((type) => {
-                      const copy = TYPE_CARD_COPY[type];
-                      return (
-                        <button
-                          className={`${styles.typeCard} ${draft.type === type ? styles.typeCardActive : ''}`}
-                          key={type}
-                          onClick={() => onTypeChange(type)}
-                          type="button"
-                        >
-                          <strong>{copy.title}</strong>
-                          <p>{copy.description}</p>
-                          <small>{copy.example}</small>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </AdminFormSection>
-              </div>
-            ),
-          },
-          {
-            id: 'buys',
-            label: 'Customer buys',
-            content: (
-              <div className={styles.drawerBody}>
-                <AdminFormSection
-                  description="Select qualifier variants customers must have in their cart."
-                  eyebrow="Step 2"
-                  title="Customer buys"
-                >
-                  <VariantRowList
-                    emptyText="No qualifier variants selected yet."
-                    fieldLabel="Qualifier variants"
-                    onChangeQuantity={(variantId, quantity) =>
-                      updateSelectionQuantity('qualifiers', variantId, quantity)
-                    }
-                    onRemove={(variantId) => removeSelection('qualifiers', variantId)}
-                    quantityLabel="Required quantity"
-                    rows={draft.qualifiers}
-                  />
-                </AdminFormSection>
-                <AdminFormSection
-                  description="Search products and load variants to add qualifiers."
-                  eyebrow="Catalog"
-                  title="Add qualifier variants"
-                >
-                  <div className={styles.catalogToolbar}>
-                    <AdminInput
-                      onChange={(event) => setCatalogQuery(event.target.value)}
-                      placeholder="Search products..."
-                      type="search"
-                      value={catalogQuery}
-                    />
-                    <AdminButton onClick={searchCatalog} size="sm" variant="secondary">
-                      Search
-                    </AdminButton>
-                  </div>
-                  {catalogError ? <p className={styles.inlineError}>{catalogError}</p> : null}
-                  <div className={styles.catalogList}>
-                    {catalogLoading ? <p className={styles.inlineHint}>Loading product catalog...</p> : null}
-                    {!catalogLoading && !catalogRows.length ? (
-                      <p className={styles.inlineHint}>Search to find products and variants.</p>
-                    ) : null}
-                    {catalogRows.map((product) => {
-                      const detail = productDetailsById[product.id];
-                      return (
-                        <div className={styles.catalogProduct} key={product.id}>
-                          <div className={styles.catalogProductHeader}>
-                            <div>
-                              <strong>{product.title}</strong>
-                              <p>Fulfillment: {product.fulfillmentType || 'PHYSICAL'}</p>
-                            </div>
-                            <AdminButton onClick={() => void loadProductDetail(product.id)} size="sm" variant="ghost">
-                              Load variants
-                            </AdminButton>
-                          </div>
-                          {detail?.variants?.length ? (
-                            <div className={styles.catalogVariantList}>
-                              {detail.variants.map((variant) => (
-                                <div className={styles.catalogVariantRow} key={variant.id}>
-                                  <span>
-                                    {variant.title || 'Default'}
-                                    {variant.sku ? ` | SKU ${variant.sku}` : ''}
-                                  </span>
-                                  <AdminButton
-                                    onClick={() => addVariantToSelection('qualifiers', detail, variant)}
-                                    size="sm"
-                                    variant="secondary"
-                                  >
-                                    Add qualifier
-                                  </AdminButton>
-                                </div>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </AdminFormSection>
-              </div>
-            ),
-          },
-          {
-            id: 'gets',
-            label: 'Customer gets',
-            content: (
-              <div className={styles.drawerBody}>
-                <AdminFormSection
-                  description={
-                    draft.type === 'PRODUCT_GROUP_DISCOUNT'
-                      ? 'Product group discounts apply to the selected qualifier products only in V1.'
-                      : 'Select reward variants customers can receive when qualifiers are also in cart.'
-                  }
-                  eyebrow="Step 3"
-                  title="Customer gets"
-                >
-                  {draft.type === 'PRODUCT_GROUP_DISCOUNT' ? (
-                    <p className={styles.inlineHint}>
-                      Reward product rows are not supported for product group discounts in Smart Promotions V1.
-                    </p>
-                  ) : (
-                    <VariantRowList
-                      emptyText="No reward variants selected yet."
-                      fieldLabel="Reward variants"
-                      onChangeQuantity={(variantId, quantity) =>
-                        updateSelectionQuantity('rewards', variantId, quantity)
-                      }
-                      onRemove={(variantId) => removeSelection('rewards', variantId)}
-                      quantityLabel="Reward quantity"
-                      rows={draft.rewards}
-                    />
-                  )}
-
-                  {draft.type === 'BUY_X_GET_Y' ? (
-                    <p className={styles.inlineHint}>
-                      Reward items must already be in the customer&apos;s cart. Auto-add gifts are not enabled in V1.
-                    </p>
-                  ) : null}
-                  {draft.type === 'FREE_GIFT' ? (
-                    <p className={styles.inlineHint}>
-                      The free gift must already be in the customer&apos;s cart. Auto-add gifts are not enabled in V1.
-                    </p>
-                  ) : null}
-                </AdminFormSection>
-
-                {draft.type !== 'PRODUCT_GROUP_DISCOUNT' ? (
-                  <AdminFormSection
-                    description="Search products and load variants to add rewards."
-                    eyebrow="Catalog"
-                    title="Add reward variants"
-                  >
-                    <div className={styles.catalogToolbar}>
-                      <AdminInput
-                        onChange={(event) => setCatalogQuery(event.target.value)}
-                        placeholder="Search products..."
-                        type="search"
-                        value={catalogQuery}
-                      />
-                      <AdminButton onClick={searchCatalog} size="sm" variant="secondary">
-                        Search
-                      </AdminButton>
-                    </div>
-                    {catalogError ? <p className={styles.inlineError}>{catalogError}</p> : null}
-                    <div className={styles.catalogList}>
-                      {catalogLoading ? <p className={styles.inlineHint}>Loading product catalog...</p> : null}
-                      {!catalogLoading && !catalogRows.length ? (
-                        <p className={styles.inlineHint}>Search to find products and variants.</p>
-                      ) : null}
-                      {catalogRows.map((product) => {
-                        const detail = productDetailsById[product.id];
-                        return (
-                          <div className={styles.catalogProduct} key={product.id}>
-                            <div className={styles.catalogProductHeader}>
-                              <div>
-                                <strong>{product.title}</strong>
-                                <p>Fulfillment: {product.fulfillmentType || 'PHYSICAL'}</p>
-                              </div>
-                              <AdminButton onClick={() => void loadProductDetail(product.id)} size="sm" variant="ghost">
-                                Load variants
-                              </AdminButton>
-                            </div>
-                            {detail?.variants?.length ? (
-                              <div className={styles.catalogVariantList}>
-                                {detail.variants.map((variant) => (
-                                  <div className={styles.catalogVariantRow} key={variant.id}>
-                                    <span>
-                                      {variant.title || 'Default'}
-                                      {variant.sku ? ` | SKU ${variant.sku}` : ''}
-                                    </span>
-                                    <AdminButton
-                                      onClick={() => addVariantToSelection('rewards', detail, variant)}
-                                      size="sm"
-                                      variant="secondary"
-                                    >
-                                      Add reward
-                                    </AdminButton>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </AdminFormSection>
-                ) : null}
-
-                <AdminFormSection
-                  description={
-                    draft.type === 'PRODUCT_GROUP_DISCOUNT'
-                      ? 'Set the discount method and value applied to selected qualifier products.'
-                      : 'Set the reward method and value for this promotion.'
-                  }
-                  eyebrow="Reward"
-                  title={draft.type === 'PRODUCT_GROUP_DISCOUNT' ? 'Discount settings' : 'Reward settings'}
-                >
-                  <div className={styles.formGrid}>
-                    <AdminField label="Reward type">
-                      <AdminSelect
-                        onChange={(value) => updateDraft('rewardType', value)}
-                        options={
-                          draft.type === 'FREE_GIFT'
-                            ? [{ value: 'FREE', label: 'Free' }]
-                            : REWARD_TYPE_OPTIONS.filter((option) => option.value !== 'FREE')
-                        }
-                        value={draft.type === 'FREE_GIFT' ? 'FREE' : draft.rewardType}
-                      />
-                    </AdminField>
-                    <AdminField label="Value">
-                      <AdminInput
-                        disabled={draft.type === 'FREE_GIFT'}
-                        onChange={(event) => updateDraft('value', event.target.value)}
-                        placeholder={draft.rewardType === 'PERCENTAGE' ? '15' : '5.00'}
-                        type="number"
-                        value={draft.type === 'FREE_GIFT' ? '0' : draft.value}
-                      />
-                    </AdminField>
-                  </div>
-                </AdminFormSection>
-              </div>
-            ),
-          },
-          {
-            id: 'limits',
-            label: 'Limits & schedule',
-            content: (
-              <div className={styles.drawerBody}>
-                <AdminFormSection
-                  description="Configure activation status, schedule, and run priority."
-                  eyebrow="Step 4"
-                  title="Limits and schedule"
-                >
-                  <div className={styles.formGrid}>
-                    <AdminField label="Name">
-                      <AdminInput
-                        onChange={(event) => updateDraft('name', event.target.value)}
-                        placeholder="Hoodie + Hat bundle savings"
-                        value={draft.name}
-                      />
-                      {validationByPath.name?.length ? (
-                        <small className={styles.fieldError}>{validationByPath.name[0]}</small>
-                      ) : null}
-                    </AdminField>
-                    <AdminField label="Status">
-                      <AdminSelect onChange={(value) => updateDraft('status', value)} options={STATUS_OPTIONS} value={draft.status} />
-                    </AdminField>
-                    <AdminField label="Starts at">
-                      <AdminInput
-                        onChange={(event) => updateDraft('startsAt', event.target.value)}
-                        type="datetime-local"
-                        value={draft.startsAt}
-                      />
-                    </AdminField>
-                    <AdminField label="Ends at">
-                      <AdminInput
-                        onChange={(event) => updateDraft('endsAt', event.target.value)}
-                        type="datetime-local"
-                        value={draft.endsAt}
-                      />
-                    </AdminField>
-                    <AdminField label="Usage limit">
-                      <AdminInput
-                        min="0"
-                        onChange={(event) => updateDraft('usageLimit', event.target.value)}
-                        placeholder="Optional"
-                        type="number"
-                        value={draft.usageLimit}
-                      />
-                    </AdminField>
-                    <AdminField
-                      hint="Lower numbers run first when promotions tie. The best discount usually wins automatically."
-                      label="Priority"
-                    >
-                      <AdminInput
-                        onChange={(event) => updateDraft('priority', event.target.value)}
-                        type="number"
-                        value={draft.priority}
-                      />
-                    </AdminField>
-                  </div>
-                </AdminFormSection>
-              </div>
-            ),
-          },
-          {
-            id: 'summary',
-            label: 'Summary',
-            content: (
-              <div className={styles.drawerBody}>
-                <AdminFormSection
-                  description="Review Smart Promotions behavior before saving."
-                  eyebrow="Step 5"
-                  title="Preview"
-                >
-                  <p className={styles.previewText}>{buildPromotionPreview(draft)}</p>
-                  <div className={styles.previewGrid}>
-                    <p>
-                      <strong>Type:</strong> {formatPromotionTypeLabel(draft.type)}
-                    </p>
-                    <p>
-                      <strong>Status:</strong> {formatPromotionStatusLabel(draft.status)}
-                    </p>
-                    <p>
-                      <strong>Qualifiers:</strong> {rowsToNameSummary(draft.qualifiers)}
-                    </p>
-                    <p>
-                      <strong>Rewards:</strong>{' '}
-                      {draft.type === 'PRODUCT_GROUP_DISCOUNT'
-                        ? 'Not used in V1'
-                        : rowsToNameSummary(draft.rewards)}
-                    </p>
-                  </div>
-                  <p className={styles.inlineHint}>
-                    Smart Promotions do not combine with discount codes in V1.
-                  </p>
-                  {topValidationMessages.length ? (
-                    <div className={styles.inlineErrorList}>
-                      {topValidationMessages.map((message, index) => (
-                        <p key={`${message}-${index}`}>{message}</p>
-                      ))}
-                    </div>
-                  ) : null}
-                  {validationIssues.length ? (
-                    <div className={styles.inlineErrorList}>
-                      {validationIssues.map((issue, index) => (
-                        <p key={`${issue.path}-${issue.code}-${index}`}>
-                          {issue.path ? `${issue.path}: ` : ''}
-                          {issue.message}
-                        </p>
-                      ))}
-                    </div>
-                  ) : null}
-                </AdminFormSection>
-              </div>
-            ),
-          },
-        ]}
-        title={isEditMode ? 'Edit automatic promotion' : 'Create automatic promotion'}
-      />
+        subtitle="Review the promotion details, reward logic, and scheduling before saving."
+        title={isEditMode ? 'Edit promotion' : 'Create promotion'}
+      >
+        <div className={styles.drawerBody}>
+          <SmartPromotionFormSections
+            catalogState={catalogState}
+            draft={draft}
+            onAddVariant={addVariantToSelection}
+            onCatalogQueryChange={(value) =>
+              setCatalogState((current) => ({
+                ...current,
+                query: value,
+              }))
+            }
+            onLoadProductDetail={loadProductDetail}
+            onRemoveSelection={removeSelection}
+            onSearchCatalog={searchCatalog}
+            onTypeChange={onTypeChange}
+            onUpdateDraft={updateDraft}
+            onUpdateSelectionQuantity={updateSelectionQuantity}
+            showTypeCards
+            validationIssues={validationIssues}
+          />
+        </div>
+      </AdminDrawer>
     </div>
   );
 }
