@@ -6,6 +6,7 @@ import AdminDrawer from '../admin/ui/AdminDrawer';
 import AdminField from '../admin/ui/AdminField';
 import AdminFormSection from '../admin/ui/AdminFormSection';
 import AdminInput from '../admin/ui/AdminInput';
+import AdminSchedulePopover from '../admin/ui/AdminSchedulePopover';
 import AdminSelect from '../admin/ui/AdminSelect';
 import AdminStatusChip from '../admin/ui/AdminStatusChip';
 import AdminTable from '../admin/ui/AdminTable';
@@ -412,9 +413,13 @@ export function SmartPromotionFormSections({
         >
           <div className={styles.formGrid}>
             <AdminField label="Starts at">
-              <AdminInput
-                onChange={(event) => onUpdateDraft('startsAt', event.target.value)}
-                type="datetime-local"
+              <AdminSchedulePopover
+                applyLabel="Set start date"
+                nowLabel="Start now"
+                onChange={(nextIso) => onUpdateDraft('startsAt', nextIso || '')}
+                scheduledLabel="Start scheduled"
+                showValueLabel
+                triggerLabel="Choose start date"
                 value={draft.startsAt}
               />
               {validationByPath.startsAt?.length ? (
@@ -422,9 +427,13 @@ export function SmartPromotionFormSections({
               ) : null}
             </AdminField>
             <AdminField label="Ends at">
-              <AdminInput
-                onChange={(event) => onUpdateDraft('endsAt', event.target.value)}
-                type="datetime-local"
+              <AdminSchedulePopover
+                applyLabel="Set end date"
+                minDate={draft.startsAt || null}
+                onChange={(nextIso) => onUpdateDraft('endsAt', nextIso || '')}
+                showNowAction={false}
+                showValueLabel
+                triggerLabel="Choose end date"
                 value={draft.endsAt}
               />
               {validationByPath.endsAt?.length ? (

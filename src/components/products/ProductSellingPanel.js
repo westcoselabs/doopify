@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import AdminButton from "../admin/ui/AdminButton";
 import AdminCard from "../admin/ui/AdminCard";
 import AdminInput from "../admin/ui/AdminInput";
+import AdminSchedulePopover from "../admin/ui/AdminSchedulePopover";
 import AdminSelectableTile from "../admin/ui/AdminSelectableTile";
 import AdminTextarea from "../admin/ui/AdminTextarea";
 import { useProductStore } from "../../context/ProductContext";
@@ -75,37 +76,6 @@ function parseApiError(json, fallbackMessage) {
     return json.error;
   }
   return fallbackMessage;
-}
-
-function isoToLocalInput(isoDate) {
-  if (!isoDate) {
-    return "";
-  }
-
-  const parsed = new Date(isoDate);
-  if (Number.isNaN(parsed.getTime())) {
-    return "";
-  }
-
-  const year = parsed.getFullYear();
-  const month = String(parsed.getMonth() + 1).padStart(2, "0");
-  const day = String(parsed.getDate()).padStart(2, "0");
-  const hours = String(parsed.getHours()).padStart(2, "0");
-  const minutes = String(parsed.getMinutes()).padStart(2, "0");
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
-}
-
-function localInputToIso(value) {
-  if (!value) {
-    return null;
-  }
-
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return null;
-  }
-
-  return parsed.toISOString();
 }
 
 function getPreviewState({ draftProduct, totalInventory, continueSellingCount }) {
@@ -446,15 +416,14 @@ export default function ProductSellingPanel({ onManageInVariants }) {
               <div className={styles.gridTwo}>
                 <label className={styles.field}>
                   <span>Presale starts</span>
-                  <AdminInput
-                    onChange={(event) =>
-                      actions.setDraftField(
-                        "presaleStartsAt",
-                        localInputToIso(event.target.value)
-                      )
-                    }
-                    type="datetime-local"
-                    value={isoToLocalInput(draftProduct.presaleStartsAt)}
+                  <AdminSchedulePopover
+                    applyLabel="Set presale start"
+                    nowLabel="Start now"
+                    onChange={(nextIso) => actions.setDraftField("presaleStartsAt", nextIso)}
+                    scheduledLabel="Presale scheduled"
+                    showValueLabel
+                    triggerLabel="Choose start date"
+                    value={draftProduct.presaleStartsAt}
                   />
                 </label>
                 <label className={styles.field}>
@@ -486,15 +455,14 @@ export default function ProductSellingPanel({ onManageInVariants }) {
               <div className={styles.gridTwo}>
                 <label className={styles.field}>
                   <span>Launch date</span>
-                  <AdminInput
-                    onChange={(event) =>
-                      actions.setDraftField(
-                        "availableForPurchaseAt",
-                        localInputToIso(event.target.value)
-                      )
-                    }
-                    type="datetime-local"
-                    value={isoToLocalInput(draftProduct.availableForPurchaseAt)}
+                  <AdminSchedulePopover
+                    applyLabel="Set launch date"
+                    nowLabel="Launch now"
+                    onChange={(nextIso) => actions.setDraftField("availableForPurchaseAt", nextIso)}
+                    scheduledLabel="Launch scheduled"
+                    showValueLabel
+                    triggerLabel="Choose launch date"
+                    value={draftProduct.availableForPurchaseAt}
                   />
                 </label>
                 <label className={styles.field}>

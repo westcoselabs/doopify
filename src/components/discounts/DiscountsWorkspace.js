@@ -12,6 +12,7 @@ import AdminFormSection from '../admin/ui/AdminFormSection';
 import AdminInput from '../admin/ui/AdminInput';
 import AdminPage from '../admin/ui/AdminPage';
 import AdminPageHeader from '../admin/ui/AdminPageHeader';
+import AdminSchedulePopover from '../admin/ui/AdminSchedulePopover';
 import AdminSelect from '../admin/ui/AdminSelect';
 import AdminStatusChip from '../admin/ui/AdminStatusChip';
 import AdminTable from '../admin/ui/AdminTable';
@@ -148,9 +149,10 @@ function createDiscountDraft(type) {
     code: '',
     type,
     method: 'amount off products',
-    status: 'scheduled',
+    status: 'active',
+    publishMode: 'now',
     combinesWith: [],
-    startsAt: new Date().toISOString().slice(0, 16),
+    startsAt: '',
     endsAt: '',
     usageCount: 0,
     summary: '',
@@ -193,6 +195,61 @@ function deriveLegacyStatus(draft) {
     if (!Number.isNaN(startsAt) && startsAt > Date.now()) return 'scheduled';
   }
   return draft.status || 'active';
+}
+
+function getLegacyPublishMode(draft) {
+  if (draft?.publishMode === 'scheduled' || draft?.publishMode === 'now') {
+    return draft.publishMode;
+  }
+
+  if (draft?.status === 'scheduled') return 'scheduled';
+  if (draft?.startsAt) {
+    const startsAt = new Date(draft.startsAt).getTime();
+    if (!Number.isNaN(startsAt) && startsAt > Date.now()) return 'scheduled';
+  }
+  return 'now';
+}
+
+function LegacyPublishTimingControl({ draft, onChange }) {
+  const publishMode = getLegacyPublishMode(draft);
+  const setPublishMode = (nextMode) => {
+    onChange((current) => ({
+      ...current,
+      publishMode: nextMode,
+      status: nextMode === 'scheduled' ? 'scheduled' : current.status === 'scheduled' ? 'active' : current.status,
+      startsAt: nextMode === 'now' ? '' : current.startsAt,
+    }));
+  };
+
+  return (
+    <div className={styles.publishTimingGroup}>
+      <div className={styles.segmentedControl} role="radiogroup" aria-label="Discount publish timing">
+        <button
+          aria-checked={publishMode === 'now'}
+          className={`${styles.segmentedButton} ${publishMode === 'now' ? styles.segmentedButtonActive : ''}`}
+          onClick={() => setPublishMode('now')}
+          role="radio"
+          type="button"
+        >
+          Publish now
+        </button>
+        <button
+          aria-checked={publishMode === 'scheduled'}
+          className={`${styles.segmentedButton} ${publishMode === 'scheduled' ? styles.segmentedButtonActive : ''}`}
+          onClick={() => setPublishMode('scheduled')}
+          role="radio"
+          type="button"
+        >
+          Schedule
+        </button>
+      </div>
+      <p className={styles.inlineHint}>
+        {publishMode === 'scheduled'
+          ? 'Choose the date and time this discount should become active.'
+          : 'This discount can be active as soon as it is saved.'}
+      </p>
+    </div>
+  );
 }
 
 function formatLegacyTypeLabel(method) {
@@ -610,7 +667,7 @@ export default function DiscountsWorkspace() {
 
   function openLegacyEditor(discount) {
     setBuilderMode(discount.type);
-    setDraftDiscount({ ...discount });
+    setDraftDiscount({ ...discount, publishMode: getLegacyPublishMode(discount) });
     setDraftDiscountErrorMessage('');
     setLegacySaving(false);
   }
@@ -679,13 +736,29 @@ export default function DiscountsWorkspace() {
   async function saveDraftDiscount(nextDraft = draftDiscount) {
     if (!nextDraft?.title.trim()) return;
 
+    const publishMode = getLegacyPublishMode(nextDraft);
+    if (publishMode === 'scheduled' && !nextDraft.startsAt) {
+      setDraftDiscountErrorMessage('Choose a start date or switch to Publish now.');
+      return;
+    }
+
+    const draftToPersist = {
+      ...nextDraft,
+      startsAt: publishMode === 'now' ? '' : nextDraft.startsAt,
+      status: publishMode === 'scheduled'
+        ? 'scheduled'
+        : nextDraft.status === 'scheduled'
+          ? 'active'
+          : nextDraft.status,
+    };
+
     setLegacySaving(true);
     setDraftDiscountErrorMessage('');
     try {
       const result = await persistLegacyDiscountDraft({
         draft: {
-          ...nextDraft,
-          status: deriveLegacyStatus(nextDraft),
+          ...draftToPersist,
+          status: deriveLegacyStatus(draftToPersist),
         },
         onPersisted: refetchDiscounts,
       });
@@ -1099,22 +1172,38 @@ export default function DiscountsWorkspace() {
                   </div>
                 </AdminFormSection>
                 <AdminFormSection
-                  description="Set timing, usage limits, and current status."
+                  description="Publish immediately or schedule the code for later."
                   eyebrow="Schedule & publish"
                   title="Schedule & publish"
                 >
+                  <LegacyPublishTimingControl draft={draftDiscount} onChange={setDraftDiscount} />
                   <div className={styles.formGrid}>
-                    <AdminField label="Starts at">
-                      <AdminInput onChange={(event) => setDraftDiscount((current) => ({ ...current, startsAt: event.target.value }))} type="datetime-local" value={draftDiscount.startsAt} />
-                    </AdminField>
+                    {getLegacyPublishMode(draftDiscount) === 'scheduled' ? (
+                      <AdminField label="Starts at">
+                        <AdminSchedulePopover
+                          applyLabel="Schedule start"
+                          nowLabel="Start now"
+                          onChange={(nextIso) => setDraftDiscount((current) => ({ ...current, startsAt: nextIso || '', status: nextIso ? 'scheduled' : current.status }))}
+                          scheduledLabel="Start scheduled"
+                          showValueLabel
+                          triggerLabel="Choose start date"
+                          value={draftDiscount.startsAt}
+                        />
+                      </AdminField>
+                    ) : null}
                     <AdminField label="Ends at">
-                      <AdminInput onChange={(event) => setDraftDiscount((current) => ({ ...current, endsAt: event.target.value }))} type="datetime-local" value={draftDiscount.endsAt} />
+                      <AdminSchedulePopover
+                        applyLabel="Set end date"
+                        minDate={draftDiscount.startsAt || null}
+                        onChange={(nextIso) => setDraftDiscount((current) => ({ ...current, endsAt: nextIso || '' }))}
+                        showNowAction={false}
+                        showValueLabel
+                        triggerLabel="Choose end date"
+                        value={draftDiscount.endsAt}
+                      />
                     </AdminField>
                     <AdminField label="Usage limit">
                       <AdminInput onChange={(event) => setDraftDiscount((current) => ({ ...current, usageLimit: event.target.value }))} placeholder="Optional" type="number" value={draftDiscount.usageLimit} />
-                    </AdminField>
-                    <AdminField label="Status">
-                      <AdminSelect onChange={(value) => setDraftDiscount((current) => ({ ...current, status: value }))} options={statusOptions.filter((option) => option.value !== 'expired')} value={draftDiscount.status} />
                     </AdminField>
                   </div>
                 </AdminFormSection>
@@ -1233,6 +1322,7 @@ export default function DiscountsWorkspace() {
                 </p>
               </AdminFormSection>
               <AdminFormSection eyebrow="Rules" title="Requirements">
+                <LegacyPublishTimingControl draft={draftDiscount} onChange={setDraftDiscount} />
                 <div className={styles.formGrid}>
                   <AdminField label="Requirement type">
                     <AdminSelect onChange={(value) => setDraftDiscount((current) => ({ ...current, minimumRequirementType: value }))} options={requirementTypeOptions} value={draftDiscount.minimumRequirementType} />
@@ -1240,11 +1330,29 @@ export default function DiscountsWorkspace() {
                   <AdminField label="Requirement value">
                     <AdminInput onChange={(event) => setDraftDiscount((current) => ({ ...current, minimumRequirementValue: event.target.value }))} placeholder="50" type="text" value={draftDiscount.minimumRequirementValue} />
                   </AdminField>
-                  <AdminField label="Starts at">
-                    <AdminInput onChange={(event) => setDraftDiscount((current) => ({ ...current, startsAt: event.target.value }))} type="datetime-local" value={draftDiscount.startsAt} />
-                  </AdminField>
+                  {getLegacyPublishMode(draftDiscount) === 'scheduled' ? (
+                    <AdminField label="Starts at">
+                      <AdminSchedulePopover
+                        applyLabel="Schedule start"
+                        nowLabel="Start now"
+                        onChange={(nextIso) => setDraftDiscount((current) => ({ ...current, startsAt: nextIso || '', status: nextIso ? 'scheduled' : current.status }))}
+                        scheduledLabel="Start scheduled"
+                        showValueLabel
+                        triggerLabel="Choose start date"
+                        value={draftDiscount.startsAt}
+                      />
+                    </AdminField>
+                  ) : null}
                   <AdminField label="Ends at">
-                    <AdminInput onChange={(event) => setDraftDiscount((current) => ({ ...current, endsAt: event.target.value }))} type="datetime-local" value={draftDiscount.endsAt} />
+                    <AdminSchedulePopover
+                      applyLabel="Set end date"
+                      minDate={draftDiscount.startsAt || null}
+                      onChange={(nextIso) => setDraftDiscount((current) => ({ ...current, endsAt: nextIso || '' }))}
+                      showNowAction={false}
+                      showValueLabel
+                      triggerLabel="Choose end date"
+                      value={draftDiscount.endsAt}
+                    />
                   </AdminField>
                   <AdminField label="Usage limit">
                     <AdminInput onChange={(event) => setDraftDiscount((current) => ({ ...current, usageLimit: event.target.value }))} placeholder="Optional" type="number" value={draftDiscount.usageLimit} />

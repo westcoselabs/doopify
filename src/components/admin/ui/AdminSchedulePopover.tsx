@@ -98,6 +98,16 @@ function formatSelectedDate(date: Date) {
   });
 }
 
+function formatSelectedDateTime(date: Date) {
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
 function toLocalDateTime(date: Date, time: string) {
   const [hour, minute] = time.split(":").map(Number);
   return new Date(
@@ -156,7 +166,13 @@ type AdminSchedulePopoverProps = {
   timezoneLabel?: string;
   minDate?: Date | string | null;
   triggerLabel?: string;
+  clearLabel?: string;
   disabled?: boolean;
+  nowLabel?: string;
+  applyLabel?: string;
+  scheduledLabel?: string;
+  showNowAction?: boolean;
+  showValueLabel?: boolean;
 };
 
 export default function AdminSchedulePopover({
@@ -165,7 +181,13 @@ export default function AdminSchedulePopover({
   timezoneLabel,
   minDate,
   triggerLabel = "Schedule",
+  clearLabel = "Clear",
   disabled = false,
+  nowLabel = "Publish now",
+  applyLabel = "Schedule publish",
+  scheduledLabel = "Scheduled",
+  showNowAction = true,
+  showValueLabel = false,
 }: AdminSchedulePopoverProps) {
   const initialValueDate = normalizeDateValue(value);
   const [open, setOpen] = useState(false);
@@ -186,10 +208,17 @@ export default function AdminSchedulePopover({
   const resolvedMinDate = useMemo(() => normalizeDateValue(minDate), [minDate]);
   const resolvedTimezoneLabel =
     timezoneLabel || Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const normalizedValue = normalizeDateValue(value);
   const hasScheduledValue = Boolean(
 // eslint-disable-next-line react-hooks/purity -- intentional runtime value preserves existing scheduling/toast behavior
-    normalizeDateValue(value) && normalizeDateValue(value)!.getTime() > Date.now()
+    normalizedValue && normalizedValue.getTime() > Date.now()
   );
+  const triggerText =
+    showValueLabel && normalizedValue
+      ? formatSelectedDateTime(normalizedValue)
+      : hasScheduledValue
+        ? scheduledLabel
+        : triggerLabel;
 
   useEffect(() => {
 // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional effect-driven state sync for existing async/load flow
@@ -222,13 +251,23 @@ export default function AdminSchedulePopover({
 
       const width = Math.min(520, window.innerWidth - 32);
       const estimatedWidth = popoverRect?.width || width;
+      const estimatedHeight = popoverRect?.height || 420;
+      const spacing = 10;
+      const viewportPadding = 8;
+      const availableBelow = window.innerHeight - triggerRect.bottom - spacing - viewportPadding;
+      const availableAbove = triggerRect.top - spacing - viewportPadding;
+      const placeAbove = availableBelow < estimatedHeight && availableAbove > availableBelow;
       const maxLeft = window.innerWidth - estimatedWidth - 8;
       const nextLeft = Math.max(8, Math.min(triggerRect.right - estimatedWidth, maxLeft));
-      const nextTop = Math.max(8, triggerRect.bottom + 10);
+      const nextTop = placeAbove
+        ? Math.max(8, triggerRect.top - estimatedHeight - spacing)
+        : Math.max(8, Math.min(triggerRect.bottom + spacing, window.innerHeight - estimatedHeight - viewportPadding));
+      const maxHeight = Math.max(240, Math.min(estimatedHeight, placeAbove ? availableAbove : availableBelow));
 
       setPopoverStyle({
         top: `${nextTop}px`,
         left: `${nextLeft}px`,
+        maxHeight: `${maxHeight}px`,
       });
     };
 
@@ -446,11 +485,13 @@ export default function AdminSchedulePopover({
 
       <div className="admin-schedule-footer">
         <AdminButton onClick={clearSchedule} size="sm" type="button" variant="ghost">
-          Clear
+          {clearLabel}
         </AdminButton>
-        <AdminButton onClick={publishNow} size="sm" type="button" variant="secondary">
-          Publish now
-        </AdminButton>
+        {showNowAction ? (
+          <AdminButton onClick={publishNow} size="sm" type="button" variant="secondary">
+            {nowLabel}
+          </AdminButton>
+        ) : null}
         <AdminButton
           disabled={selectedIsPast}
           onClick={applySchedule}
@@ -458,7 +499,7 @@ export default function AdminSchedulePopover({
           type="button"
           variant="primary"
         >
-          Schedule publish
+          {applyLabel}
         </AdminButton>
       </div>
       </AdminCard>
@@ -479,7 +520,7 @@ export default function AdminSchedulePopover({
         type="button"
         variant={hasScheduledValue ? "primary" : "secondary"}
       >
-        {hasScheduledValue ? "Scheduled" : triggerLabel}
+        {triggerText}
       </AdminButton>
 
       {mounted && popover ? createPortal(popover, document.body) : null}

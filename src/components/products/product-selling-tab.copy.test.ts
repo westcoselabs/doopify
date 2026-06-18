@@ -30,6 +30,18 @@ describe('product selling tab contract', () => {
     expect(source).toContain('Presale inventory rule check')
   })
 
+  it('uses the shared admin scheduler for launch and presale dates', () => {
+    const source = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/products/ProductSellingPanel.js'),
+      'utf8'
+    )
+
+    expect(source).toContain('AdminSchedulePopover')
+    expect(source).toContain('Set presale start')
+    expect(source).toContain('Set launch date')
+    expect(source).not.toContain('type="datetime-local"')
+  })
+
   it('keeps digital fulfillment copy aligned with live delivery while preserving admin controls', () => {
     const source = fs.readFileSync(
       path.resolve(process.cwd(), 'src/components/products/ProductSellingPanel.js'),

@@ -1309,6 +1309,8 @@ body.dashboard-body {
   position: fixed;
   z-index: var(--z-popover, 1200);
   width: min(520px, calc(100vw - 32px));
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .admin-schedule-popover__surface {
@@ -1316,7 +1318,7 @@ body.dashboard-body {
   overflow: hidden;
   background:
     radial-gradient(circle at 12% 8%, color-mix(in srgb, var(--primary) 12%, transparent), transparent 34%),
-    var(--surface);
+    color-mix(in srgb, var(--surface) 90%, var(--background));
   border: 1px solid var(--glass-border-strong, var(--glass-border));
   box-shadow: var(--glass-shadow, 0 24px 80px rgba(0, 0, 0, 0.28));
   display: grid;
@@ -1468,7 +1470,7 @@ body.dashboard-body {
 [data-dashboard-theme="light"] .admin-schedule-popover__surface {
   background:
     radial-gradient(circle at 14% 8%, color-mix(in srgb, var(--primary) 15%, transparent), transparent 36%),
-    color-mix(in srgb, var(--surface) 86%, white);
+    color-mix(in srgb, var(--surface) 92%, var(--background));
 }
 
 @media (max-width: 1024px) {

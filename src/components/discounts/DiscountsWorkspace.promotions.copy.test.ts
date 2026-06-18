@@ -109,6 +109,30 @@ describe('Promotions workspace copy', () => {
     expect(workspace).toContain('await loadSmartPromotions()')
   })
 
+  it('lets legacy discount codes publish now or opt into scheduling', () => {
+    const workspace = read('src/components/discounts/DiscountsWorkspace.js')
+    expect(workspace).toContain("status: 'active'")
+    expect(workspace).toContain("publishMode: 'now'")
+    expect(workspace).toContain("startsAt: ''")
+    expect(workspace).toContain('LegacyPublishTimingControl')
+    expect(workspace).toContain('Publish now')
+    expect(workspace).toContain('Choose a start date or switch to Publish now.')
+    expect(workspace).toContain("startsAt: publishMode === 'now' ? '' : nextDraft.startsAt")
+  })
+
+  it('uses the shared admin scheduler instead of native date-time inputs', () => {
+    const workspace = read('src/components/discounts/DiscountsWorkspace.js')
+    const smartFile = read('src/components/discounts/AutomaticPromotionsWorkspace.js')
+    expect(workspace).toContain("import AdminSchedulePopover from '../admin/ui/AdminSchedulePopover';")
+    expect(smartFile).toContain("import AdminSchedulePopover from '../admin/ui/AdminSchedulePopover';")
+    expect(workspace).toContain('triggerLabel="Choose start date"')
+    expect(workspace).toContain('triggerLabel="Choose end date"')
+    expect(smartFile).toContain('triggerLabel="Choose start date"')
+    expect(smartFile).toContain('triggerLabel="Choose end date"')
+    expect(workspace).not.toContain('type="datetime-local"')
+    expect(smartFile).not.toContain('type="datetime-local"')
+  })
+
   it('documents the smart promotion picker interaction contract', () => {
     const smartFile = read('src/components/discounts/AutomaticPromotionsWorkspace.js')
     const pickerFile = read('src/components/discounts/PromotionVariantCommandPicker.tsx')
