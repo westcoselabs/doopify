@@ -333,6 +333,51 @@ describe('provider connection service', () => {
     expect(result.verification.ok).toBe(true)
   })
 
+  it('explains env fallback instead of "not configured" when only env Stripe credentials exist', async () => {
+    mocks.env.STRIPE_SECRET_KEY = 'sk_test_env_only_verify'
+    mocks.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY = 'pk_test_env_only_verify'
+    mocks.prisma.integration.findMany.mockResolvedValue([])
+
+    await expect(verifyProviderConnection('STRIPE')).rejects.toThrow(/\.env fallback credentials/i)
+  })
+
+  it('still reports "not configured" when neither db nor env Stripe credentials exist', async () => {
+    mocks.prisma.integration.findMany.mockResolvedValue([])
+
+    await expect(verifyProviderConnection('STRIPE')).rejects.toThrow(
+      /not configured\. save credentials first/i
+    )
+  })
+
+  it('surfaces an ENCRYPTION_KEY decrypt failure distinctly during verification', async () => {
+    mocks.prisma.integration.findMany.mockResolvedValue([
+      {
+        id: 'int_stripe_undecryptable',
+        type: 'PAYMENT_STRIPE',
+        status: 'ACTIVE',
+        createdAt: new Date('2026-05-06T00:00:00.000Z'),
+        updatedAt: new Date('2026-05-06T00:00:00.000Z'),
+        secrets: [
+          { id: 'sec_1', key: 'PUBLISHABLE_KEY', value: 'enc:pk_test_locked' },
+          { id: 'sec_2', key: 'SECRET_KEY', value: 'enc:sk_test_locked' },
+          { id: 'sec_3', key: 'MODE', value: 'enc:test' },
+        ],
+      },
+    ])
+
+    mocks.decrypt.mockImplementation(() => {
+      throw new Error('Unsupported state or unable to authenticate data')
+    })
+
+    try {
+      await expect(verifyProviderConnection('STRIPE')).rejects.toThrow(
+        /cannot be decrypted with the current ENCRYPTION_KEY/i
+      )
+    } finally {
+      mocks.decrypt.mockImplementation((value: string) => value.replace(/^enc:/, ''))
+    }
+  })
+
   it('persists Stripe verification metadata for post-reload status/runtime reads', async () => {
     mocks.prisma.integration.findMany.mockResolvedValue([{
       id: 'int_stripe_verify_meta',
