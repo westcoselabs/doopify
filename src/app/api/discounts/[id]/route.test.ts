@@ -69,6 +69,64 @@ describe('/api/discounts/[id] route', () => {
     )
   })
 
+  it('updates editable legacy discount fields including method, value, status, and combine flags', async () => {
+    mocks.prisma.discount.update.mockResolvedValue({
+      id: 'disc_1',
+      code: 'SAVE15',
+      title: 'Save 15',
+      type: 'CODE',
+      method: 'FIXED_AMOUNT',
+      value: 1500,
+      minimumOrderCents: 5000,
+      usageLimit: 20,
+      usageCount: 1,
+      status: 'SCHEDULED',
+      startsAt: new Date('2026-06-10T00:00:00.000Z'),
+      endsAt: null,
+      combinesWithOrders: true,
+      combinesWithProducts: false,
+      combinesWithShipping: true,
+      createdAt: new Date('2026-05-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-05-02T00:00:00.000Z'),
+    })
+
+    const response = await PATCH(
+      new Request('http://localhost/api/discounts/disc_1', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          code: 'save15',
+          type: 'CODE',
+          method: 'FIXED_AMOUNT',
+          value: 1500,
+          minimumOrderCents: 5000,
+          usageLimit: 20,
+          status: 'SCHEDULED',
+          startsAt: '2026-06-10T00:00:00.000Z',
+          combinesWithOrders: true,
+          combinesWithProducts: false,
+          combinesWithShipping: true,
+        }),
+      }),
+      { params: Promise.resolve({ id: 'disc_1' }) }
+    )
+
+    expect(response.status).toBe(200)
+    expect(mocks.prisma.discount.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          code: 'SAVE15',
+          type: 'CODE',
+          method: 'FIXED_AMOUNT',
+          value: 1500,
+          status: 'SCHEDULED',
+          combinesWithOrders: true,
+          combinesWithProducts: false,
+          combinesWithShipping: true,
+        }),
+      })
+    )
+  })
+
   it('updates discount using legacy minimumOrder dollars input', async () => {
     mocks.prisma.discount.update.mockResolvedValue({
       id: 'disc_1',
@@ -120,6 +178,42 @@ describe('/api/discounts/[id] route', () => {
 
     expect(response.status).toBe(400)
     expect(mocks.prisma.discount.update).not.toHaveBeenCalled()
+  })
+
+  it('rejects BUY_X_GET_Y on patch for legacy discount editing', async () => {
+    const response = await PATCH(
+      new Request('http://localhost/api/discounts/disc_1', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          method: 'BUY_X_GET_Y',
+        }),
+      }),
+      { params: Promise.resolve({ id: 'disc_1' }) }
+    )
+
+    expect(response.status).toBe(400)
+    expect(mocks.prisma.discount.update).not.toHaveBeenCalled()
+  })
+
+  it('returns a duplicate-code error on patch when Prisma reports a uniqueness violation', async () => {
+    mocks.prisma.discount.update.mockRejectedValue(new Error('duplicate key value violates unique constraint'))
+
+    const response = await PATCH(
+      new Request('http://localhost/api/discounts/disc_1', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          code: 'WELCOME10',
+        }),
+      }),
+      { params: Promise.resolve({ id: 'disc_1' }) }
+    )
+
+    expect(response.status).toBe(500)
+    const payload = await response.json()
+    expect(payload).toMatchObject({
+      success: false,
+      error: 'A discount with this code already exists',
+    })
   })
 
   it('rejects unauthorized patch and delete requests', async () => {

@@ -19,11 +19,12 @@ function clampPageSize(value: number) {
 }
 
 type DiscountApiInput = {
-  minimumOrderCents?: number
-  minimumOrder?: number
+  minimumOrderCents?: number | null
+  minimumOrder?: number | null
 }
 
 function resolveMinimumOrderCents(input: DiscountApiInput) {
+  if (input.minimumOrderCents === null || input.minimumOrder === null) return null
   if (input.minimumOrderCents != null) return input.minimumOrderCents
   if (input.minimumOrder != null) return dollarsToCents(input.minimumOrder)
   return undefined
@@ -97,12 +98,12 @@ const createSchema = z.object({
   type: z.enum(['CODE', 'AUTOMATIC']),
   method: z.enum(['PERCENTAGE', 'FIXED_AMOUNT', 'FREE_SHIPPING', 'BUY_X_GET_Y']),
   value: z.number().min(0),
-  minimumOrder: z.number().min(0).optional(),
-  minimumOrderCents: z.number().int().min(0).optional(),
-  usageLimit: z.number().int().positive().optional(),
+  minimumOrder: z.number().min(0).nullable().optional(),
+  minimumOrderCents: z.number().int().min(0).nullable().optional(),
+  usageLimit: z.number().int().positive().nullable().optional(),
   status: z.enum(['ACTIVE', 'SCHEDULED', 'EXPIRED', 'DISABLED']).optional(),
-  startsAt: z.string().datetime().optional(),
-  endsAt: z.string().datetime().optional(),
+  startsAt: z.string().datetime().nullable().optional(),
+  endsAt: z.string().datetime().nullable().optional(),
   combinesWithOrders: z.boolean().optional(),
   combinesWithProducts: z.boolean().optional(),
   combinesWithShipping: z.boolean().optional(),
@@ -144,7 +145,7 @@ export async function POST(req: Request) {
         method: parsed.data.method,
         value: parsed.data.value,
         minimumOrderCents,
-        usageLimit: parsed.data.usageLimit,
+        usageLimit: parsed.data.usageLimit ?? undefined,
         status: parsed.data.status,
         combinesWithOrders: parsed.data.combinesWithOrders,
         combinesWithProducts: parsed.data.combinesWithProducts,
@@ -157,7 +158,8 @@ export async function POST(req: Request) {
     })
     return ok(mapDiscountResponse(discount), 201)
   } catch (e: unknown) {
-    const msg = e instanceof Error && e.message.includes('Unique')
+    const msg =
+      e instanceof Error && (e.message.includes('Unique') || e.message.toLowerCase().includes('duplicate'))
       ? 'A discount with this code already exists'
       : 'Failed to create discount'
     return err(msg, 500)

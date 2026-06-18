@@ -101,6 +101,14 @@ describe('Promotions workspace copy', () => {
     expect(pickerFile).toContain('Already selected')
   })
 
+  it('keeps legacy discount codes on the discounts API while automatic promotions stay on the promotions API', () => {
+    const workspace = read('src/components/discounts/DiscountsWorkspace.js')
+    expect(workspace).toContain("persistLegacyDiscountDraft({")
+    expect(workspace).toContain('onPersisted: refetchDiscounts')
+    expect(workspace).toContain("const response = await fetch('/api/promotions', {")
+    expect(workspace).toContain('await loadSmartPromotions()')
+  })
+
   it('documents the smart promotion picker interaction contract', () => {
     const smartFile = read('src/components/discounts/AutomaticPromotionsWorkspace.js')
     const pickerFile = read('src/components/discounts/PromotionVariantCommandPicker.tsx')

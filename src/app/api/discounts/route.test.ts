@@ -230,6 +230,30 @@ describe('/api/discounts route', () => {
     expect(mocks.prisma.discount.create).not.toHaveBeenCalled()
   })
 
+  it('returns a duplicate-code error when Prisma reports a uniqueness violation', async () => {
+    mocks.prisma.discount.create.mockRejectedValue(new Error('duplicate key value violates unique constraint'))
+
+    const response = await POST(
+      new Request('http://localhost/api/discounts', {
+        method: 'POST',
+        body: JSON.stringify({
+          code: 'WELCOME10',
+          title: 'Welcome 10',
+          type: 'CODE',
+          method: 'PERCENTAGE',
+          value: 10,
+        }),
+      })
+    )
+
+    expect(response.status).toBe(500)
+    const payload = await response.json()
+    expect(payload).toMatchObject({
+      success: false,
+      error: 'A discount with this code already exists',
+    })
+  })
+
   it('rejects unauthenticated mutations before touching Prisma', async () => {
     mocks.requireAdmin.mockResolvedValue({
       ok: false,

@@ -17,6 +17,7 @@ import AdminStatusChip from '../admin/ui/AdminStatusChip';
 import AdminTable from '../admin/ui/AdminTable';
 import AdminToolbar from '../admin/ui/AdminToolbar';
 import { SmartPromotionFormSections } from './AutomaticPromotionsWorkspace';
+import { persistLegacyDiscountDraft } from './legacy-discount-persistence.helpers';
 import styles from './DiscountsWorkspace.module.css';
 import {
   appendPromotionPendingSelections,
@@ -277,7 +278,7 @@ async function searchPromotionCatalog(catalogState, setCatalogState, section, op
 }
 
 export default function DiscountsWorkspace() {
-  const { discounts, addDiscount, updateDiscount } = useDiscounts();
+  const { discounts, refetch: refetchDiscounts } = useDiscounts();
   const hasAutoOpenedCreateRef = useRef(false);
   const smartProductDetailRequestsRef = useRef(new Set());
   const smartEditProductDetailRequestsRef = useRef(new Set());
@@ -306,6 +307,8 @@ export default function DiscountsWorkspace() {
   const [smartEditValidationIssues, setSmartEditValidationIssues] = useState([]);
   const [smartEditErrorMessage, setSmartEditErrorMessage] = useState('');
   const [smartEditCatalogState, setSmartEditCatalogState] = useState(() => createPromotionCatalogState());
+  const [legacySaving, setLegacySaving] = useState(false);
+  const [draftDiscountErrorMessage, setDraftDiscountErrorMessage] = useState('');
 
   const loadSmartPromotions = useCallback(async () => {
     setSmartPromotionsLoading(true);
@@ -583,6 +586,8 @@ export default function DiscountsWorkspace() {
     setSmartSaving(false);
     setSmartValidationIssues([]);
     setSmartErrorMessage('');
+    setLegacySaving(false);
+    setDraftDiscountErrorMessage('');
     setSmartCatalogState(createPromotionCatalogState());
     smartProductDetailRequestsRef.current.clear();
   }
@@ -597,6 +602,8 @@ export default function DiscountsWorkspace() {
     setSmartSaving(false);
     setSmartValidationIssues([]);
     setSmartErrorMessage('');
+    setLegacySaving(false);
+    setDraftDiscountErrorMessage('');
     setSmartCatalogState(createPromotionCatalogState());
     smartProductDetailRequestsRef.current.clear();
   }
@@ -604,6 +611,8 @@ export default function DiscountsWorkspace() {
   function openLegacyEditor(discount) {
     setBuilderMode(discount.type);
     setDraftDiscount({ ...discount });
+    setDraftDiscountErrorMessage('');
+    setLegacySaving(false);
   }
 
   function resetSmartEditDrawer() {
@@ -667,26 +676,34 @@ export default function DiscountsWorkspace() {
     setSmartCatalogState(createPromotionCatalogState());
   }
 
-  function saveDraftDiscount(nextDraft = draftDiscount) {
+  async function saveDraftDiscount(nextDraft = draftDiscount) {
     if (!nextDraft?.title.trim()) return;
 
-    const normalizedCode = nextDraft.code.trim() || nextDraft.title.trim().toUpperCase().replace(/\s+/g, '');
-    const summary = nextDraft.summary.trim() || buildLegacyDiscountPreview({ ...nextDraft, code: normalizedCode });
-    const nextDiscount = {
-      ...nextDraft,
-      title: nextDraft.title.trim(),
-      code: normalizedCode,
-      summary,
-      status: deriveLegacyStatus(nextDraft),
-    };
+    setLegacySaving(true);
+    setDraftDiscountErrorMessage('');
+    try {
+      const result = await persistLegacyDiscountDraft({
+        draft: {
+          ...nextDraft,
+          status: deriveLegacyStatus(nextDraft),
+        },
+        onPersisted: refetchDiscounts,
+      });
 
-    const isExisting = discounts.some((discount) => discount.id === nextDiscount.id);
-    if (isExisting) updateDiscount(nextDiscount.id, () => nextDiscount);
-    else addDiscount(nextDiscount);
+      if (!result.success) {
+        setDraftDiscountErrorMessage(result.error || 'Failed to save discount.');
+        return;
+      }
 
-    setBuilderMode(null);
-    setDraftDiscount(null);
-    resetCreateFlow();
+      setBuilderMode(null);
+      setDraftDiscount(null);
+      resetCreateFlow();
+    } catch (error) {
+      console.error('[DiscountsWorkspace] failed to save legacy discount', error);
+      setDraftDiscountErrorMessage('Failed to save discount.');
+    } finally {
+      setLegacySaving(false);
+    }
   }
 
   async function saveSmartPromotion() {
@@ -805,9 +822,9 @@ export default function DiscountsWorkspace() {
         </AdminButton>
         <AdminButton
           disabled={isLegacyCreate ? !draftDiscount?.title.trim() : !canSubmitSmartPromotion}
-          loading={smartSaving}
+          loading={isLegacyCreate ? legacySaving : smartSaving}
           onClick={() => {
-            if (isLegacyCreate) saveDraftDiscount();
+            if (isLegacyCreate) void saveDraftDiscount();
             else if (isSmartCreate) void saveSmartPromotion();
           }}
           size="sm"
@@ -941,6 +958,9 @@ export default function DiscountsWorkspace() {
           title="Create promotion"
         >
           <div className={styles.drawerBody}>
+            {createStep === 'details' && isLegacyCreate && draftDiscountErrorMessage ? (
+              <p className={styles.errorBanner}>{draftDiscountErrorMessage}</p>
+            ) : null}
             {createStep === 'method' ? (
               <AdminFormSection
                 description="Choose whether customers enter a code or Doopify applies the offer automatically."
@@ -1168,8 +1188,8 @@ export default function DiscountsWorkspace() {
         <AdminDrawer
           actions={(
             <>
-              <AdminButton onClick={() => { setBuilderMode(null); setDraftDiscount(null); }} size="sm" variant="ghost">Cancel</AdminButton>
-              <AdminButton onClick={() => saveDraftDiscount(draftDiscount)} size="sm" variant="primary">Save discount</AdminButton>
+              <AdminButton onClick={() => { setBuilderMode(null); setDraftDiscount(null); setDraftDiscountErrorMessage(''); }} size="sm" variant="ghost">Cancel</AdminButton>
+              <AdminButton loading={legacySaving} onClick={() => void saveDraftDiscount(draftDiscount)} size="sm" variant="primary">Save discount</AdminButton>
             </>
           )}
           contextItems={[
@@ -1177,12 +1197,13 @@ export default function DiscountsWorkspace() {
             { label: 'Discount codes' },
             { label: draftDiscount?.title || 'Discount code', current: true },
           ]}
-          onClose={() => { setBuilderMode(null); setDraftDiscount(null); }}
+          onClose={() => { setBuilderMode(null); setDraftDiscount(null); setDraftDiscountErrorMessage(''); }}
           open={Boolean(builderMode && draftDiscount)}
           title="Edit discount code"
         >
           {draftDiscount ? (
             <div className={styles.drawerBody}>
+              {draftDiscountErrorMessage ? <p className={styles.errorBanner}>{draftDiscountErrorMessage}</p> : null}
               <AdminFormSection eyebrow="Identity" title="Basic settings">
                 <div className={styles.formGrid}>
                   <AdminField label="Name">
@@ -1194,12 +1215,18 @@ export default function DiscountsWorkspace() {
                   <AdminField label="Discount type">
                     <AdminSelect onChange={(value) => setDraftDiscount((current) => ({ ...current, method: value }))} options={LEGACY_DISCOUNT_METHODS.map((method) => ({ value: method, label: method }))} value={draftDiscount.method} />
                   </AdminField>
-                  <AdminField label="Value type">
-                    <AdminSelect onChange={(value) => setDraftDiscount((current) => ({ ...current, valueType: value }))} options={valueTypeOptions} value={draftDiscount.valueType} />
-                  </AdminField>
-                  <AdminField label="Value">
-                    <AdminInput onChange={(event) => setDraftDiscount((current) => ({ ...current, value: event.target.value }))} placeholder="10" type="text" value={draftDiscount.value} />
-                  </AdminField>
+                  {draftDiscount.method !== 'free shipping' ? (
+                    <>
+                      <AdminField label="Value type">
+                        <AdminSelect onChange={(value) => setDraftDiscount((current) => ({ ...current, valueType: value }))} options={valueTypeOptions} value={draftDiscount.valueType} />
+                      </AdminField>
+                      <AdminField label="Value">
+                        <AdminInput onChange={(event) => setDraftDiscount((current) => ({ ...current, value: event.target.value }))} placeholder="10" type="text" value={draftDiscount.value} />
+                      </AdminField>
+                    </>
+                  ) : (
+                    <p className={styles.inlineHint}>Free shipping codes do not require a discount value.</p>
+                  )}
                 </div>
                 <p className={styles.builderHint}>
                   Looking for Buy X Get Y, Free Gift, or product group savings? Use an automatic promotion type.
@@ -1218,6 +1245,12 @@ export default function DiscountsWorkspace() {
                   </AdminField>
                   <AdminField label="Ends at">
                     <AdminInput onChange={(event) => setDraftDiscount((current) => ({ ...current, endsAt: event.target.value }))} type="datetime-local" value={draftDiscount.endsAt} />
+                  </AdminField>
+                  <AdminField label="Usage limit">
+                    <AdminInput onChange={(event) => setDraftDiscount((current) => ({ ...current, usageLimit: event.target.value }))} placeholder="Optional" type="number" value={draftDiscount.usageLimit} />
+                  </AdminField>
+                  <AdminField label="Status">
+                    <AdminSelect onChange={(value) => setDraftDiscount((current) => ({ ...current, status: value }))} options={statusOptions.filter((option) => option.value !== 'expired')} value={draftDiscount.status} />
                   </AdminField>
                 </div>
               </AdminFormSection>

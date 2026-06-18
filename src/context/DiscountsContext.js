@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { centsToDollars } from '@/lib/money';
 
 const DiscountsContext = createContext(null);
 
@@ -18,7 +19,7 @@ const STATUS_MAP = {
   ACTIVE: 'active',
   SCHEDULED: 'scheduled',
   EXPIRED: 'expired',
-  DISABLED: 'expired',
+  DISABLED: 'disabled',
 };
 
 // ── Transform API discount → UI shape ─────────────────────────────────────────
@@ -31,8 +32,15 @@ function transformDiscount(discount) {
 
   const method = METHOD_MAP[discount.method] || discount.method?.toLowerCase() || '';
   const isPercent = discount.method === 'PERCENTAGE';
+  const isFixedAmount = discount.method === 'FIXED_AMOUNT';
+  const minimumOrder =
+    discount.minimumOrder != null
+      ? discount.minimumOrder
+      : discount.minimumOrderCents != null
+        ? centsToDollars(discount.minimumOrderCents)
+        : '';
   const summary = discount.value
-    ? `${isPercent ? discount.value + '%' : '$' + discount.value} off`
+    ? `${isPercent ? discount.value + '%' : '$' + (isFixedAmount ? centsToDollars(discount.value) : discount.value)} off`
     : '';
 
   return {
@@ -47,8 +55,12 @@ function transformDiscount(discount) {
     endsAt: discount.endsAt || '',
     usageCount: discount.usageCount || 0,
     usageLimit: discount.usageLimit || '',
-    minimumOrder: discount.minimumOrder || '',
-    value: discount.value || 0,
+    minimumOrder,
+    minimumRequirementType: minimumOrder !== '' ? 'subtotal' : 'none',
+    minimumRequirementValue: minimumOrder !== '' ? String(minimumOrder) : '',
+    valueType: isFixedAmount ? 'fixed' : 'percentage',
+    updatedAt: discount.updatedAt || '',
+    value: isFixedAmount && Number.isFinite(discount.value) ? centsToDollars(discount.value) : discount.value || 0,
     summary,
     customerEligibility: 'Everyone',
     salesChannel: 'All channels',
