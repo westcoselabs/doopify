@@ -671,6 +671,47 @@ export function appendPromotionSelectionRow(
   })
 }
 
+export function appendPromotionPendingSelections(
+  rows: SelectionDraftSection,
+  pendingSelections: PromotionPendingSelection[]
+) {
+  return pendingSelections.reduce<SelectionDraftSection>(
+    (nextRows, selection) =>
+      appendPromotionSelectionRow(nextRows, {
+        variantId: selection.variantId,
+        productTitle: selection.productTitle,
+        variantTitle: selection.variantTitle,
+        sku: selection.sku,
+        fulfillmentType: selection.fulfillmentType,
+      }),
+    rows
+  )
+}
+
+export function updatePromotionSelectionRowQuantity(
+  rows: SelectionDraftSection,
+  variantId: string,
+  quantity: number
+) {
+  const nextQuantity = normalizeQuantity(quantity)
+
+  return rows.map((row) =>
+    row.variantId === variantId
+      ? {
+          ...row,
+          quantity: nextQuantity,
+        }
+      : row
+  )
+}
+
+export function removePromotionSelectionRow(
+  rows: SelectionDraftSection,
+  variantId: string
+) {
+  return rows.filter((row) => row.variantId !== variantId)
+}
+
 export function toDraftFromDetail(promotion: any): PromotionDraft {
   const rewardType = (promotion?.rewardType || 'PERCENTAGE') as PromotionRewardType
   const type = (promotion?.type || 'PRODUCT_GROUP_DISCOUNT') as PromotionType

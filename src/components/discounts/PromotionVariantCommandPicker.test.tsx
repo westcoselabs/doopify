@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
 import PromotionVariantCommandPicker from './PromotionVariantCommandPicker'
+import PromotionVariantSelectionList from './PromotionVariantSelectionList'
 
 function renderPicker(overrides: Record<string, unknown> = {}) {
   return renderToStaticMarkup(
@@ -151,5 +152,117 @@ describe('PromotionVariantCommandPicker', () => {
 
     expect(html).toContain('Already selected')
     expect(html).toContain('disabled=""')
+  })
+
+  it('marks pending rows as active so the whole row has a visible selected state', () => {
+    const html = renderPicker({
+      pendingSelections: [
+        {
+          productId: 'prod_1',
+          productTitle: 'Never Nothing',
+          variantId: 'var_1',
+          variantTitle: 'Black / Large',
+          sku: 'NN-BLK',
+          fulfillmentType: 'PHYSICAL',
+        },
+      ],
+    })
+
+    expect(html).toContain('promotion-command-picker__variant-row is-active')
+    expect(html).toContain('data-selected="true"')
+    expect(html).toContain('Ready to add')
+    expect(html).toContain('Add selected (1)')
+  })
+
+  it('keeps the entire variant row wrapped in a label so clicks are not limited to the checkbox', () => {
+    const html = renderPicker()
+
+    expect(html).toContain('<label')
+    expect(html).toContain('promotion-command-picker__variant-row')
+    expect(html).toContain('type="checkbox"')
+  })
+})
+
+function renderSelectionList(overrides: Record<string, unknown> = {}) {
+  return renderToStaticMarkup(
+    <PromotionVariantSelectionList
+      browseButtonLabel="Browse products"
+      emptyHelper="Choose the products customers must have in cart."
+      emptyTitle="No required items selected."
+      onBrowse={vi.fn()}
+      onChangeQuantity={vi.fn()}
+      onRemove={vi.fn()}
+      quantityLabel="Required quantity"
+      rows={[]}
+      title="Selected required items"
+      {...overrides}
+    />
+  )
+}
+
+describe('PromotionVariantSelectionList', () => {
+  it('renders the required-items empty state copy', () => {
+    const html = renderSelectionList()
+
+    expect(html).toContain('Selected required items')
+    expect(html).toContain('No required items selected.')
+    expect(html).toContain('Choose the products customers must have in cart.')
+    expect(html).toContain('Browse products')
+  })
+
+  it('renders a selected required item immediately after add selected', () => {
+    const html = renderSelectionList({
+      rows: [
+        {
+          variantId: 'var_1',
+          productTitle: 'Never Nothing',
+          variantTitle: 'Black / Large',
+          sku: 'NN-BLK',
+          fulfillmentType: 'PHYSICAL',
+          quantity: 1,
+        },
+      ],
+      validationMessage: '',
+    })
+
+    expect(html).toContain('Never Nothing')
+    expect(html).toContain('Black / Large')
+    expect(html).toContain('SKU NN-BLK')
+    expect(html).toContain('value="1"')
+    expect(html).toContain('Change')
+  })
+
+  it('renders a selected reward item immediately after add selected', () => {
+    const html = renderSelectionList({
+      browseButtonLabel: 'Browse rewards',
+      emptyHelper: 'Choose what receives the discount.',
+      emptyTitle: 'No reward items selected.',
+      quantityLabel: 'Reward quantity',
+      rows: [
+        {
+          variantId: 'var_reward',
+          productTitle: 'Sticker Pack',
+          variantTitle: 'Default',
+          sku: 'ST-1',
+          fulfillmentType: 'PHYSICAL',
+          quantity: 1,
+        },
+      ],
+      title: 'Selected reward items',
+      validationMessage: '',
+    })
+
+    expect(html).toContain('Selected reward items')
+    expect(html).toContain('Sticker Pack')
+    expect(html).toContain('Reward quantity')
+    expect(html).toContain('Change')
+  })
+
+  it('renders inline validation copy for required rows when save is still blocked', () => {
+    const html = renderSelectionList({
+      validationMessage: 'Add at least one required cart item.',
+    })
+
+    expect(html).toContain('Add at least one required cart item.')
   })
 })

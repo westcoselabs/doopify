@@ -11,9 +11,10 @@ import AdminStatusChip from '../admin/ui/AdminStatusChip';
 import AdminTable from '../admin/ui/AdminTable';
 import AdminToolbar from '../admin/ui/AdminToolbar';
 import PromotionVariantCommandPicker from './PromotionVariantCommandPicker';
+import PromotionVariantSelectionList from './PromotionVariantSelectionList';
 import styles from './AutomaticPromotionsWorkspace.module.css';
 import {
-  appendPromotionSelectionRow,
+  appendPromotionPendingSelections,
   beginPromotionCatalogSearch,
   buildPromotionListQuery,
   buildPromotionPayloadFromDraft,
@@ -30,12 +31,12 @@ import {
   fetchPromotionCatalogProducts,
   formatRewardSummary,
   getPromotionCatalogSectionState,
-  isEligiblePhysicalProduct,
   getPromotionStatusTone,
   normalizePromotionDraftForType,
   openPromotionCatalogSection,
   PROMOTION_STATUSES,
   PROMOTION_TYPES,
+  removePromotionSelectionRow,
   resolvePromotionCatalogProductDetailSuccess,
   resolvePromotionCatalogSearchError,
   resolvePromotionCatalogSearchSuccess,
@@ -43,6 +44,7 @@ import {
   shouldLoadPromotionCatalogOnOpen,
   toDraftFromDetail,
   togglePromotionPendingSelection as togglePromotionCatalogPendingSelection,
+  updatePromotionSelectionRowQuantity,
   updatePromotionCatalogQuery,
 } from './promotions-ui.helpers';
 
@@ -105,54 +107,6 @@ function parseApiErrorMessage(payload, fallback) {
   if (!payload || typeof payload !== 'object') return fallback;
   if (payload.error) return String(payload.error);
   return fallback;
-}
-
-function VariantRowList({
-  emptyText,
-  helperText,
-  fieldLabel,
-  onChangeQuantity,
-  onRemove,
-  quantityLabel,
-  rows,
-}) {
-  return (
-    <div className={styles.selectionList}>
-      <p className={styles.selectionLabel}>{fieldLabel}</p>
-      {rows.length ? (
-        rows.map((row) => (
-          <div className={styles.selectionRow} key={row.variantId}>
-            <div className={styles.selectionContent}>
-              <strong>{row.productTitle}</strong>
-              <p>
-                {row.variantTitle}
-                {row.sku ? ` - SKU ${row.sku}` : ''}
-                {row.fulfillmentType ? ` - ${row.fulfillmentType}` : ''}
-              </p>
-            </div>
-            <div className={styles.selectionActions}>
-              <AdminInput
-                aria-label={`${quantityLabel} for ${row.productTitle} ${row.variantTitle}`}
-                min="1"
-                onChange={(event) => onChangeQuantity(row.variantId, Number(event.target.value || 1))}
-                type="number"
-                value={String(row.quantity)}
-              />
-              <span className={styles.quantityLabel}>{quantityLabel}</span>
-              <AdminButton onClick={() => onRemove(row.variantId)} size="sm" variant="ghost">
-                Remove
-              </AdminButton>
-            </div>
-          </div>
-        ))
-      ) : (
-        <div className={styles.selectionEmpty}>
-          <p>{emptyText}</p>
-          {helperText ? <small>{helperText}</small> : null}
-        </div>
-      )}
-    </div>
-  );
 }
 
 function PromotionVariantPicker({
@@ -269,6 +223,11 @@ export function SmartPromotionFormSections({
   const visible = new Set(visibleSections);
   const qualifierCatalogState = getPromotionCatalogSectionState(catalogState, 'qualifiers');
   const rewardCatalogState = getPromotionCatalogSectionState(catalogState, 'rewards');
+  const missingNameMessage = !draft.name.trim() ? 'Add a promotion name.' : '';
+  const qualifierMessage =
+    validationByPath.qualifiers?.[0] || (!draft.qualifiers.length ? 'Add at least one required cart item.' : '');
+  const rewardMessage =
+    validationByPath.rewards?.[0] || (showRewards && !draft.rewards.length ? 'Add at least one reward item.' : '');
 
   return (
     <>
@@ -287,6 +246,8 @@ export function SmartPromotionFormSections({
               />
               {validationByPath.name?.length ? (
                 <small className={styles.fieldError}>{validationByPath.name[0]}</small>
+              ) : missingNameMessage ? (
+                <small className={styles.inlineValidationHint}>{missingNameMessage}</small>
               ) : null}
             </AdminField>
             <AdminField label="Status">
@@ -303,14 +264,19 @@ export function SmartPromotionFormSections({
           eyebrow="Required cart items"
           title="Required cart items"
         >
-          <VariantRowList
-            emptyText="No required items selected."
-            helperText="Choose the products customers must have in cart."
-            fieldLabel="Selected required items"
+          <PromotionVariantSelectionList
+            addAnotherButtonLabel="Add another"
+            browseButtonLabel="Browse products"
+            changeButtonLabel="Change"
+            emptyHelper="Choose the products customers must have in cart."
+            emptyTitle="No required items selected."
             onChangeQuantity={(variantId, quantity) => onUpdateSelectionQuantity('qualifiers', variantId, quantity)}
+            onBrowse={() => onOpenPicker('qualifiers')}
             onRemove={(variantId) => onRemoveSelection('qualifiers', variantId)}
             quantityLabel="Required quantity"
             rows={draft.qualifiers}
+            title="Selected required items"
+            validationMessage={qualifierMessage}
           />
           <PromotionVariantPicker
             addButtonLabel="Add selected"
@@ -360,14 +326,19 @@ export function SmartPromotionFormSections({
             </p>
           ) : (
             <>
-              <VariantRowList
-                emptyText="No reward items selected."
-                helperText="Choose what receives the discount."
-                fieldLabel="Selected reward items"
+              <PromotionVariantSelectionList
+                addAnotherButtonLabel="Add another"
+                browseButtonLabel="Browse rewards"
+                changeButtonLabel="Change"
+                emptyHelper="Choose what receives the discount."
+                emptyTitle="No reward items selected."
                 onChangeQuantity={(variantId, quantity) => onUpdateSelectionQuantity('rewards', variantId, quantity)}
+                onBrowse={() => onOpenPicker('rewards')}
                 onRemove={(variantId) => onRemoveSelection('rewards', variantId)}
                 quantityLabel="Reward quantity"
                 rows={draft.rewards}
+                title="Selected reward items"
+                validationMessage={rewardMessage}
               />
               <PromotionVariantPicker
                 addButtonLabel="Add selected"
@@ -430,13 +401,6 @@ export function SmartPromotionFormSections({
               </AdminField>
             </div>
           )}
-          {validationByPath.rewards?.length ? (
-            <div className={styles.inlineErrorList}>
-              {validationByPath.rewards.map((message, index) => (
-                <p key={`rewards-${message}-${index}`}>{message}</p>
-              ))}
-            </div>
-          ) : null}
         </AdminFormSection>
       ) : null}
 
@@ -665,67 +629,15 @@ export default function AutomaticPromotionsWorkspace({
   function removeSelection(section, variantId) {
     setDraft((current) => ({
       ...current,
-      [section]: current[section].filter((row) => row.variantId !== variantId),
+      [section]: removePromotionSelectionRow(current[section], variantId),
     }));
   }
 
   function updateSelectionQuantity(section, variantId, quantity) {
-    const nextQuantity = Number.isFinite(quantity) ? Math.max(1, Math.round(quantity)) : 1;
     setDraft((current) => ({
       ...current,
-      [section]: current[section].map((row) =>
-        row.variantId === variantId
-          ? {
-              ...row,
-              quantity: nextQuantity,
-            }
-          : row
-      ),
+      [section]: updatePromotionSelectionRowQuantity(current[section], variantId, quantity),
     }));
-  }
-
-  function addVariantToSelection(section, product, variant) {
-    if (!isEligiblePhysicalProduct(product)) {
-      setCatalogState((current) => ({
-        ...current,
-        sections: {
-          ...current.sections,
-          [section]: {
-            ...current.sections[section],
-            error: 'Only physical variants are eligible for Smart Promotions in V1.',
-          },
-        },
-      }));
-      return;
-    }
-
-    setCatalogState((current) => ({
-      ...current,
-      sections: {
-        ...current.sections,
-        [section]: {
-          ...current.sections[section],
-          error: '',
-        },
-      },
-    }));
-    setDraft((current) => {
-      const existing = current[section].find((row) => row.variantId === variant.id);
-      if (existing) {
-        return current;
-      }
-
-      return {
-        ...current,
-        [section]: appendPromotionSelectionRow(current[section], {
-          variantId: variant.id,
-          productTitle: product.title,
-          variantTitle: variant.title || 'Default',
-          sku: variant.sku || null,
-          fulfillmentType: product.fulfillmentType || 'PHYSICAL',
-        }),
-      };
-    });
   }
 
   function openCatalogPicker(section) {
@@ -738,21 +650,10 @@ export default function AutomaticPromotionsWorkspace({
 
   function addPendingSelections(section) {
     const pendingRows = getPromotionCatalogSectionState(catalogState, section).pendingSelections || [];
-    for (const row of pendingRows) {
-      addVariantToSelection(
-        section,
-        {
-          id: row.productId,
-          title: row.productTitle,
-          fulfillmentType: row.fulfillmentType || 'PHYSICAL',
-        },
-        {
-          id: row.variantId,
-          title: row.variantTitle,
-          sku: row.sku || null,
-        }
-      );
-    }
+    setDraft((current) => ({
+      ...current,
+      [section]: appendPromotionPendingSelections(current[section], pendingRows),
+    }));
     setCatalogState((current) => closePromotionCatalogState(current, section));
   }
 

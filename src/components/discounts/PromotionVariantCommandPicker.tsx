@@ -196,7 +196,9 @@ export default function PromotionVariantCommandPicker({
 
                       return (
                         <label
-                          className={`promotion-command-picker__variant-row ${alreadySelected ? 'is-disabled' : ''}`}
+                          aria-disabled={alreadySelected ? 'true' : undefined}
+                          className={`promotion-command-picker__variant-row ${checked ? 'is-active' : ''} ${alreadySelected ? 'is-disabled' : ''}`}
+                          data-selected={checked ? 'true' : 'false'}
                           key={variant.id}
                         >
                           <span className="promotion-command-picker__variant-main">

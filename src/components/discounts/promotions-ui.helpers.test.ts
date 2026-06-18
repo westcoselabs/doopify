@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  appendPromotionPendingSelections,
   appendPromotionSelectionRow,
   beginPromotionCatalogSearch,
   buildPromotionCatalogProductDetailUrl,
@@ -25,10 +26,12 @@ import {
   resolvePromotionCatalogProductDetailSuccess,
   resolvePromotionCatalogSearchError,
   resolvePromotionCatalogSearchSuccess,
+  removePromotionSelectionRow,
   shouldFetchPromotionCatalog,
   shouldLoadPromotionCatalogOnOpen,
   toDraftFromDetail,
   togglePromotionPendingSelection,
+  updatePromotionSelectionRowQuantity,
   updatePromotionCatalogQuery,
 } from './promotions-ui.helpers'
 
@@ -620,6 +623,114 @@ describe('promotions UI helpers', () => {
       fulfillmentType: 'PHYSICAL',
     })
     expect(duplicate).toEqual(added)
+  })
+
+  it('applies pending selections to qualifier or reward rows with default quantity 1 and skips duplicates', () => {
+    const rows = appendPromotionPendingSelections(
+      [
+        {
+          variantId: 'var_q',
+          productTitle: 'Hoodie',
+          variantTitle: 'Black',
+          sku: 'HD-1',
+          fulfillmentType: 'PHYSICAL',
+          quantity: 2,
+        },
+      ],
+      [
+        {
+          productId: 'prod_q',
+          productTitle: 'Hoodie',
+          variantId: 'var_q',
+          variantTitle: 'Black',
+          sku: 'HD-1',
+          fulfillmentType: 'PHYSICAL',
+        },
+        {
+          productId: 'prod_r',
+          productTitle: 'Hat',
+          variantId: 'var_r',
+          variantTitle: 'Blue',
+          sku: 'HT-1',
+          fulfillmentType: 'PHYSICAL',
+        },
+      ]
+    )
+
+    expect(rows).toEqual([
+      {
+        variantId: 'var_q',
+        productTitle: 'Hoodie',
+        variantTitle: 'Black',
+        sku: 'HD-1',
+        fulfillmentType: 'PHYSICAL',
+        quantity: 2,
+      },
+      {
+        variantId: 'var_r',
+        productTitle: 'Hat',
+        variantTitle: 'Blue',
+        sku: 'HT-1',
+        fulfillmentType: 'PHYSICAL',
+        quantity: 1,
+      },
+    ])
+  })
+
+  it('updates a selected row quantity and keeps it clamped to at least one', () => {
+    const rows = updatePromotionSelectionRowQuantity(
+      [
+        {
+          variantId: 'var_q',
+          productTitle: 'Hoodie',
+          variantTitle: 'Black',
+          sku: 'HD-1',
+          fulfillmentType: 'PHYSICAL',
+          quantity: 1,
+        },
+      ],
+      'var_q',
+      4
+    )
+    const clamped = updatePromotionSelectionRowQuantity(rows, 'var_q', 0)
+
+    expect(rows[0]?.quantity).toBe(4)
+    expect(clamped[0]?.quantity).toBe(1)
+  })
+
+  it('removes a selected row by variant id', () => {
+    const rows = removePromotionSelectionRow(
+      [
+        {
+          variantId: 'var_q',
+          productTitle: 'Hoodie',
+          variantTitle: 'Black',
+          sku: 'HD-1',
+          fulfillmentType: 'PHYSICAL',
+          quantity: 1,
+        },
+        {
+          variantId: 'var_r',
+          productTitle: 'Hat',
+          variantTitle: 'Blue',
+          sku: 'HT-1',
+          fulfillmentType: 'PHYSICAL',
+          quantity: 1,
+        },
+      ],
+      'var_q'
+    )
+
+    expect(rows).toEqual([
+      {
+        variantId: 'var_r',
+        productTitle: 'Hat',
+        variantTitle: 'Blue',
+        sku: 'HT-1',
+        fulfillmentType: 'PHYSICAL',
+        quantity: 1,
+      },
+    ])
   })
 
   it('loads each picker section once on first open and keeps state isolated by section', () => {

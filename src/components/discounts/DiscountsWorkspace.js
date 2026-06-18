@@ -19,7 +19,7 @@ import AdminToolbar from '../admin/ui/AdminToolbar';
 import { SmartPromotionFormSections } from './AutomaticPromotionsWorkspace';
 import styles from './DiscountsWorkspace.module.css';
 import {
-  appendPromotionSelectionRow,
+  appendPromotionPendingSelections,
   beginPromotionCatalogSearch,
   buildPromotionPayloadFromDraft,
   canSubmitPromotionDraft,
@@ -34,10 +34,10 @@ import {
   formatPromotionTypeLabel,
   getPromotionCatalogSectionState,
   getPromotionStatusTone,
-  isEligiblePhysicalProduct,
   mapSmartPromotionListRow,
   normalizePromotionDraftForType,
   openPromotionCatalogSection,
+  removePromotionSelectionRow,
   resolvePromotionCatalogProductDetailSuccess,
   resolvePromotionCatalogSearchError,
   resolvePromotionCatalogSearchSuccess,
@@ -45,6 +45,7 @@ import {
   shouldLoadPromotionCatalogOnOpen,
   toDraftFromDetail,
   togglePromotionPendingSelection,
+  updatePromotionSelectionRowQuantity,
   updatePromotionCatalogQuery,
 } from './promotions-ui.helpers';
 
@@ -222,67 +223,15 @@ function toLegacyTypeKey(method) {
 function removePromotionSelection(setDraft, section, variantId) {
   setDraft((current) => ({
     ...current,
-    [section]: current[section].filter((row) => row.variantId !== variantId),
+    [section]: removePromotionSelectionRow(current[section], variantId),
   }));
 }
 
 function updatePromotionSelectionQuantity(setDraft, section, variantId, quantity) {
-  const nextQuantity = Number.isFinite(quantity) ? Math.max(1, Math.round(quantity)) : 1;
   setDraft((current) => ({
     ...current,
-    [section]: current[section].map((row) =>
-      row.variantId === variantId
-        ? {
-            ...row,
-            quantity: nextQuantity,
-          }
-        : row
-    ),
+    [section]: updatePromotionSelectionRowQuantity(current[section], variantId, quantity),
   }));
-}
-
-function addPromotionVariantToSelection(setDraft, setCatalogState, section, product, variant) {
-  if (!isEligiblePhysicalProduct(product)) {
-    setCatalogState((current) => ({
-      ...current,
-      sections: {
-        ...current.sections,
-        [section]: {
-          ...current.sections[section],
-          error: 'Only physical variants are eligible for Smart Promotions in V1.',
-        },
-      },
-    }));
-    return;
-  }
-
-  setCatalogState((current) => ({
-    ...current,
-    sections: {
-      ...current.sections,
-      [section]: {
-        ...current.sections[section],
-        error: '',
-      },
-    },
-  }));
-  setDraft((current) => {
-    const existing = current[section].find((row) => row.variantId === variant.id);
-    if (existing) {
-      return current;
-    }
-
-    return {
-      ...current,
-      [section]: appendPromotionSelectionRow(current[section], {
-        variantId: variant.id,
-        productTitle: product.title,
-        variantTitle: variant.title || 'Default',
-        sku: variant.sku || null,
-        fulfillmentType: product.fulfillmentType || 'PHYSICAL',
-      }),
-    };
-  });
 }
 
 async function searchPromotionCatalog(catalogState, setCatalogState, section, options = { force: true }) {
@@ -1167,23 +1116,10 @@ export default function DiscountsWorkspace() {
                   draft={smartDraft}
                   onAddPendingSelections={(section) => {
                     const pendingRows = getPromotionCatalogSectionState(smartCatalogState, section).pendingSelections || [];
-                    for (const row of pendingRows) {
-                      addPromotionVariantToSelection(
-                        setSmartDraft,
-                        setSmartCatalogState,
-                        section,
-                        {
-                          id: row.productId,
-                          title: row.productTitle,
-                          fulfillmentType: row.fulfillmentType || 'PHYSICAL',
-                        },
-                        {
-                          id: row.variantId,
-                          title: row.variantTitle,
-                          sku: row.sku || null,
-                        }
-                      );
-                    }
+                    setSmartDraft((current) => ({
+                      ...current,
+                      [section]: appendPromotionPendingSelections(current[section], pendingRows),
+                    }));
                     setSmartCatalogState((current) => closePromotionCatalogState(current, section));
                   }}
                   onCatalogQueryChange={(section, value) =>
@@ -1323,25 +1259,12 @@ export default function DiscountsWorkspace() {
               draft={smartEditDraft}
               onAddPendingSelections={(section) => {
                 const pendingRows = getPromotionCatalogSectionState(smartEditCatalogState, section).pendingSelections || [];
-                for (const row of pendingRows) {
-                  addPromotionVariantToSelection(
-                    setSmartEditDraft,
-                    setSmartEditCatalogState,
-                    section,
-                    {
-                      id: row.productId,
-                      title: row.productTitle,
-                      fulfillmentType: row.fulfillmentType || 'PHYSICAL',
-                    },
-                    {
-                      id: row.variantId,
-                      title: row.variantTitle,
-                      sku: row.sku || null,
-                    }
-                  );
-                    }
-                    setSmartEditCatalogState((current) => closePromotionCatalogState(current, section));
-                  }}
+                setSmartEditDraft((current) => ({
+                  ...current,
+                  [section]: appendPromotionPendingSelections(current[section], pendingRows),
+                }));
+                setSmartEditCatalogState((current) => closePromotionCatalogState(current, section));
+              }}
               onCatalogQueryChange={(section, value) =>
                 setSmartEditCatalogState((current) => updatePromotionCatalogQuery(current, section, value))
               }
