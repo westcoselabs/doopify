@@ -1,5 +1,6 @@
 import AdminButton from '@/components/admin/ui/AdminButton';
 import AdminThemeToggle from '@/components/admin/ui/AdminThemeToggle';
+import { useEffect, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import styles from './Header.module.css';
 
@@ -36,6 +37,13 @@ export default function Header({
 }) {
   const pathname = usePathname();
   const pageMeta = getPageMeta(pathname);
+  const [shortcutLabel, setShortcutLabel] = useState('Cmd+K');
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined') return;
+    const isMac = /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
+    setShortcutLabel(isMac ? 'Cmd+K' : 'Ctrl+K');
+  }, []);
 
   function openCommandPalette() {
     window.dispatchEvent(
@@ -61,8 +69,8 @@ export default function Header({
           <span className="material-symbols-outlined" aria-hidden="true">
             search
           </span>
-          <span className={styles.commandText}>Search orders, products, customers...</span>
-          <kbd className={styles.commandKbd}>Cmd+K</kbd>
+          <span className={styles.commandText}>Search pages, products, orders, promotions...</span>
+          <kbd className={styles.commandKbd}>{shortcutLabel}</kbd>
         </button>
       </div>
 

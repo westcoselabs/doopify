@@ -2,51 +2,56 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
-export type AdminCommand = {
-  id: string;
-  label: string;
-  path: string;
-  keywords?: string[];
-};
+import {
+  getAdminCommandGroups,
+  type AdminCommandGroup,
+  type AdminCommandItem,
+} from "@/components/dashboard/command-menu/adminCommandGroups";
 
-export const STATIC_COMMANDS: AdminCommand[] = [
-  { id: "go-dashboard", label: "Go to Dashboard", path: "/admin", keywords: ["home", "overview"] },
-  { id: "go-orders", label: "Go to Orders", path: "/orders", keywords: ["sales", "fulfillment"] },
-  { id: "go-draft-orders", label: "Go to Draft Orders", path: "/draft-orders", keywords: ["quotes"] },
-  { id: "go-customers", label: "Go to Customers", path: "/customers", keywords: ["crm", "people"] },
-  { id: "go-products", label: "Go to Products", path: "/products", keywords: ["catalog"] },
-  { id: "go-collections", label: "Go to Collections", path: "/admin/collections", keywords: ["merchandising"] },
-  { id: "go-media", label: "Go to Media", path: "/media", keywords: ["assets", "library"] },
-  { id: "go-discounts", label: "Go to Promotions", path: "/discounts", keywords: ["codes", "discounts", "automatic offers"] },
-  { id: "go-abandoned", label: "Go to Abandoned", path: "/admin/abandoned-checkouts", keywords: ["recovery"] },
-  { id: "go-analytics", label: "Go to Analytics", path: "/analytics", keywords: ["reports"] },
-  { id: "go-webhooks", label: "Open Delivery logs", path: "/admin/webhooks", keywords: ["events", "observability", "logs"] },
-  { id: "go-settings", label: "Go to Settings", path: "/settings", keywords: ["configuration"] },
-  { id: "go-brand-kit", label: "Open Brand Kit", path: "/settings?section=brand-kit", keywords: ["branding"] },
-];
+function isMacPlatform() {
+  if (typeof navigator === "undefined") return false;
+  return /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
+}
 
-function matchCommand(command: AdminCommand, query: string) {
-  if (!query) {
-    return true;
-  }
+function matchCommand(command: AdminCommandItem, query: string) {
+  if (!query) return true;
 
   const haystack = [command.label, ...(command.keywords ?? [])].join(" ").toLowerCase();
   return haystack.includes(query.toLowerCase());
 }
 
 export default function AdminCommandPalette() {
+  const pathname = usePathname();
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  const [isMac, setIsMac] = useState(false);
 
-  const filteredCommands = useMemo(
-    () => STATIC_COMMANDS.filter((command) => matchCommand(command, query)),
-    [query]
+  useEffect(() => {
+    setIsMac(isMacPlatform());
+  }, []);
+
+  const commandGroups = useMemo<AdminCommandGroup[]>(() => getAdminCommandGroups(), []);
+
+  const filteredGroups = useMemo(
+    () =>
+      commandGroups
+        .map((group) => ({
+          ...group,
+          items: group.items.filter((command) => matchCommand(command, query)),
+        }))
+        .filter((group) => group.items.length > 0),
+    [commandGroups, query]
+  );
+
+  const flatCommands = useMemo(
+    () => filteredGroups.flatMap((group) => group.items.map((item) => ({ group: group.heading, item }))),
+    [filteredGroups]
   );
 
   useEffect(() => {
@@ -93,27 +98,21 @@ export default function AdminCommandPalette() {
   }, []);
 
   useEffect(() => {
-    if (!open) {
-      return;
-    }
+    if (!open) return;
 
-// eslint-disable-next-line react-hooks/set-state-in-effect -- intentional effect-driven state sync for existing async/load flow
     setQuery("");
     setActiveIndex(0);
-    setTimeout(() => inputRef.current?.focus(), 0);
+    window.setTimeout(() => inputRef.current?.focus(), 0);
   }, [open]);
 
   useEffect(() => {
-    if (activeIndex > filteredCommands.length - 1) {
-// eslint-disable-next-line react-hooks/set-state-in-effect -- intentional effect-driven state sync for existing async/load flow
+    if (activeIndex > flatCommands.length - 1) {
       setActiveIndex(0);
     }
-  }, [activeIndex, filteredCommands]);
+  }, [activeIndex, flatCommands]);
 
   useEffect(() => {
-    if (!open) {
-      return;
-    }
+    if (!open) return;
 
     const handlePointerDown = (event: PointerEvent) => {
       if (event.target instanceof Node && rootRef.current && !rootRef.current.contains(event.target)) {
@@ -125,33 +124,42 @@ export default function AdminCommandPalette() {
     return () => window.removeEventListener("pointerdown", handlePointerDown);
   }, [open]);
 
-  const runCommand = (command?: AdminCommand) => {
-    if (!command) {
+  const runCommand = (command?: AdminCommandItem) => {
+    if (!command) return;
+
+    setOpen(false);
+
+    if (command.action === "open-promotion-create") {
+      if (pathname?.startsWith("/discounts")) {
+        window.dispatchEvent(new CustomEvent("doopify-open-promotion-create"));
+        return;
+      }
+
+      router.push("/discounts?create=1");
       return;
     }
 
-    router.push(command.path);
-    setOpen(false);
+    if (command.href) {
+      router.push(command.href);
+    }
   };
 
   const handleInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      setActiveIndex((current) => (current + 1) % Math.max(filteredCommands.length, 1));
+      setActiveIndex((current) => (current + 1) % Math.max(flatCommands.length, 1));
       return;
     }
 
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      setActiveIndex((current) =>
-        current <= 0 ? Math.max(filteredCommands.length - 1, 0) : current - 1
-      );
+      setActiveIndex((current) => (current <= 0 ? Math.max(flatCommands.length - 1, 0) : current - 1));
       return;
     }
 
     if (event.key === "Enter") {
       event.preventDefault();
-      runCommand(filteredCommands[activeIndex]);
+      runCommand(flatCommands[activeIndex]?.item);
       return;
     }
 
@@ -168,7 +176,7 @@ export default function AdminCommandPalette() {
   return (
     <div className="admin-command-palette-overlay" role="presentation">
       <div
-        aria-label="Command palette"
+        aria-label="Dashboard command menu"
         aria-modal="true"
         className="admin-command-palette"
         ref={rootRef}
@@ -182,30 +190,50 @@ export default function AdminCommandPalette() {
             className="admin-command-palette__input"
             onChange={(event) => setQuery(event.target.value)}
             onKeyDown={handleInputKeyDown}
-            placeholder="Search commands..."
+            placeholder="Search pages, products, orders, promotions..."
             ref={inputRef}
             value={query}
           />
-          <kbd className="admin-command-palette__kbd">Esc</kbd>
+          <kbd className="admin-command-palette__kbd">{isMac ? "⌘K" : "Ctrl K"}</kbd>
         </div>
 
-        <ul className="admin-command-palette__results custom-scrollbar" role="listbox">
-          {filteredCommands.length ? (
-            filteredCommands.map((command, index) => (
-              <li key={command.id}>
-                <button
-                  className={`admin-command-palette__item ${index === activeIndex ? "is-active" : ""}`}
-                  onClick={() => runCommand(command)}
-                  type="button"
-                >
-                  <span>{command.label}</span>
-                </button>
-              </li>
+        <div className="admin-command-palette__results custom-scrollbar" role="listbox">
+          {filteredGroups.length ? (
+            filteredGroups.map((group) => (
+              <section className="admin-command-palette__group" key={group.heading}>
+                <p className="admin-command-palette__group-heading">{group.heading}</p>
+                <div className="admin-command-palette__group-items">
+                  {group.items.map((command) => {
+                    const flatIndex = flatCommands.findIndex(
+                      (entry) => entry.group === group.heading && entry.item.label === command.label
+                    );
+
+                    return (
+                      <button
+                        className={`admin-command-palette__item ${flatIndex === activeIndex ? "is-active" : ""}`}
+                        key={`${group.heading}-${command.label}`}
+                        onClick={() => runCommand(command)}
+                        type="button"
+                      >
+                        <span className="admin-command-palette__item-copy">
+                          <span>{command.label}</span>
+                          {command.keywords?.length ? (
+                            <small>{command.keywords.slice(0, 3).join(" · ")}</small>
+                          ) : null}
+                        </span>
+                        {command.shortcut ? (
+                          <kbd className="admin-command-palette__item-shortcut">{command.shortcut}</kbd>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
             ))
           ) : (
-            <li className="admin-command-palette__empty">No matching commands</li>
+            <p className="admin-command-palette__empty">No results found.</p>
           )}
-        </ul>
+        </div>
       </div>
     </div>
   );

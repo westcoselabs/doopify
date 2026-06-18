@@ -113,6 +113,30 @@
   opacity: 0.8;
 }
 
+.selectionEmpty {
+  display: grid;
+  gap: 0.16rem;
+  border: 1px dashed color-mix(in srgb, var(--line-subtle) 80%, transparent);
+  border-radius: 0.7rem;
+  padding: 0.7rem;
+  background: color-mix(in srgb, var(--surface-soft) 72%, transparent);
+}
+
+.selectionEmpty p,
+.selectionEmpty small {
+  margin: 0;
+}
+
+.selectionEmpty p {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.selectionEmpty small {
+  font-size: 0.76rem;
+  opacity: 0.76;
+}
+
 .selectionRow {
   display: flex;
   align-items: flex-start;
@@ -161,6 +185,22 @@
     linear-gradient(180deg, color-mix(in srgb, var(--surface-soft) 94%, transparent), color-mix(in srgb, var(--surface-canvas) 94%, transparent));
 }
 
+.pickerHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.pickerHeader strong {
+  font-size: 0.9rem;
+}
+
+.pickerHeader span {
+  font-size: 0.74rem;
+  opacity: 0.74;
+}
+
 .pickerToolbar {
   display: flex;
   gap: 0.45rem;
@@ -176,18 +216,12 @@
   gap: 0.45rem;
 }
 
-.catalogToolbar {
-  display: flex;
-  gap: 0.45rem;
-}
-
-.catalogToolbar input {
-  flex: 1;
-}
-
 .catalogList {
   display: grid;
   gap: 0.5rem;
+  max-height: 340px;
+  overflow: auto;
+  padding-right: 0.2rem;
 }
 
 .catalogProduct {
@@ -259,6 +293,26 @@
 .catalogVariantRowDisabled {
   opacity: 0.72;
   background: color-mix(in srgb, var(--surface-soft) 84%, transparent);
+}
+
+.lockedRewardSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--brand-primary) 18%, var(--line-subtle));
+  border-radius: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  background: color-mix(in srgb, var(--surface-soft) 88%, transparent);
+}
+
+.lockedRewardSummary span {
+  font-size: 0.78rem;
+  opacity: 0.76;
+}
+
+.lockedRewardSummary strong {
+  font-size: 0.88rem;
 }
 
 .formGrid {
@@ -335,13 +389,11 @@
     grid-template-columns: 1fr;
   }
 
-  .catalogToolbar {
-    flex-direction: column;
-  }
-
   .pickerToolbar,
+  .pickerHeader,
   .pickerActions {
     flex-direction: column;
+    align-items: flex-start;
   }
 
   .typeCardTopRow,

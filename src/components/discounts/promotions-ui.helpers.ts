@@ -15,6 +15,50 @@ export type PromotionVariantSelection = {
   variantTitle: string
 }
 
+export type PromotionCatalogSection = 'qualifiers' | 'rewards'
+
+export type PromotionCatalogVariant = {
+  id: string
+  sku: string | null
+  title: string
+}
+
+export type PromotionCatalogProduct = {
+  fulfillmentType: string | null
+  handle: string
+  id: string
+  status: string | null
+  title: string
+  variants: PromotionCatalogVariant[]
+}
+
+export type PromotionPendingSelection = {
+  fulfillmentType: string
+  productId: string
+  productTitle: string
+  sku: string | null
+  variantId: string
+  variantTitle: string
+}
+
+export type PromotionCatalogSectionState = {
+  error: string
+  eligibleResultCount: number
+  hasLoaded: boolean
+  lastLoadedQuery: string
+  loading: boolean
+  pendingSelections: PromotionPendingSelection[]
+  query: string
+  requestId: number
+  rows: PromotionCatalogProduct[]
+  totalResultCount: number
+}
+
+export type PromotionCatalogState = {
+  openSection: PromotionCatalogSection | null
+  sections: Record<PromotionCatalogSection, PromotionCatalogSectionState>
+}
+
 export type PromotionDraft = {
   endsAt: string
   id: string | null
@@ -44,6 +88,10 @@ type ListQueryParams = {
   type?: string
 }
 
+function normalizeCatalogQuery(query: string) {
+  return String(query || '').trim()
+}
+
 export function createPromotionDraft(type: PromotionType = 'PRODUCT_GROUP_DISCOUNT'): PromotionDraft {
   const base: PromotionDraft = {
     id: null,
@@ -61,6 +109,409 @@ export function createPromotionDraft(type: PromotionType = 'PRODUCT_GROUP_DISCOU
   }
 
   return normalizePromotionDraftForType(base)
+}
+
+export function createPromotionCatalogSectionState(): PromotionCatalogSectionState {
+  return {
+    query: '',
+    rows: [],
+    loading: false,
+    error: '',
+    pendingSelections: [],
+    hasLoaded: false,
+    lastLoadedQuery: '',
+    requestId: 0,
+    totalResultCount: 0,
+    eligibleResultCount: 0,
+  }
+}
+
+export function createPromotionCatalogState(): PromotionCatalogState {
+  return {
+    openSection: null,
+    sections: {
+      qualifiers: createPromotionCatalogSectionState(),
+      rewards: createPromotionCatalogSectionState(),
+    },
+  }
+}
+
+export function getPromotionCatalogSectionState(
+  catalogState: PromotionCatalogState,
+  section: PromotionCatalogSection
+) {
+  return catalogState.sections[section]
+}
+
+export function openPromotionCatalogSection(
+  catalogState: PromotionCatalogState,
+  section: PromotionCatalogSection
+): PromotionCatalogState {
+  return {
+    ...catalogState,
+    openSection: section,
+    sections: {
+      ...catalogState.sections,
+      [section]: {
+        ...catalogState.sections[section],
+        error: '',
+        pendingSelections: [],
+      },
+    },
+  }
+}
+
+export function closePromotionCatalogState(catalogState: PromotionCatalogState): PromotionCatalogState {
+  return {
+    ...catalogState,
+    openSection: null,
+    sections: {
+      qualifiers: {
+        ...catalogState.sections.qualifiers,
+        pendingSelections: [],
+      },
+      rewards: {
+        ...catalogState.sections.rewards,
+        pendingSelections: [],
+      },
+    },
+  }
+}
+
+export function updatePromotionCatalogQuery(
+  catalogState: PromotionCatalogState,
+  section: PromotionCatalogSection,
+  query: string
+): PromotionCatalogState {
+  return {
+    ...catalogState,
+    sections: {
+      ...catalogState.sections,
+      [section]: {
+        ...catalogState.sections[section],
+        query,
+      },
+    },
+  }
+}
+
+export function togglePromotionPendingSelection(
+  catalogState: PromotionCatalogState,
+  section: PromotionCatalogSection,
+  selection: PromotionPendingSelection
+): PromotionCatalogState {
+  const sectionState = catalogState.sections[section]
+  const exists = sectionState.pendingSelections.some((entry) => entry.variantId === selection.variantId)
+
+  return {
+    ...catalogState,
+    sections: {
+      ...catalogState.sections,
+      [section]: {
+        ...sectionState,
+        pendingSelections: exists
+          ? sectionState.pendingSelections.filter((entry) => entry.variantId !== selection.variantId)
+          : sectionState.pendingSelections.concat(selection),
+      },
+    },
+  }
+}
+
+export function shouldLoadPromotionCatalogOnOpen(
+  catalogState: PromotionCatalogState,
+  section: PromotionCatalogSection
+) {
+  const sectionState = catalogState.sections[section]
+  return !sectionState.loading && !sectionState.hasLoaded && sectionState.rows.length === 0
+}
+
+export function shouldFetchPromotionCatalog(
+  catalogState: PromotionCatalogState,
+  section: PromotionCatalogSection,
+  options?: { force?: boolean }
+) {
+  const sectionState = catalogState.sections[section]
+  const query = normalizeCatalogQuery(sectionState.query)
+
+  if (sectionState.loading) return false
+  if (options?.force) return true
+  if (!sectionState.hasLoaded) return true
+
+  return query !== sectionState.lastLoadedQuery
+}
+
+export function beginPromotionCatalogSearch(
+  catalogState: PromotionCatalogState,
+  section: PromotionCatalogSection
+): PromotionCatalogState {
+  const sectionState = catalogState.sections[section]
+
+  return {
+    ...catalogState,
+    sections: {
+      ...catalogState.sections,
+      [section]: {
+        ...sectionState,
+        loading: true,
+        error: '',
+        requestId: sectionState.requestId + 1,
+      },
+    },
+  }
+}
+
+type PromotionCatalogPayload = {
+  data?: {
+    product?: unknown
+    products?: unknown
+  } | null
+  error?: string
+  products?: unknown
+  success?: boolean
+}
+
+type PromotionCatalogFetchResult = {
+  rows: PromotionCatalogProduct[]
+  totalResultCount: number
+  eligibleResultCount: number
+}
+
+function normalizePromotionCatalogStatus(status: unknown) {
+  const normalized = String(status || '').trim().toUpperCase()
+  return normalized || null
+}
+
+function normalizePromotionCatalogFulfillmentType(fulfillmentType: unknown) {
+  const normalized = String(fulfillmentType || '').trim().toUpperCase()
+  return normalized || 'PHYSICAL'
+}
+
+function normalizePromotionCatalogVariant(variant: any): PromotionCatalogVariant {
+  return {
+    id: String(variant?.id || ''),
+    sku: variant?.sku == null ? null : String(variant.sku),
+    title: String(variant?.title || '').trim() || 'Default',
+  }
+}
+
+function normalizePromotionCatalogProduct(product: any): PromotionCatalogProduct {
+  return {
+    id: String(product?.id || ''),
+    title: String(product?.title || '').trim() || 'Untitled product',
+    handle: String(product?.handle || '').trim(),
+    status: normalizePromotionCatalogStatus(product?.status),
+    fulfillmentType: normalizePromotionCatalogFulfillmentType(product?.fulfillmentType),
+    variants: Array.isArray(product?.variants)
+      ? product.variants
+          .map((variant: unknown) => normalizePromotionCatalogVariant(variant))
+          .filter((variant: PromotionCatalogVariant) => Boolean(variant.id))
+      : [],
+  }
+}
+
+function isEligiblePromotionCatalogProduct(product: PromotionCatalogProduct) {
+  const fulfillmentType = normalizePromotionCatalogFulfillmentType(product.fulfillmentType)
+  const status = normalizePromotionCatalogStatus(product.status)
+  const isPhysical = fulfillmentType === 'PHYSICAL'
+  const isActive = status == null || status === 'ACTIVE'
+
+  return isPhysical && isActive
+}
+
+function getProductsFromPayload(payload: PromotionCatalogPayload): unknown[] {
+  if (Array.isArray(payload?.data?.products)) {
+    return payload.data.products
+  }
+
+  if (Array.isArray(payload?.products)) {
+    return payload.products
+  }
+
+  return []
+}
+
+function payloadProductsHaveVariantTitles(products: unknown[]) {
+  return products.every((product: any) =>
+    Array.isArray(product?.variants)
+      ? product.variants.every((variant: any) => Boolean(String(variant?.title || '').trim()))
+      : true
+  )
+}
+
+function getProductFromPayload(payload: PromotionCatalogPayload): unknown | null {
+  if (payload?.data?.product && typeof payload.data.product === 'object') {
+    return payload.data.product
+  }
+
+  if (payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data)) {
+    const maybeProduct = payload.data as Record<string, unknown>
+    if (typeof maybeProduct.id === 'string') {
+      return maybeProduct
+    }
+  }
+
+  return null
+}
+
+async function parseJsonSafely(response: Response): Promise<PromotionCatalogPayload | null> {
+  try {
+    return (await response.json()) as PromotionCatalogPayload
+  } catch {
+    return null
+  }
+}
+
+function getPromotionCatalogErrorMessage(payload: PromotionCatalogPayload | null, fallback: string) {
+  if (payload?.error) {
+    return String(payload.error)
+  }
+
+  return fallback
+}
+
+export function buildPromotionCatalogSearchUrl(query: string) {
+  const searchParams = new URLSearchParams()
+  const normalizedQuery = normalizeCatalogQuery(query)
+  if (normalizedQuery) {
+    searchParams.set('query', normalizedQuery)
+  }
+  searchParams.set('limit', '25')
+
+  return `/api/admin/products/search?${searchParams.toString()}`
+}
+
+export function buildPromotionCatalogListUrl(query: string) {
+  const searchParams = new URLSearchParams({
+    page: '1',
+    pageSize: '25',
+    status: 'ACTIVE',
+  })
+
+  const normalizedQuery = normalizeCatalogQuery(query)
+  if (normalizedQuery) {
+    searchParams.set('search', normalizedQuery)
+  }
+
+  return `/api/products?${searchParams.toString()}`
+}
+
+async function hydratePromotionCatalogProduct(
+  product: PromotionCatalogProduct,
+  fetchImpl: typeof fetch
+): Promise<PromotionCatalogProduct> {
+  const response = await fetchImpl(`/api/products/${encodeURIComponent(product.id)}`)
+  const payload = await parseJsonSafely(response)
+
+  if (!response.ok || !payload?.success) {
+    return product
+  }
+
+  const detailProduct = getProductFromPayload(payload)
+  if (!detailProduct) {
+    return product
+  }
+
+  const normalized = normalizePromotionCatalogProduct(detailProduct)
+  return {
+    ...product,
+    ...normalized,
+    variants: normalized.variants,
+  }
+}
+
+export async function fetchPromotionCatalogProducts(
+  query: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<PromotionCatalogFetchResult> {
+  const catalogSearchUrl = buildPromotionCatalogSearchUrl(query)
+  let response = await fetchImpl(catalogSearchUrl)
+  let payload = await parseJsonSafely(response)
+
+  if (!response.ok || !payload?.success) {
+    response = await fetchImpl(buildPromotionCatalogListUrl(query))
+    payload = await parseJsonSafely(response)
+  }
+
+  if (!response.ok || !payload?.success) {
+    throw new Error(getPromotionCatalogErrorMessage(payload, 'Failed to load products. Try again.'))
+  }
+
+  const payloadProducts = getProductsFromPayload(payload)
+  const summaryProducts = payloadProducts.map(normalizePromotionCatalogProduct)
+  const eligibleProducts = summaryProducts.filter((product) => product.id).filter(isEligiblePromotionCatalogProduct)
+  const rowsHaveVariantTitles = payloadProductsHaveVariantTitles(payloadProducts)
+
+  const hydratedProducts = rowsHaveVariantTitles
+    ? eligibleProducts
+    : await Promise.all(
+        eligibleProducts.map(async (product) => {
+          try {
+            return await hydratePromotionCatalogProduct(product, fetchImpl)
+          } catch {
+            return product
+          }
+        })
+      )
+
+  return {
+    rows: hydratedProducts,
+    totalResultCount: summaryProducts.length,
+    eligibleResultCount: eligibleProducts.length,
+  }
+}
+
+export function resolvePromotionCatalogSearchSuccess(
+  catalogState: PromotionCatalogState,
+  section: PromotionCatalogSection,
+  rows: PromotionCatalogProduct[],
+  requestId: number,
+  query: string,
+  counts?: {
+    eligibleResultCount?: number
+    totalResultCount?: number
+  }
+): PromotionCatalogState {
+  const sectionState = catalogState.sections[section]
+  if (sectionState.requestId !== requestId) return catalogState
+
+  return {
+    ...catalogState,
+    sections: {
+      ...catalogState.sections,
+      [section]: {
+        ...sectionState,
+        rows,
+        loading: false,
+        error: '',
+        hasLoaded: true,
+        lastLoadedQuery: normalizeCatalogQuery(query),
+        totalResultCount: counts?.totalResultCount ?? rows.length,
+        eligibleResultCount: counts?.eligibleResultCount ?? rows.length,
+      },
+    },
+  }
+}
+
+export function resolvePromotionCatalogSearchError(
+  catalogState: PromotionCatalogState,
+  section: PromotionCatalogSection,
+  error: string,
+  requestId: number
+): PromotionCatalogState {
+  const sectionState = catalogState.sections[section]
+  if (sectionState.requestId !== requestId) return catalogState
+
+  return {
+    ...catalogState,
+    sections: {
+      ...catalogState.sections,
+      [section]: {
+        ...sectionState,
+        loading: false,
+        error,
+      },
+    },
+  }
 }
 
 export function normalizePromotionDraftForType(draft: PromotionDraft): PromotionDraft {

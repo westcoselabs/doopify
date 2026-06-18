@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AppShell from '../AppShell';
 import { useDiscounts } from '../../context/DiscountsContext';
 import AdminButton from '../admin/ui/AdminButton';
@@ -16,20 +16,29 @@ import AdminSelect from '../admin/ui/AdminSelect';
 import AdminStatusChip from '../admin/ui/AdminStatusChip';
 import AdminTable from '../admin/ui/AdminTable';
 import AdminToolbar from '../admin/ui/AdminToolbar';
-import {
-  createPromotionCatalogState,
-  SmartPromotionFormSections,
-} from './AutomaticPromotionsWorkspace';
+import { SmartPromotionFormSections } from './AutomaticPromotionsWorkspace';
 import styles from './DiscountsWorkspace.module.css';
 import {
+  beginPromotionCatalogSearch,
   buildPromotionPayloadFromDraft,
   canSubmitPromotionDraft,
+  createPromotionCatalogState,
   createPromotionDraft,
+  closePromotionCatalogState,
   extractPromotionValidationIssues,
+  fetchPromotionCatalogProducts,
   formatPromotionStatusLabel,
   formatPromotionTypeLabel,
+  getPromotionCatalogSectionState,
   getPromotionStatusTone,
   normalizePromotionDraftForType,
+  openPromotionCatalogSection,
+  resolvePromotionCatalogSearchError,
+  resolvePromotionCatalogSearchSuccess,
+  shouldFetchPromotionCatalog,
+  shouldLoadPromotionCatalogOnOpen,
+  togglePromotionPendingSelection,
+  updatePromotionCatalogQuery,
 } from './promotions-ui.helpers';
 
 const LEGACY_DISCOUNT_METHODS = ['amount off products', 'amount off order', 'free shipping'];
@@ -260,12 +269,27 @@ function addPromotionVariantToSelection(setDraft, setCatalogState, section, prod
   if (product.fulfillmentType !== 'PHYSICAL') {
     setCatalogState((current) => ({
       ...current,
-      error: 'Only physical variants are eligible for Smart Promotions in V1.',
+      sections: {
+        ...current.sections,
+        [section]: {
+          ...current.sections[section],
+          error: 'Only physical variants are eligible for Smart Promotions in V1.',
+        },
+      },
     }));
     return;
   }
 
-  setCatalogState((current) => ({ ...current, error: '' }));
+  setCatalogState((current) => ({
+    ...current,
+    sections: {
+      ...current.sections,
+      [section]: {
+        ...current.sections[section],
+        error: '',
+      },
+    },
+  }));
   setDraft((current) => {
     const existing = current[section].find((row) => row.variantId === variant.id);
     if (existing) {
@@ -286,133 +310,47 @@ function addPromotionVariantToSelection(setDraft, setCatalogState, section, prod
   });
 }
 
-function togglePromotionPendingVariant(setCatalogState, section, product, variant) {
-  setCatalogState((current) => {
-    const pendingRows = current.pendingSelections[section] || [];
-    const exists = pendingRows.some((row) => row.variantId === variant.id);
-    return {
-      ...current,
-      pendingSelections: {
-        ...current.pendingSelections,
-        [section]: exists
-          ? pendingRows.filter((row) => row.variantId !== variant.id)
-          : pendingRows.concat({
-              productId: product.id,
-              productTitle: product.title,
-              variantId: variant.id,
-              variantTitle: variant.title || 'Default',
-              sku: variant.sku || null,
-              fulfillmentType: product.fulfillmentType || 'PHYSICAL',
-            }),
-      },
-    };
-  });
-}
-
-function closePromotionCatalogPicker(setCatalogState) {
-  setCatalogState((current) => ({
-    ...current,
-    openSection: null,
-    pendingSelections: {
-      ...current.pendingSelections,
-      qualifiers: [],
-      rewards: [],
-    },
-  }));
-}
-
-function openPromotionCatalogPicker(setCatalogState, searchCatalog, section) {
-  setCatalogState((current) => ({
-    ...current,
-    openSection: section,
-    error: '',
-    pendingSelections: {
-      ...current.pendingSelections,
-      [section]: [],
-    },
-  }));
-  void searchCatalog();
-}
-
-async function searchPromotionCatalog(catalogState, setCatalogState) {
-  setCatalogState((current) => ({
-    ...current,
-    loading: true,
-    error: '',
-  }));
-  try {
-    const query = new URLSearchParams({
-      page: '1',
-      pageSize: '20',
-      status: 'ACTIVE',
-    });
-    if (catalogState.query.trim()) {
-      query.set('search', catalogState.query.trim());
-    }
-
-    const response = await fetch(`/api/products?${query.toString()}`);
-    const payload = await response.json();
-    if (!payload?.success) {
-      setCatalogState((current) => ({
-        ...current,
-        rows: [],
-        error: payload?.error || 'Failed to search product catalog.',
-        loading: false,
-      }));
-      return;
-    }
-
-    const physicalProducts = (payload.data?.products || []).filter(
-      (product) => (product.fulfillmentType || 'PHYSICAL') === 'PHYSICAL'
-    );
-    setCatalogState((current) => ({
-      ...current,
-      rows: physicalProducts,
-      loading: false,
-    }));
-  } catch (error) {
-    console.error('[DiscountsWorkspace] catalog search failed', error);
-    setCatalogState((current) => ({
-      ...current,
-      rows: [],
-      error: 'Failed to search product catalog.',
-      loading: false,
-    }));
+async function searchPromotionCatalog(catalogState, setCatalogState, section, options = { force: true }) {
+  const sectionState = getPromotionCatalogSectionState(catalogState, section);
+  const queryValue = sectionState.query.trim();
+  if (!shouldFetchPromotionCatalog(catalogState, section, options)) {
+    return;
   }
-}
+  const requestId = sectionState.requestId + 1;
 
-async function loadPromotionProductDetail(catalogState, setCatalogState, productId) {
-  if (catalogState.productDetailsById[productId]) return;
+  setCatalogState((current) => beginPromotionCatalogSearch(current, section));
 
   try {
-    const response = await fetch(`/api/products/${productId}`);
-    const payload = await response.json();
-    if (!payload?.success) {
-      setCatalogState((current) => ({
-        ...current,
-        error: payload?.error || 'Failed to load product variants.',
-      }));
-      return;
-    }
+    const result = await fetchPromotionCatalogProducts(queryValue);
 
-    setCatalogState((current) => ({
-      ...current,
-      productDetailsById: {
-        ...current.productDetailsById,
-        [productId]: payload.data,
-      },
-    }));
+    setCatalogState((current) =>
+      resolvePromotionCatalogSearchSuccess(
+        current,
+        section,
+        result.rows,
+        requestId,
+        queryValue,
+        {
+          totalResultCount: result.totalResultCount,
+          eligibleResultCount: result.eligibleResultCount,
+        }
+      )
+    );
   } catch (error) {
-    console.error('[DiscountsWorkspace] failed to load product detail', error);
-    setCatalogState((current) => ({
-      ...current,
-      error: 'Failed to load product variants.',
-    }));
+    setCatalogState((current) =>
+      resolvePromotionCatalogSearchError(
+        current,
+        section,
+        error instanceof Error ? error.message : 'Failed to load products. Try again.',
+        requestId
+      )
+    );
   }
 }
 
 export default function DiscountsWorkspace() {
   const { discounts, addDiscount, updateDiscount } = useDiscounts();
+  const hasAutoOpenedCreateRef = useRef(false);
   const [browseFilter, setBrowseFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -467,6 +405,29 @@ export default function DiscountsWorkspace() {
   useEffect(() => {
     void loadSmartPromotions();
   }, [loadSmartPromotions]);
+
+  useEffect(() => {
+    if (hasAutoOpenedCreateRef.current) {
+      return;
+    }
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('create') !== '1') {
+      return;
+    }
+
+    hasAutoOpenedCreateRef.current = true;
+    openCreateFlow();
+  }, []);
+
+  useEffect(() => {
+    const handleOpenPromotionCreate = () => {
+      openCreateFlow();
+    };
+
+    window.addEventListener('doopify-open-promotion-create', handleOpenPromotionCreate);
+    return () => window.removeEventListener('doopify-open-promotion-create', handleOpenPromotionCreate);
+  }, []);
 
   const selectedOfferDefinition = OFFER_TYPE_DEFINITIONS.find((offer) => offer.id === selectedPromotionType) || null;
   const isLegacyCreate = selectedOfferDefinition?.flow === 'legacy';
@@ -830,9 +791,6 @@ export default function DiscountsWorkspace() {
     <AppShell>
       <AdminPage>
         <AdminPageHeader
-          actions={(
-            <AdminButton onClick={openCreateFlow} size="sm" variant="primary">Create promotion</AdminButton>
-          )}
           description="Create and manage discount codes and automatic offers."
           eyebrow="Marketing"
           title="Promotions"
@@ -1125,7 +1083,7 @@ export default function DiscountsWorkspace() {
                   catalogState={smartCatalogState}
                   draft={smartDraft}
                   onAddPendingSelections={(section) => {
-                    const pendingRows = smartCatalogState.pendingSelections[section] || [];
+                    const pendingRows = getPromotionCatalogSectionState(smartCatalogState, section).pendingSelections || [];
                     for (const row of pendingRows) {
                       addPromotionVariantToSelection(
                         setSmartDraft,
@@ -1143,28 +1101,35 @@ export default function DiscountsWorkspace() {
                         }
                       );
                     }
-                    closePromotionCatalogPicker(setSmartCatalogState);
+                    setSmartCatalogState((current) => closePromotionCatalogState(current));
                   }}
-                  onAddVariant={(section, product, variant) => addPromotionVariantToSelection(setSmartDraft, setSmartCatalogState, section, product, variant)}
-                  onCatalogQueryChange={(value) =>
-                    setSmartCatalogState((current) => ({
-                      ...current,
-                      query: value,
-                    }))
+                  onCatalogQueryChange={(section, value) =>
+                    setSmartCatalogState((current) => updatePromotionCatalogQuery(current, section, value))
                   }
-                  onCancelPicker={() => closePromotionCatalogPicker(setSmartCatalogState)}
-                  onLoadProductDetail={(productId) => void loadPromotionProductDetail(smartCatalogState, setSmartCatalogState, productId)}
+                  onCancelPicker={() => setSmartCatalogState((current) => closePromotionCatalogState(current))}
                   onOpenPicker={(section) =>
-                    openPromotionCatalogPicker(
-                      setSmartCatalogState,
-                      () => searchPromotionCatalog(smartCatalogState, setSmartCatalogState),
-                      section
-                    )
+                    (() => {
+                      let shouldLoad = false;
+                      shouldLoad = shouldLoadPromotionCatalogOnOpen(smartCatalogState, section);
+                      setSmartCatalogState((current) => openPromotionCatalogSection(current, section));
+                      if (shouldLoad) {
+                        void searchPromotionCatalog(smartCatalogState, setSmartCatalogState, section, { force: false });
+                      }
+                    })()
                   }
                   onRemoveSelection={(section, variantId) => removePromotionSelection(setSmartDraft, section, variantId)}
-                  onSearchCatalog={() => void searchPromotionCatalog(smartCatalogState, setSmartCatalogState)}
+                  onSearchCatalog={(section) => void searchPromotionCatalog(smartCatalogState, setSmartCatalogState, section)}
                   onTogglePendingVariant={(section, product, variant) =>
-                    togglePromotionPendingVariant(setSmartCatalogState, section, product, variant)
+                    setSmartCatalogState((current) =>
+                      togglePromotionPendingSelection(current, section, {
+                        productId: product.id,
+                        productTitle: product.title,
+                        variantId: variant.id,
+                        variantTitle: variant.title || 'Default',
+                        sku: variant.sku || null,
+                        fulfillmentType: product.fulfillmentType || 'PHYSICAL',
+                      })
+                    )
                   }
                   onUpdateDraft={(field, value) => {
                     setSmartDraft((current) => ({ ...current, [field]: value }));
@@ -1272,7 +1237,7 @@ export default function DiscountsWorkspace() {
               catalogState={smartEditCatalogState}
               draft={smartEditDraft}
               onAddPendingSelections={(section) => {
-                const pendingRows = smartEditCatalogState.pendingSelections[section] || [];
+                const pendingRows = getPromotionCatalogSectionState(smartEditCatalogState, section).pendingSelections || [];
                 for (const row of pendingRows) {
                   addPromotionVariantToSelection(
                     setSmartEditDraft,
@@ -1290,28 +1255,35 @@ export default function DiscountsWorkspace() {
                     }
                   );
                 }
-                closePromotionCatalogPicker(setSmartEditCatalogState);
+                setSmartEditCatalogState((current) => closePromotionCatalogState(current));
               }}
-              onAddVariant={(section, product, variant) => addPromotionVariantToSelection(setSmartEditDraft, setSmartEditCatalogState, section, product, variant)}
-              onCatalogQueryChange={(value) =>
-                setSmartEditCatalogState((current) => ({
-                  ...current,
-                  query: value,
-                }))
+              onCatalogQueryChange={(section, value) =>
+                setSmartEditCatalogState((current) => updatePromotionCatalogQuery(current, section, value))
               }
-              onCancelPicker={() => closePromotionCatalogPicker(setSmartEditCatalogState)}
-              onLoadProductDetail={(productId) => void loadPromotionProductDetail(smartEditCatalogState, setSmartEditCatalogState, productId)}
+              onCancelPicker={() => setSmartEditCatalogState((current) => closePromotionCatalogState(current))}
               onOpenPicker={(section) =>
-                openPromotionCatalogPicker(
-                  setSmartEditCatalogState,
-                  () => searchPromotionCatalog(smartEditCatalogState, setSmartEditCatalogState),
-                  section
-                )
+                (() => {
+                  let shouldLoad = false;
+                  shouldLoad = shouldLoadPromotionCatalogOnOpen(smartEditCatalogState, section);
+                  setSmartEditCatalogState((current) => openPromotionCatalogSection(current, section));
+                  if (shouldLoad) {
+                    void searchPromotionCatalog(smartEditCatalogState, setSmartEditCatalogState, section, { force: false });
+                  }
+                })()
               }
               onRemoveSelection={(section, variantId) => removePromotionSelection(setSmartEditDraft, section, variantId)}
-              onSearchCatalog={() => void searchPromotionCatalog(smartEditCatalogState, setSmartEditCatalogState)}
+              onSearchCatalog={(section) => void searchPromotionCatalog(smartEditCatalogState, setSmartEditCatalogState, section)}
               onTogglePendingVariant={(section, product, variant) =>
-                togglePromotionPendingVariant(setSmartEditCatalogState, section, product, variant)
+                setSmartEditCatalogState((current) =>
+                  togglePromotionPendingSelection(current, section, {
+                    productId: product.id,
+                    productTitle: product.title,
+                    variantId: variant.id,
+                    variantTitle: variant.title || 'Default',
+                    sku: variant.sku || null,
+                    fulfillmentType: product.fulfillmentType || 'PHYSICAL',
+                  })
+                )
               }
               onTypeChange={(nextType) => {
                 setSmartEditDraft((current) => normalizePromotionDraftForType({

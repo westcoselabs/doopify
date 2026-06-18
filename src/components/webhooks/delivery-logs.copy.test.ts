@@ -14,10 +14,10 @@ describe('delivery logs copy + labels', () => {
 
   it('renames header and command palette labels to Delivery logs', () => {
     const header = read('src/components/Header/Header.js')
-    const palette = read('src/components/admin/ui/AdminCommandPalette.tsx')
+    const palette = read('src/components/dashboard/command-menu/adminCommandGroups.ts')
 
     expect(header).toContain("{ match: '/admin/webhooks', label: 'Delivery logs'")
-    expect(palette).toContain('label: "Open Delivery logs"')
+    expect(palette).toContain("label: 'Open Delivery logs'")
   })
 
   it('uses monitoring-not-setup copy and setup links on the delivery logs workspace', () => {
