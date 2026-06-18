@@ -319,7 +319,58 @@ describe('shipping-rate service', () => {
       })
     ).rejects.toMatchObject({
       name: 'ShippingRateSetupError',
-      message: 'Live shipping mode requires selecting a shipping provider in settings.',
+      message:
+        'Live shipping mode is enabled, but no live-rate provider is selected. Go to Settings -> Shipping & delivery -> Live rates provider and choose Shippo or EasyPost.',
+    })
+  })
+
+  it('calls Shippo for checkout live rates when activeRateProvider is SHIPPO', async () => {
+    mocks.prisma.store.findFirst.mockResolvedValue(
+      storeFixture({
+        email: 'store@example.com',
+        shippingMode: 'LIVE_RATES',
+        shippingLiveProvider: null,
+        activeRateProvider: 'SHIPPO',
+      })
+    )
+    mocks.getShippingProviderConnectionStatus.mockResolvedValue({ connected: true })
+    mocks.getShippingProviderApiKey.mockResolvedValue('shippo_test_123')
+    mocks.getShippingProviderLiveRates.mockResolvedValue([
+      {
+        id: 'shippo_live_1',
+        source: 'SHIPPO',
+        displayName: 'USPS Ground Advantage',
+        amountCents: 875,
+        currency: 'USD',
+        providerRateId: 'shippo_rate_1',
+      },
+    ])
+
+    const quotes = await getShippingRatesForCheckout({
+      subtotalCents: 4200,
+      shippingAddress: {
+        country: 'US',
+        province: 'CA',
+        address1: '123 Main St',
+        city: 'Los Angeles',
+        postalCode: '90001',
+      },
+    })
+
+    expect(mocks.getShippingProviderLiveRates).toHaveBeenCalledWith(
+      expect.objectContaining({
+        provider: 'SHIPPO',
+        request: expect.objectContaining({
+          apiKey: 'shippo_test_123',
+        }),
+      })
+    )
+    expect(quotes).toHaveLength(1)
+    expect(quotes[0]).toMatchObject({
+      source: 'SHIPPO',
+      rateType: 'LIVE_RATE',
+      amountCents: 875,
+      providerRateId: 'shippo_rate_1',
     })
   })
 

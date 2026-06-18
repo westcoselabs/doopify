@@ -324,9 +324,6 @@ export default function ShippingSettingsWorkspace({
     [packages]
   );
   const setupStatusPending = setupStatusLoading && !setupStatus;
-  const hasProviderConnection = setupStatusPending
-    ? null
-    : Boolean(setupStatus?.liveProviderConnected ?? setupStatus?.providerConnected);
   const hasLabelProviderConnection = setupStatusPending
     ? null
     : Boolean(setupStatus?.labelProviderConnected ?? setupStatus?.providerConnected);
@@ -334,8 +331,19 @@ export default function ShippingSettingsWorkspace({
     () => Boolean(setupStatus?.hasFallbackRate ?? fallbackRates.some((entry) => entry.isActive)),
     [fallbackRates, setupStatus?.hasFallbackRate]
   );
+  const shippingProviderConnections = setupStatus?.shippingProviderConnections || {};
+  const shippoConnection = shippingProviderConnections.SHIPPO || {};
+  const easypostConnection = shippingProviderConnections.EASYPOST || {};
+  const selectedLiveProviderConnection =
+    activeRateProvider !== "NONE" ? shippingProviderConnections[activeRateProvider] || null : null;
+  const selectedLiveProviderConnected = Boolean(selectedLiveProviderConnection?.connected);
+  const selectedLiveProviderHasCredentials = Boolean(selectedLiveProviderConnection?.hasCredentials);
   const shippoInUse = activeRateProvider === "SHIPPO" || labelProvider === "SHIPPO";
-  const easypostInUse = activeRateProvider === "EASYPOST" || labelProvider === "EASYPOST";
+  const shippoConnectedButNotSelected =
+    !setupStatusPending && Boolean(shippoConnection.connected || shippoConnection.hasCredentials) && activeRateProvider !== "SHIPPO";
+  const liveRateProviderSelected = activeRateProvider !== "NONE";
+  const liveRateProviderUsageAllowsRates =
+    activeRateProvider !== "NONE" && providerSelectionToLegacyUsage(activeRateProvider, labelProvider) !== "LABELS_ONLY";
   const manualFulfillmentConfigured = Boolean(
     (manualFulfillmentForm.manualFulfillmentInstructions || "").trim() ||
       (manualFulfillmentForm.manualTrackingBehavior || "").trim()
@@ -343,7 +351,7 @@ export default function ShippingSettingsWorkspace({
   const missingLiveRateRequirements =
     !setupStatusLoading &&
     (mode === "LIVE_RATES" || mode === "HYBRID") &&
-    (!hasDefaultLocation || !hasDefaultPackage || !hasProviderConnection);
+    (!hasDefaultLocation || !hasDefaultPackage || !liveRateProviderSelected || !selectedLiveProviderConnected);
   const resolvedShipFromEmail =
     normalizeOptional(defaultLocationEntry?.email) ||
     normalizeOptional(settings?.supportEmail) ||
@@ -356,6 +364,14 @@ export default function ShippingSettingsWorkspace({
     normalizeOptional(settings?.shippingOriginPhone);
   const missingShipFromEmailForShippo = shippoInUse && !resolvedShipFromEmail;
   const missingShipFromPhoneForShippo = shippoInUse && !resolvedShipFromPhone;
+  const liveRatesReady =
+    (mode === "LIVE_RATES" || mode === "HYBRID") &&
+    liveRateProviderSelected &&
+    selectedLiveProviderConnected &&
+    liveRateProviderUsageAllowsRates &&
+    hasDefaultLocation &&
+    hasDefaultPackage &&
+    !(activeRateProvider === "SHIPPO" && !resolvedShipFromEmail);
   const checkoutMethodDraft = useMemo(
     () => buildCheckoutMethodDraft(mode, activeRateProvider, labelProvider, fallbackBehavior),
     [mode, activeRateProvider, labelProvider, fallbackBehavior]
@@ -424,12 +440,10 @@ export default function ShippingSettingsWorkspace({
       };
     }
 
-    const matchesActiveProvider = providerForm.provider === activeRateProvider;
-    const matchesLabelProvider = providerForm.provider === labelProvider;
-    const connected =
-      (matchesActiveProvider && Boolean(hasProviderConnection)) ||
-      (matchesLabelProvider && Boolean(hasLabelProviderConnection));
     const providerName = formatShippingProviderName(providerForm.provider);
+    const connection = shippingProviderConnections[providerForm.provider] || {};
+    const connected = Boolean(connection.connected);
+    const hasCredentials = Boolean(connection.hasCredentials);
 
     if (setupStatusPending) {
       return {
@@ -447,6 +461,14 @@ export default function ShippingSettingsWorkspace({
       };
     }
 
+    if (hasCredentials) {
+      return {
+        tone: "warning",
+        label: "Credentials saved",
+        detail: `${providerName} credentials are saved. Verify connection before using this provider for checkout live rates.`,
+      };
+    }
+
     return {
       tone: "warning",
       label: "Not connected",
@@ -454,10 +476,7 @@ export default function ShippingSettingsWorkspace({
     };
   }, [
     providerForm.provider,
-    activeRateProvider,
-    labelProvider,
-    hasProviderConnection,
-    hasLabelProviderConnection,
+    shippingProviderConnections,
     setupStatusPending,
   ]);
 
@@ -684,7 +703,11 @@ export default function ShippingSettingsWorkspace({
       }).then(parseApiJson);
 
       setProviderForm((current) => ({ ...current, token: "" }));
-      setNotice("Provider settings saved.");
+      setNotice(
+        isLiveAllowed
+          ? `${formatShippingProviderName(provider)} connected. Live rates provider selected.`
+          : `${formatShippingProviderName(provider)} connected for labels. Live rates provider not selected.`
+      );
       await load();
     } catch (providerError) {
       setError(providerError instanceof Error ? providerError.message : "Failed to save provider settings");
@@ -1184,6 +1207,17 @@ export default function ShippingSettingsWorkspace({
                 })}
               </div>
               <div className={styles.shippingModeFooter}>
+                <AdminField label="Live rates provider">
+                  <AdminSelect
+                    value={activeRateProvider}
+                    onChange={(value) => {
+                      setActiveRateProvider(value);
+                      setModeSaveState("dirty");
+                      setModeSaveError("");
+                    }}
+                    options={PROVIDER_OPTIONS}
+                  />
+                </AdminField>
                 <AdminField label="Fallback behavior">
                   <AdminSelect
                     value={fallbackBehavior}
@@ -1201,6 +1235,13 @@ export default function ShippingSettingsWorkspace({
                   {saving ? "Saving..." : "Save checkout method"}
                 </AdminButton>
               </div>
+              <p className={styles.compactMeta}>
+                {activeRateProvider !== "NONE"
+                  ? `${formatShippingProviderName(activeRateProvider)} selected for checkout live rates.`
+                  : mode === "LIVE_RATES" || mode === "HYBRID"
+                    ? "Choose Shippo or EasyPost before live rates can be ready."
+                    : "No live-rate provider selected."}
+              </p>
               <p className={styles.compactMeta}>
                 {modeSaveState === "saving"
                   ? "Saving checkout method..."
@@ -1222,11 +1263,18 @@ export default function ShippingSettingsWorkspace({
                 <div className={styles.shippingProviderRow}>
                   <div className={styles.shippingProviderMain}>
                     <p className={styles.compactRowTitle}>Shippo</p>
-                    <p className={styles.compactRowDescription}>Live rates, labels, tracking, and validation.</p>
+                    <p className={styles.compactRowDescription}>
+                      {shippoConnectedButNotSelected
+                        ? "Shippo is connected, but not selected for checkout live rates."
+                        : "Live rates, labels, tracking, and validation."}
+                    </p>
                   </div>
                   <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={shippoInUse ? "success" : "neutral"}>
-                      {shippoInUse ? "In use" : "Not in use"}
+                    <AdminStatusChip tone={shippoConnection.connected ? "success" : "neutral"}>
+                      {shippoConnection.connected ? "Connected" : "Not connected"}
+                    </AdminStatusChip>
+                    <AdminStatusChip tone={activeRateProvider === "SHIPPO" ? "success" : "neutral"}>
+                      {activeRateProvider === "SHIPPO" ? "Live rates" : "Not selected"}
                     </AdminStatusChip>
                     <AdminButton size="sm" variant="secondary" onClick={() => openProviderDrawerFor("SHIPPO")}>
                       Manage
@@ -1239,8 +1287,11 @@ export default function ShippingSettingsWorkspace({
                     <p className={styles.compactRowDescription}>Alternative rate and label provider.</p>
                   </div>
                   <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={easypostInUse ? "success" : "neutral"}>
-                      {easypostInUse ? "In use" : "Not in use"}
+                    <AdminStatusChip tone={easypostConnection.connected ? "success" : "neutral"}>
+                      {easypostConnection.connected ? "Connected" : "Not connected"}
+                    </AdminStatusChip>
+                    <AdminStatusChip tone={activeRateProvider === "EASYPOST" ? "success" : "neutral"}>
+                      {activeRateProvider === "EASYPOST" ? "Live rates" : "Not selected"}
                     </AdminStatusChip>
                     <AdminButton size="sm" variant="secondary" onClick={() => openProviderDrawerFor("EASYPOST")}>
                       Manage
@@ -1285,9 +1336,9 @@ export default function ShippingSettingsWorkspace({
                 </div>
                 <div className={styles.requirementRow}>
                   <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Live provider</p>
+                    <p className={styles.compactRowTitle}>Live rates provider selected</p>
                     <p className={styles.compactRowDescription}>
-                      {setupStatus?.shippingLiveProvider || "Not selected"}
+                      {setupStatus?.activeRateProvider || activeRateProvider || "NONE"}
                     </p>
                   </div>
                   <div className={styles.shippingProviderActions}>
@@ -1295,7 +1346,7 @@ export default function ShippingSettingsWorkspace({
                       tone={
                         setupStatusPending
                           ? "neutral"
-                          : setupStatus?.shippingMode === "MANUAL" || setupStatus?.shippingLiveProvider
+                          : setupStatus?.shippingMode === "MANUAL" || setupStatus?.activeRateProvider
                             ? "success"
                             : "warning"
                       }
@@ -1304,7 +1355,7 @@ export default function ShippingSettingsWorkspace({
                         ? "Loading"
                         : setupStatus?.shippingMode === "MANUAL"
                           ? "Optional"
-                          : setupStatus?.shippingLiveProvider
+                          : setupStatus?.activeRateProvider
                             ? "Configured"
                             : "Needs setup"}
                     </AdminStatusChip>
@@ -1312,13 +1363,51 @@ export default function ShippingSettingsWorkspace({
                 </div>
                 <div className={styles.requirementRow}>
                   <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Provider usage</p>
+                    <p className={styles.compactRowTitle}>Provider credentials connected/verified</p>
+                    <p className={styles.compactRowDescription}>
+                      {activeRateProvider === "NONE"
+                        ? shippoConnectedButNotSelected
+                          ? "Shippo is connected, but not selected for checkout live rates."
+                          : "No checkout live-rate provider selected."
+                        : selectedLiveProviderConnected
+                          ? `${formatShippingProviderName(activeRateProvider)} connected.`
+                          : selectedLiveProviderHasCredentials
+                            ? `${formatShippingProviderName(activeRateProvider)} credentials saved; verify connection.`
+                            : `${formatShippingProviderName(activeRateProvider)} credentials missing.`}
+                    </p>
+                  </div>
+                  <div className={styles.shippingProviderActions}>
+                    <AdminStatusChip
+                      tone={setupStatusPending ? "neutral" : selectedLiveProviderConnected ? "success" : "warning"}
+                    >
+                      {setupStatusPending ? "Loading" : selectedLiveProviderConnected ? "Connected" : "Needs setup"}
+                    </AdminStatusChip>
+                  </div>
+                </div>
+                <div className={styles.requirementRow}>
+                  <div className={styles.requirementMain}>
+                    <p className={styles.compactRowTitle}>Provider usage allows live rates</p>
                     <p className={styles.compactRowDescription}>
                       {setupStatus?.shippingProviderUsage || providerForm.usage}
                     </p>
                   </div>
                   <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone="success">Configured</AdminStatusChip>
+                    <AdminStatusChip tone={liveRateProviderUsageAllowsRates ? "success" : "warning"}>
+                      {liveRateProviderUsageAllowsRates ? "Configured" : "Labels only"}
+                    </AdminStatusChip>
+                  </div>
+                </div>
+                <div className={styles.requirementRow}>
+                  <div className={styles.requirementMain}>
+                    <p className={styles.compactRowTitle}>Live rates ready</p>
+                    <p className={styles.compactRowDescription}>
+                      Provider selection, verified credentials, ship-from details, and package setup are complete.
+                    </p>
+                  </div>
+                  <div className={styles.shippingProviderActions}>
+                    <AdminStatusChip tone={setupStatusPending ? "neutral" : liveRatesReady ? "success" : "warning"}>
+                      {setupStatusPending ? "Loading" : liveRatesReady ? "Live rates ready" : "Needs setup"}
+                    </AdminStatusChip>
                   </div>
                 </div>
                 <div className={styles.requirementRow}>
@@ -1461,7 +1550,7 @@ export default function ShippingSettingsWorkspace({
                   <div className={styles.requirementMain}>
                     <p className={styles.compactRowTitle}>Ship-from email</p>
                     <p className={styles.compactRowDescription}>
-                      Required by Shippo/USPS when buying labels.
+                      Required by Shippo for live rates and by Shippo/USPS when buying labels.
                     </p>
                   </div>
                   <div className={styles.shippingProviderActions}>
@@ -1509,6 +1598,28 @@ export default function ShippingSettingsWorkspace({
                     <AdminButton onClick={() => openFallbackRateDrawer(null)} size="sm" variant="secondary">
                       Add fallback
                     </AdminButton>
+                  </div>
+                </div>
+                <div className={styles.requirementRow}>
+                  <div className={styles.requirementMain}>
+                    <p className={styles.compactRowTitle}>Fallback behavior configured</p>
+                    <p className={styles.compactRowDescription}>{fallbackBehavior}</p>
+                  </div>
+                  <div className={styles.shippingProviderActions}>
+                    <AdminStatusChip tone={fallbackBehavior ? "success" : "warning"}>
+                      {fallbackBehavior ? "Configured" : "Needs setup"}
+                    </AdminStatusChip>
+                  </div>
+                </div>
+                <div className={styles.requirementRow}>
+                  <div className={styles.requirementMain}>
+                    <p className={styles.compactRowTitle}>Product/cart weight available</p>
+                    <p className={styles.compactRowDescription}>
+                      Live providers may require product variant weights for accurate package quotes.
+                    </p>
+                  </div>
+                  <div className={styles.shippingProviderActions}>
+                    <AdminStatusChip tone="neutral">Check products</AdminStatusChip>
                   </div>
                 </div>
               </div>

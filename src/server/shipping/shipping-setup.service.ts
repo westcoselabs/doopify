@@ -17,6 +17,8 @@ type ShippingVerificationStatus =
 
 export type ShippingSetupStatus = {
   shippingMode: 'MANUAL' | 'LIVE_RATES' | 'HYBRID'
+  activeRateProvider: ShippingLiveProvider | null
+  labelProvider: ShippingLiveProvider | null
   shippingLiveProvider: ShippingLiveProvider | null
   shippingProviderUsage: ShippingProviderUsage
   mode: 'MANUAL' | 'LIVE_RATES' | 'HYBRID'
@@ -31,6 +33,15 @@ export type ShippingSetupStatus = {
   providerVerificationStatus: ShippingVerificationStatus
   liveProviderConnected: boolean
   labelProviderConnected: boolean
+  shippingProviderConnections: Record<
+    ShippingLiveProvider,
+    {
+      connected: boolean
+      hasCredentials: boolean
+      selectedForLiveRates: boolean
+      selectedForLabels: boolean
+    }
+  >
   canUseManualRates: boolean
   canUseLiveRates: boolean
   canBuyLabels: boolean
@@ -233,21 +244,38 @@ export async function buildShippingSetupStatus(store: any) {
   const hasProvider = Boolean(activeRateProvider)
   const shipFromEmail = resolveShipFromEmail(store)
   const shipFromPhone = resolveShipFromPhone(store)
+  const shippingProviderConnections: ShippingSetupStatus['shippingProviderConnections'] = {
+    SHIPPO: {
+      connected: false,
+      hasCredentials: false,
+      selectedForLiveRates: activeRateProvider === 'SHIPPO',
+      selectedForLabels: labelProvider === 'SHIPPO',
+    },
+    EASYPOST: {
+      connected: false,
+      hasCredentials: false,
+      selectedForLiveRates: activeRateProvider === 'EASYPOST',
+      selectedForLabels: labelProvider === 'EASYPOST',
+    },
+  }
+
+  const providerStatuses = await Promise.all([
+    getShippingProviderConnectionStatus('SHIPPO'),
+    getShippingProviderConnectionStatus('EASYPOST'),
+  ])
+  for (const providerStatus of providerStatuses) {
+    shippingProviderConnections[providerStatus.provider].connected = providerStatus.connected
+    shippingProviderConnections[providerStatus.provider].hasCredentials = providerStatus.hasCredentials
+  }
 
   let liveProviderConnected = false
   if (activeRateProvider) {
-    const providerStatus = await getShippingProviderConnectionStatus(activeRateProvider)
-    liveProviderConnected = providerStatus.connected
+    liveProviderConnected = shippingProviderConnections[activeRateProvider].connected
   }
 
   let labelProviderConnected = false
   if (labelProvider) {
-    if (labelProvider === activeRateProvider) {
-      labelProviderConnected = liveProviderConnected
-    } else {
-      const labelStatus = await getShippingProviderConnectionStatus(labelProvider)
-      labelProviderConnected = labelStatus.connected
-    }
+    labelProviderConnected = shippingProviderConnections[labelProvider].connected
   }
   const providerConnected = liveProviderConnected || labelProviderConnected
 
@@ -329,6 +357,8 @@ export async function buildShippingSetupStatus(store: any) {
 
   return {
     shippingMode: mode,
+    activeRateProvider,
+    labelProvider,
     shippingLiveProvider,
     shippingProviderUsage,
     mode,
@@ -343,6 +373,7 @@ export async function buildShippingSetupStatus(store: any) {
     providerVerificationStatus,
     liveProviderConnected,
     labelProviderConnected,
+    shippingProviderConnections,
     canUseManualRates,
     canUseLiveRates,
     canBuyLabels,

@@ -404,6 +404,70 @@ describe('settings shipping route', () => {
     })
   })
 
+  it('PATCH writes Shippo as the active live-rate provider with compatible legacy fields', async () => {
+    mocks.requireAdmin.mockResolvedValue({
+      ok: true,
+      user: { id: 'owner_1', email: 'owner@example.com', role: 'OWNER' },
+    })
+
+    mocks.getShippingSettingsStore.mockResolvedValueOnce(
+      storeFixture({
+        shippingMode: 'LIVE_RATES',
+        activeRateProvider: 'NONE',
+        labelProvider: 'NONE',
+        shippingLiveProvider: null,
+        shippingProviderUsage: 'LIVE_AND_LABELS',
+      })
+    )
+    mocks.updateShippingSettings.mockResolvedValueOnce(
+      storeFixture({
+        shippingMode: 'LIVE_RATES',
+        activeRateProvider: 'SHIPPO',
+        labelProvider: 'SHIPPO',
+        shippingLiveProvider: 'SHIPPO',
+        shippingProviderUsage: 'LIVE_AND_LABELS',
+      })
+    )
+
+    const response = await PATCH(
+      new Request('http://localhost/api/settings/shipping', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          shippingMode: 'LIVE_RATES',
+          activeRateProvider: 'SHIPPO',
+          labelProvider: 'SHIPPO',
+          fallbackBehavior: 'SHOW_FALLBACK',
+        }),
+      })
+    )
+
+    expect(response.status).toBe(200)
+    expect(mocks.updateShippingSettings).toHaveBeenCalledWith(
+      'store_1',
+      expect.objectContaining({
+        shippingMode: 'LIVE_RATES',
+        activeRateProvider: 'SHIPPO',
+        labelProvider: 'SHIPPO',
+        fallbackBehavior: 'SHOW_FALLBACK',
+        shippingLiveProvider: 'SHIPPO',
+        shippingProviderUsage: 'LIVE_AND_LABELS',
+      })
+    )
+
+    const payload = await response.json()
+    expect(payload).toMatchObject({
+      success: true,
+      data: {
+        shippingMode: 'LIVE_RATES',
+        activeRateProvider: 'SHIPPO',
+        labelProvider: 'SHIPPO',
+        shippingLiveProvider: 'SHIPPO',
+        shippingProviderUsage: 'LIVE_AND_LABELS',
+      },
+    })
+  })
+
   it('PATCH persists shipping mode MANUAL and returns it on subsequent GET', async () => {
     mocks.requireAdmin.mockResolvedValue({
       ok: true,

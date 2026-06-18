@@ -191,4 +191,32 @@ describe('shipping settings UX copy and validation', () => {
     expect(source).toContain('setupStatusPending ? "Loading"')
     expect(source).toContain('setupStatusPending ? "neutral"')
   })
+
+  it('exposes an explicit live rates provider selector', () => {
+    const source = read(WORKSPACE)
+    expect(source).toContain('label="Live rates provider"')
+    expect(source).toContain('value={activeRateProvider}')
+    expect(source).toContain('setActiveRateProvider(value)')
+  })
+
+  it('distinguishes connected Shippo credentials from checkout live-rate selection', () => {
+    const source = read(WORKSPACE)
+    expect(source).toContain('Shippo is connected, but not selected for checkout live rates.')
+    expect(source).toContain('Connected')
+    expect(source).toContain('Live rates')
+  })
+
+  it('shows live rates ready only after provider selection and setup are complete', () => {
+    const source = read(WORKSPACE)
+    expect(source).toContain('const liveRatesReady =')
+    expect(source).toContain('liveRateProviderSelected')
+    expect(source).toContain('selectedLiveProviderConnected')
+    expect(source).toContain('Live rates ready')
+  })
+
+  it('confirms Shippo live-rate selection after provider save', () => {
+    const source = read(WORKSPACE)
+    expect(source).toContain('connected. Live rates provider selected.')
+    expect(source).toContain('connected for labels. Live rates provider not selected.')
+  })
 })

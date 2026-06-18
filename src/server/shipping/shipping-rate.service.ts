@@ -682,7 +682,9 @@ export async function getShippingRatesForCheckout(input: GetShippingRatesForChec
       throw new ShippingRateSetupError('Hybrid shipping mode requires manual rates when no provider is selected.')
     }
 
-    throw new ShippingRateSetupError('Live shipping mode requires selecting a shipping provider in settings.')
+    throw new ShippingRateSetupError(
+      'Live shipping mode is enabled, but no live-rate provider is selected. Go to Settings -> Shipping & delivery -> Live rates provider and choose Shippo or EasyPost.'
+    )
   }
 
   const providerUsage = store.shippingProviderUsage ?? 'LIVE_AND_LABELS'
