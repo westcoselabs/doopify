@@ -24,6 +24,48 @@ function formatProviderLabel(value: unknown): string {
   return `${normalized.slice(0, 1).toUpperCase()}${normalized.slice(1)}`
 }
 
+export const STRIPE_ENV_FALLBACK_VERIFY_COPY =
+  'Using .env fallback credentials. Dashboard verification is only available for credentials saved in Settings. Checkout can still use the env fallback keys locally.'
+
+export const STRIPE_UNCONFIGURED_VERIFY_COPY =
+  'Save Stripe credentials in Settings before running verification.'
+
+export type StripeVerifyAvailability = {
+  canVerify: boolean
+  reason: 'db' | 'env' | 'none' | 'restricted' | 'loading'
+  helperCopy: string | null
+}
+
+/**
+ * Decides whether the dashboard "Verify now" action should be offered for
+ * Stripe. Verification runs against DB-saved credentials only, so it must stay
+ * hidden when the runtime is satisfied by .env fallback keys (or nothing yet) —
+ * otherwise the action fails with a misleading "not configured" error even
+ * though local checkout works on the env fallback.
+ */
+export function resolveStripeVerifyAvailability(input: {
+  source?: string | null
+  restricted?: boolean
+  loading?: boolean
+}): StripeVerifyAvailability {
+  if (input.restricted) {
+    return { canVerify: false, reason: 'restricted', helperCopy: null }
+  }
+  if (input.loading) {
+    return { canVerify: false, reason: 'loading', helperCopy: null }
+  }
+
+  const source = String(input.source || '').toLowerCase()
+  if (source === 'db') {
+    return { canVerify: true, reason: 'db', helperCopy: null }
+  }
+  if (source === 'env') {
+    return { canVerify: false, reason: 'env', helperCopy: STRIPE_ENV_FALLBACK_VERIFY_COPY }
+  }
+
+  return { canVerify: false, reason: 'none', helperCopy: STRIPE_UNCONFIGURED_VERIFY_COPY }
+}
+
 export function getStripeMethodChips(stripeRuntimeStatus: { source?: string; mode?: string } | null | undefined): string[] {
   const runtimeReady = stripeRuntimeStatus?.source && stripeRuntimeStatus.source !== 'none'
   if (!runtimeReady) {

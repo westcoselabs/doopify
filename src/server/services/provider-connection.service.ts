@@ -255,6 +255,25 @@ function hasRequiredSecrets(provider: SupportedProvider, secretMap: Map<string, 
   return required.every((key) => hasRealCredential(extractDecryptedSecret(secretMap, key)))
 }
 
+/**
+ * Detects the case where required secret rows exist in the DB but cannot be
+ * decrypted with the current ENCRYPTION_KEY. This lets callers tell "saved but
+ * undecryptable" apart from "genuinely missing" without ever surfacing the raw
+ * (encrypted) value or the plaintext secret.
+ */
+function hasUndecryptableRequiredSecret(provider: SupportedProvider, secretMap: Map<string, string>) {
+  return PROVIDER_CONFIG[provider].requiredSecretKeys.some((key) => {
+    const storedValue = secretMap.get(key)
+    if (!storedValue) return false
+    try {
+      decrypt(storedValue)
+      return false
+    } catch {
+      return true
+    }
+  })
+}
+
 function deriveConnectionState(input: {
   hasIntegration: boolean
   hasCredentials: boolean
@@ -1107,6 +1126,16 @@ async function verifySmtpConnection(credentials: Record<string, string>) {
 export async function verifyProviderConnection(provider: SupportedProvider) {
   const integration = await findPreferredProviderIntegration(provider)
   if (!integration) {
+    // Verification only runs against DB-saved credentials. When the runtime is
+    // satisfied purely by .env fallback keys, make that explicit instead of
+    // implying nothing is configured — local checkout keeps using the env keys.
+    if (getEnvFallback(provider)) {
+      throw new Error(
+        `${PROVIDER_CONFIG[provider].displayName} is running on .env fallback credentials. ` +
+          'Dashboard verification is only available for credentials saved in Settings. ' +
+          'Save credentials first to verify, or keep using the local .env fallback for checkout.'
+      )
+    }
     throw new Error('Provider is not configured. Save credentials first.')
   }
 
@@ -1114,6 +1143,14 @@ export async function verifyProviderConnection(provider: SupportedProvider) {
   const credentials = getDecryptedCredentials(provider, secretMap)
 
   if (!hasRequiredSecrets(provider, secretMap)) {
+    // Distinguish "saved but undecryptable" (ENCRYPTION_KEY changed) from
+    // "genuinely incomplete" so the operator gets safe, actionable guidance.
+    if (hasUndecryptableRequiredSecret(provider, secretMap)) {
+      throw new Error(
+        'Saved credentials cannot be decrypted with the current ENCRYPTION_KEY. ' +
+          'Re-enter credentials in Settings, or restore the original ENCRYPTION_KEY.'
+      )
+    }
     throw new Error('Provider credentials are incomplete. Save credentials first.')
   }
 

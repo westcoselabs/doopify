@@ -16,7 +16,9 @@ function isExpectedVerificationFailure(error: unknown) {
   return (
     message.includes('not configured') ||
     message.includes('credentials are incomplete') ||
-    message.includes('save credentials first')
+    message.includes('save credentials first') ||
+    message.includes('fallback credentials') ||
+    message.includes('cannot be decrypted')
   )
 }
 

@@ -786,6 +786,31 @@ function formatProviderLabel(value) {
   return `${normalized.slice(0, 1).toUpperCase()}${normalized.slice(1)}`;
 }
 
+const STRIPE_ENV_FALLBACK_VERIFY_COPY =
+  'Using .env fallback credentials. Dashboard verification is only available for credentials saved in Settings. Checkout can still use the env fallback keys locally.';
+
+const STRIPE_UNCONFIGURED_VERIFY_COPY =
+  'Save Stripe credentials in Settings before running verification.';
+
+function resolveStripeVerifyAvailability(input) {
+  if (input?.restricted) {
+    return { canVerify: false, reason: 'restricted', helperCopy: null };
+  }
+  if (input?.loading) {
+    return { canVerify: false, reason: 'loading', helperCopy: null };
+  }
+
+  const source = String(input?.source || '').toLowerCase();
+  if (source === 'db') {
+    return { canVerify: true, reason: 'db', helperCopy: null };
+  }
+  if (source === 'env') {
+    return { canVerify: false, reason: 'env', helperCopy: STRIPE_ENV_FALLBACK_VERIFY_COPY };
+  }
+
+  return { canVerify: false, reason: 'none', helperCopy: STRIPE_UNCONFIGURED_VERIFY_COPY };
+}
+
 function getStripeMethodChips(stripeRuntimeStatus) {
   const runtimeReady = stripeRuntimeStatus?.source && stripeRuntimeStatus.source !== 'none';
   if (!runtimeReady) {
@@ -1748,6 +1773,15 @@ export default function SettingsWorkspace() {
     ? formatDateTimeForDisplay(stripeSetupStatus.lastVerifiedAt, { timeZone: settings.timezone, fallbackText: '' })
     : null;
   const stripeMethodChips = useMemo(() => getStripeMethodChips(stripeDisplayedRuntimeStatus), [stripeDisplayedRuntimeStatus]);
+  const stripeVerifyAvailability = useMemo(
+    () =>
+      resolveStripeVerifyAvailability({
+        source: stripeDisplayedRuntimeStatus?.source,
+        restricted: stripeActionsRestricted,
+        loading: stripeSavedStatusPending,
+      }),
+    [stripeDisplayedRuntimeStatus?.source, stripeActionsRestricted, stripeSavedStatusPending]
+  );
   const showStripeRuntimeMismatchWarning =
     stripeProviderStatus?.state === 'VERIFIED' &&
     stripeDisplayedRuntimeStatus?.source &&
@@ -3882,16 +3916,19 @@ export default function SettingsWorkspace() {
                               </div>
                             </div>
                             <div className={`${styles.providerActions} ${styles.compactActionRow}`}>
-                              {providerRow.id === PAYMENT_PROVIDER_DRAWER.STRIPE ? (
+                              {providerRow.id === PAYMENT_PROVIDER_DRAWER.STRIPE &&
+                              (stripeVerifyAvailability.canVerify || stripeVerifyAvailability.reason === 'restricted') ? (
                                 <AdminButton
                                   aria-label="Verify Stripe now"
-                                  disabled={stripeActionsRestricted || providerActionById.STRIPE === 'verifying'}
+                                  disabled={!stripeVerifyAvailability.canVerify || providerActionById.STRIPE === 'verifying'}
                                   onClick={() => handleVerifyProvider('STRIPE')}
                                   size="sm"
                                   variant="ghost"
                                 >
                                   {providerActionById.STRIPE === 'verifying' ? 'Verifying...' : 'Verify now'}
                                 </AdminButton>
+                              ) : providerRow.id === PAYMENT_PROVIDER_DRAWER.STRIPE && stripeVerifyAvailability.helperCopy ? (
+                                <p className={styles.compactMeta} role="note">{stripeVerifyAvailability.helperCopy}</p>
                               ) : null}
                               <AdminButton
                                 aria-label={`Manage ${providerRow.name}`}
