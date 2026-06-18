@@ -30,9 +30,7 @@ function isPhysicalFulfillment(value: unknown) {
 export async function loadAutomaticPromotionsForCheckout(): Promise<LoadCheckoutPromotionsResult> {
   const rows = await prisma.promotion.findMany({
     where: {
-      status: {
-        in: ['ACTIVE', 'SCHEDULED'],
-      },
+      status: 'ACTIVE',
     },
     orderBy: [{ priority: 'asc' }, { createdAt: 'asc' }],
     include: {

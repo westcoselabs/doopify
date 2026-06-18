@@ -19,7 +19,7 @@ describe('loadAutomaticPromotionsForCheckout', () => {
     vi.clearAllMocks()
   })
 
-  it('maps ACTIVE and SCHEDULED promotions into evaluator definitions', async () => {
+  it('maps ACTIVE promotions into evaluator definitions', async () => {
     mocks.prisma.promotion.findMany.mockResolvedValue([
       {
         id: 'promo_1',
@@ -68,9 +68,7 @@ describe('loadAutomaticPromotionsForCheckout', () => {
     expect(mocks.prisma.promotion.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          status: {
-            in: ['ACTIVE', 'SCHEDULED'],
-          },
+          status: 'ACTIVE',
         },
       })
     )

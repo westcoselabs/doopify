@@ -65,11 +65,13 @@ describe('evaluatePromotions', () => {
     expect(result.totalDiscountCents).toBe(0)
   })
 
-  it('skips promotions with inactive status and expired windows', () => {
+  it('skips draft, disabled, scheduled-future, and expired promotions', () => {
     const now = new Date('2026-05-29T12:00:00.000Z')
-    const inactive = makePromotion({ id: 'inactive', status: 'DISABLED' })
-    const notStarted = makePromotion({
-      id: 'not_started',
+    const draft = makePromotion({ id: 'draft', status: 'DRAFT' })
+    const disabled = makePromotion({ id: 'disabled', status: 'DISABLED' })
+    const scheduledFuture = makePromotion({
+      id: 'scheduled_future',
+      status: 'SCHEDULED',
       startsAt: '2026-05-30T12:00:00.000Z',
     })
     const expired = makePromotion({
@@ -79,7 +81,7 @@ describe('evaluatePromotions', () => {
 
     const result = evaluatePromotions({
       cartLines: baseCartLines(),
-      promotions: [inactive, notStarted, expired],
+      promotions: [draft, disabled, scheduledFuture, expired],
       now,
     })
 
@@ -87,7 +89,8 @@ describe('evaluatePromotions', () => {
     expect(result.skippedPromotions.map((s) => s.reason).sort()).toEqual([
       'EXPIRED',
       'INACTIVE_STATUS',
-      'NOT_STARTED',
+      'INACTIVE_STATUS',
+      'INACTIVE_STATUS',
     ])
   })
 
@@ -130,7 +133,7 @@ describe('evaluatePromotions', () => {
     ])
   })
 
-  it('applies product group fixed amount safely without negative totals', () => {
+  it('applies product group fixed amount as integer cents without negative totals', () => {
     const result = evaluatePromotions({
       cartLines: [
         {
@@ -163,6 +166,28 @@ describe('evaluatePromotions', () => {
     ).toBe(3000)
   })
 
+  it('does not apply product group discount when required qualifier quantity is missing', () => {
+    const result = evaluatePromotions({
+      cartLines: [
+        {
+          variantId: 'variant_shirt',
+          productId: 'product_shirt',
+          quantity: 1,
+          unitPriceCents: 2000,
+          fulfillmentType: 'PHYSICAL',
+        },
+      ],
+      promotions: [
+        makePromotion({
+          qualifiers: [{ variantId: 'variant_shirt', productId: 'product_shirt', requiredQuantity: 2 }],
+        }),
+      ],
+    })
+
+    expect(result.appliedPromotions).toHaveLength(0)
+    expect(result.skippedPromotions[0]?.reason).toBe('MISSING_QUALIFIERS')
+  })
+
   it('applies Buy X Get Y discount only when reward item is already in cart', () => {
     const promo = makePromotion({
       id: 'promo_bxy',
@@ -181,6 +206,25 @@ describe('evaluatePromotions', () => {
     const allocations = result.appliedPromotions[0].lineAllocations
     expect(allocations).toHaveLength(1)
     expect(allocations[0].variantId).toBe('variant_sticker')
+  })
+
+  it('does not apply Buy X Get Y when the qualifier variant is missing', () => {
+    const promo = makePromotion({
+      id: 'promo_bxy_missing_qualifier',
+      type: 'BUY_X_GET_Y',
+      rewardType: 'PERCENTAGE',
+      value: 50,
+      qualifiers: [{ variantId: 'variant_qualifier_missing', productId: 'product_qualifier_missing', requiredQuantity: 1 }],
+      rewards: [{ variantId: 'variant_sticker', productId: 'product_sticker', rewardQuantity: 1 }],
+    })
+
+    const result = evaluatePromotions({
+      cartLines: baseCartLines(),
+      promotions: [promo],
+    })
+
+    expect(result.appliedPromotions).toHaveLength(0)
+    expect(result.skippedPromotions[0]?.reason).toBe('MISSING_QUALIFIERS')
   })
 
   it('does not auto-add reward lines for Buy X Get Y', () => {
@@ -218,6 +262,25 @@ describe('evaluatePromotions', () => {
     expect(result.appliedPromotions).toHaveLength(1)
     expect(result.appliedPromotions[0].amountCents).toBe(1000)
     expect(result.appliedPromotions[0].lineAllocations[0].discountCents).toBe(1000)
+  })
+
+  it('does not apply Free Gift when the qualifier variant is missing', () => {
+    const promo = makePromotion({
+      id: 'promo_free_missing_qualifier',
+      type: 'FREE_GIFT',
+      rewardType: 'FREE',
+      value: 0,
+      qualifiers: [{ variantId: 'variant_qualifier_missing', productId: 'product_qualifier_missing', requiredQuantity: 1 }],
+      rewards: [{ variantId: 'variant_sticker', productId: 'product_sticker', rewardQuantity: 1 }],
+    })
+
+    const result = evaluatePromotions({
+      cartLines: baseCartLines(),
+      promotions: [promo],
+    })
+
+    expect(result.appliedPromotions).toHaveLength(0)
+    expect(result.skippedPromotions[0]?.reason).toBe('MISSING_QUALIFIERS')
   })
 
   it('skips promotion when qualifiers are missing', () => {
