@@ -66,6 +66,30 @@ export function resolveStripeVerifyAvailability(input: {
   return { canVerify: false, reason: 'none', helperCopy: STRIPE_UNCONFIGURED_VERIFY_COPY }
 }
 
+export type StripeProviderActionView = {
+  showVerifyButton: boolean
+  verifyDisabled: boolean
+  note: string | null
+}
+
+/**
+ * Translates source-aware verify availability into a provider-row view model:
+ * which affordance shows in the right-hand actions column (the Verify button,
+ * enabled only for DB source; shown-but-disabled when permission-restricted)
+ * and which helper note belongs inline in the main content area (env fallback
+ * or setup copy). Keeps the note out of the actions column so the row keeps its
+ * icon / details / actions horizontal layout.
+ */
+export function buildStripeProviderActionView(
+  availability: StripeVerifyAvailability
+): StripeProviderActionView {
+  return {
+    showVerifyButton: availability.canVerify || availability.reason === 'restricted',
+    verifyDisabled: !availability.canVerify,
+    note: availability.helperCopy,
+  }
+}
+
 export function getStripeMethodChips(stripeRuntimeStatus: { source?: string; mode?: string } | null | undefined): string[] {
   const runtimeReady = stripeRuntimeStatus?.source && stripeRuntimeStatus.source !== 'none'
   if (!runtimeReady) {

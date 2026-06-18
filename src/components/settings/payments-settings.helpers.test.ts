@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildStripeProviderActionView,
   resolveStripeVerifyAvailability,
   STRIPE_ENV_FALLBACK_VERIFY_COPY,
   STRIPE_UNCONFIGURED_VERIFY_COPY,
@@ -57,5 +58,41 @@ describe('resolveStripeVerifyAvailability', () => {
     const envCopy = STRIPE_ENV_FALLBACK_VERIFY_COPY.toLowerCase()
     expect(envCopy).not.toContain('not configured')
     expect(envCopy).toContain('settings')
+  })
+})
+
+describe('buildStripeProviderActionView', () => {
+  it('shows an enabled Verify button and no inline note for DB source', () => {
+    expect(buildStripeProviderActionView(resolveStripeVerifyAvailability({ source: 'db' }))).toEqual({
+      showVerifyButton: true,
+      verifyDisabled: false,
+      note: null,
+    })
+  })
+
+  it('hides Verify and surfaces the env note inline for env fallback source', () => {
+    expect(buildStripeProviderActionView(resolveStripeVerifyAvailability({ source: 'env' }))).toEqual({
+      showVerifyButton: false,
+      verifyDisabled: true,
+      note: STRIPE_ENV_FALLBACK_VERIFY_COPY,
+    })
+  })
+
+  it('hides Verify and surfaces setup copy inline when nothing is configured', () => {
+    expect(buildStripeProviderActionView(resolveStripeVerifyAvailability({ source: 'none' }))).toEqual({
+      showVerifyButton: false,
+      verifyDisabled: true,
+      note: STRIPE_UNCONFIGURED_VERIFY_COPY,
+    })
+  })
+
+  it('keeps the disabled Verify button (no inline note) for permission-restricted viewers', () => {
+    expect(
+      buildStripeProviderActionView(resolveStripeVerifyAvailability({ source: 'db', restricted: true }))
+    ).toEqual({
+      showVerifyButton: true,
+      verifyDisabled: true,
+      note: null,
+    })
   })
 })

@@ -7,6 +7,12 @@ export const metadata = {
   description: 'Secure checkout',
 };
 
+// Checkout resolves live Stripe runtime/env-fallback credentials per request and
+// must never be statically cached, so the publishable key is always current.
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export default async function CheckoutPage({ searchParams }) {
   let store = null;
   let publishableKey = '';

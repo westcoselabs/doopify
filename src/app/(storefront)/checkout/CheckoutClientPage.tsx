@@ -11,6 +11,11 @@ import {
   normalizeCheckoutEmail,
 } from './checkout-create.helpers';
 import {
+  CHECKOUT_STRIPE_MISSING_KEY_COPY,
+  resolveEffectivePublishableKey,
+  shouldFetchStripeConfigFallback,
+} from './checkout-stripe-config.helpers';
+import {
   buildCheckoutDiscountRows,
   buildCheckoutPromotionHighlights,
 } from './checkout-summary.helpers';
@@ -371,7 +376,15 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
   const [selectedShippingQuoteId, setSelectedShippingQuoteId] = useState('');
   const [shippingRatesLoading, setShippingRatesLoading] = useState(false);
   const [shippingRatesError, setShippingRatesError] = useState('');
+  const [fetchedPublishableKey, setFetchedPublishableKey] = useState('');
 
+  // Prefer the server-rendered key; fall back to the client-fetched one.
+  const effectivePublishableKey = resolveEffectivePublishableKey({
+    serverPublishableKey: publishableKey,
+    fetchedPublishableKey,
+  });
+
+  const stripeConfigFetchedRef = useRef(false);
   const stripeRef = useRef<StripeClient | null>(null);
   const elementsRef = useRef<StripeElements | null>(null);
   const paymentElementRef = useRef<StripePaymentElement | null>(null);
@@ -688,7 +701,7 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
       throw new Error('Stripe.js was not available after loading')
     }
 
-    const stripe = StripeConstructor(publishableKey);
+    const stripe = StripeConstructor(effectivePublishableKey);
     if (!stripe) {
       throw new Error('Stripe could not be initialized with the publishable key')
     }
@@ -720,9 +733,43 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
     setPaymentReady(true);
   }
 
+  // Client-side Stripe config self-heal: if the server prop publishable key is
+  // empty, fetch the runtime config (env fallback or DB) once on mount. Only
+  // safe, public fields (publishableKey/source/mode) are exposed by that route.
+  useEffect(() => {
+    if (!shouldFetchStripeConfigFallback(publishableKey)) return;
+    if (stripeConfigFetchedRef.current) return;
+    stripeConfigFetchedRef.current = true;
+
+    let cancelled = false;
+
+    async function loadStripeConfigFallback() {
+      try {
+        const response = await fetch('/api/checkout/stripe-config', { cache: 'no-store' });
+        const payload = (await response.json().catch(() => null)) as ApiResponse<{
+          publishableKey?: string | null;
+          source?: string | null;
+          mode?: string | null;
+        }> | null;
+        if (cancelled) return;
+        if (response.ok && payload?.success && payload.data?.publishableKey) {
+          setFetchedPublishableKey(payload.data.publishableKey);
+        }
+      } catch {
+        // Leave the fetched key empty; the missing-key copy handles this case.
+      }
+    }
+
+    void loadStripeConfigFallback();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [publishableKey]);
+
   useEffect(() => {
     const clientSecret = checkout?.clientSecret;
-    if (typeof clientSecret !== 'string' || !clientSecret || !publishableKey) return;
+    if (typeof clientSecret !== 'string' || !clientSecret || !effectivePublishableKey) return;
     const clientSecretToMount: string = clientSecret;
     if (mountedClientSecretRef.current === clientSecretToMount && paymentElementRef.current) return;
 
@@ -751,7 +798,7 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
     return () => {
       cancelled = true;
     };
-  }, [checkout?.clientSecret, publishableKey]);
+  }, [checkout?.clientSecret, effectivePublishableKey]);
 
   async function handleCreateIntent(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -763,8 +810,8 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
       formEmail,
     });
 
-    if (!publishableKey) {
-      setError('Stripe is not configured yet. Verify Stripe in Settings -> Payments or set env fallback keys.');
+    if (!effectivePublishableKey) {
+      setError(CHECKOUT_STRIPE_MISSING_KEY_COPY);
       return;
     }
 

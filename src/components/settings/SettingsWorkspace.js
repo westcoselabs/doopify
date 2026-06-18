@@ -811,6 +811,14 @@ function resolveStripeVerifyAvailability(input) {
   return { canVerify: false, reason: 'none', helperCopy: STRIPE_UNCONFIGURED_VERIFY_COPY };
 }
 
+function buildStripeProviderActionView(availability) {
+  return {
+    showVerifyButton: availability.canVerify || availability.reason === 'restricted',
+    verifyDisabled: !availability.canVerify,
+    note: availability.helperCopy,
+  };
+}
+
 function getStripeMethodChips(stripeRuntimeStatus) {
   const runtimeReady = stripeRuntimeStatus?.source && stripeRuntimeStatus.source !== 'none';
   if (!runtimeReady) {
@@ -1781,6 +1789,10 @@ export default function SettingsWorkspace() {
         loading: stripeSavedStatusPending,
       }),
     [stripeDisplayedRuntimeStatus?.source, stripeActionsRestricted, stripeSavedStatusPending]
+  );
+  const stripeProviderActionView = useMemo(
+    () => buildStripeProviderActionView(stripeVerifyAvailability),
+    [stripeVerifyAvailability]
   );
   const showStripeRuntimeMismatchWarning =
     stripeProviderStatus?.state === 'VERIFIED' &&
@@ -3914,21 +3926,21 @@ export default function SettingsWorkspace() {
                                   </span>
                                 ))}
                               </div>
+                              {providerRow.id === PAYMENT_PROVIDER_DRAWER.STRIPE && stripeProviderActionView.note ? (
+                                <p className={styles.providerHelperNote} role="note">{stripeProviderActionView.note}</p>
+                              ) : null}
                             </div>
                             <div className={`${styles.providerActions} ${styles.compactActionRow}`}>
-                              {providerRow.id === PAYMENT_PROVIDER_DRAWER.STRIPE &&
-                              (stripeVerifyAvailability.canVerify || stripeVerifyAvailability.reason === 'restricted') ? (
+                              {providerRow.id === PAYMENT_PROVIDER_DRAWER.STRIPE && stripeProviderActionView.showVerifyButton ? (
                                 <AdminButton
                                   aria-label="Verify Stripe now"
-                                  disabled={!stripeVerifyAvailability.canVerify || providerActionById.STRIPE === 'verifying'}
+                                  disabled={stripeProviderActionView.verifyDisabled || providerActionById.STRIPE === 'verifying'}
                                   onClick={() => handleVerifyProvider('STRIPE')}
                                   size="sm"
                                   variant="ghost"
                                 >
                                   {providerActionById.STRIPE === 'verifying' ? 'Verifying...' : 'Verify now'}
                                 </AdminButton>
-                              ) : providerRow.id === PAYMENT_PROVIDER_DRAWER.STRIPE && stripeVerifyAvailability.helperCopy ? (
-                                <p className={styles.compactMeta} role="note">{stripeVerifyAvailability.helperCopy}</p>
                               ) : null}
                               <AdminButton
                                 aria-label={`Manage ${providerRow.name}`}
