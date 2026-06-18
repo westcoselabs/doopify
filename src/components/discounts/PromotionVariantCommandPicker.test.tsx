@@ -11,6 +11,16 @@ function renderPicker(overrides: Record<string, unknown> = {}) {
       catalogEligibleCount={1}
       catalogError=""
       catalogLoading={false}
+      catalogProductDetailsById={{
+        prod_1: {
+          id: 'prod_1',
+          title: 'Never Nothing',
+          handle: 'never-nothing',
+          status: 'ACTIVE',
+          fulfillmentType: 'PHYSICAL',
+          variants: [{ id: 'var_1', title: 'Black / Large', sku: 'NN-BLK' }],
+        },
+      }}
       catalogQuery=""
       catalogRows={[
         {
@@ -62,6 +72,16 @@ describe('PromotionVariantCommandPicker', () => {
 
   it('shows an empty variants message when a product has no variants', () => {
     const html = renderPicker({
+      catalogProductDetailsById: {
+        prod_1: {
+          id: 'prod_1',
+          title: 'Never Nothing',
+          handle: 'never-nothing',
+          status: 'ACTIVE',
+          fulfillmentType: 'PHYSICAL',
+          variants: [],
+        },
+      },
       catalogRows: [
         {
           id: 'prod_1',
@@ -75,6 +95,14 @@ describe('PromotionVariantCommandPicker', () => {
     })
 
     expect(html).toContain('No variants available for this product.')
+  })
+
+  it('shows a loading variants hint until product detail arrives', () => {
+    const html = renderPicker({
+      catalogProductDetailsById: {},
+    })
+
+    expect(html).toContain('Loading variants...')
   })
 
   it('shows the eligible-physical empty message when products are filtered out', () => {

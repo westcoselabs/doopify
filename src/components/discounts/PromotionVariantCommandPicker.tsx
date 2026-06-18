@@ -17,6 +17,7 @@ type PromotionVariantCommandPickerProps = {
   catalogError: string
   catalogEligibleCount: number
   catalogLoading: boolean
+  catalogProductDetailsById: Record<string, PromotionCatalogProduct>
   catalogQuery: string
   catalogRows: PromotionCatalogProduct[]
   catalogTotalCount: number
@@ -50,6 +51,7 @@ export default function PromotionVariantCommandPicker({
   catalogError,
   catalogEligibleCount,
   catalogLoading,
+  catalogProductDetailsById,
   catalogQuery,
   catalogRows,
   catalogTotalCount,
@@ -169,7 +171,11 @@ export default function PromotionVariantCommandPicker({
             <p className="promotion-command-picker__loading-note">{catalogError}</p>
           ) : null}
 
-          {catalogRows.map((product) => (
+          {catalogRows.map((product) => {
+            const productDetail = catalogProductDetailsById[product.id] || null
+            const variants = productDetail?.variants || []
+
+            return (
                 <section className="promotion-command-picker__group" key={product.id}>
                   <div className="promotion-command-picker__group-header">
                     <div>
@@ -182,7 +188,9 @@ export default function PromotionVariantCommandPicker({
                   </div>
 
                   <div className="promotion-command-picker__variant-list" role="group" aria-label={`${product.title} variants`}>
-                    {product.variants.length ? product.variants.map((variant) => {
+                    {!productDetail ? (
+                      <p className="promotion-command-picker__loading-note">Loading variants...</p>
+                    ) : variants.length ? variants.map((variant) => {
                       const alreadySelected = selectedRows.some((row) => row.variantId === variant.id)
                       const checked = hasPendingSelection(pendingSelections, variant.id)
 
@@ -214,8 +222,8 @@ export default function PromotionVariantCommandPicker({
                     )}
                   </div>
                 </section>
-              ))
-            }
+            )
+          })}
         </div>
 
         <div className="promotion-command-picker__footer">

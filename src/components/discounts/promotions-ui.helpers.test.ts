@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  appendPromotionSelectionRow,
   beginPromotionCatalogSearch,
+  buildPromotionCatalogProductDetailUrl,
   buildPromotionCatalogListUrl,
-  buildPromotionCatalogSearchUrl,
   buildPromotionListQuery,
   buildPromotionPayloadFromDraft,
   buildPromotionPreview,
@@ -11,46 +12,54 @@ import {
   closePromotionCatalogState,
   createPromotionCatalogState,
   createPromotionDraft,
+  disablePromotionById,
   extractPromotionValidationIssues,
+  fetchPromotionCatalogProductDetail,
   fetchPromotionCatalogProducts,
   formatRewardSummary,
+  getProductsFromPayload,
+  isEligiblePhysicalProduct,
+  mapSmartPromotionListRow,
   openPromotionCatalogSection,
   normalizePromotionDraftForType,
+  resolvePromotionCatalogProductDetailSuccess,
   resolvePromotionCatalogSearchError,
   resolvePromotionCatalogSearchSuccess,
   shouldFetchPromotionCatalog,
   shouldLoadPromotionCatalogOnOpen,
+  toDraftFromDetail,
   togglePromotionPendingSelection,
   updatePromotionCatalogQuery,
 } from './promotions-ui.helpers'
 
 describe('promotion catalog product loading', () => {
-  it('builds the admin picker search URL', () => {
-    expect(buildPromotionCatalogSearchUrl('yo')).toBe('/api/admin/products/search?query=yo&limit=25')
-    expect(buildPromotionCatalogSearchUrl('   ')).toBe('/api/admin/products/search?limit=25')
-  })
-
   it('builds the product list fallback URL', () => {
-    expect(buildPromotionCatalogListUrl('yo')).toBe('/api/products?page=1&pageSize=25&status=ACTIVE&search=yo')
-    expect(buildPromotionCatalogListUrl('   ')).toBe('/api/products?page=1&pageSize=25&status=ACTIVE')
+    expect(buildPromotionCatalogListUrl('yo')).toBe('/api/products?page=1&pageSize=20&status=ACTIVE&search=yo')
+    expect(buildPromotionCatalogListUrl('   ')).toBe('/api/products?page=1&pageSize=20&status=ACTIVE')
   })
 
-  it('uses the admin search payload when variants are already present', async () => {
+  it('builds the product detail URL', () => {
+    expect(buildPromotionCatalogProductDetailUrl('prod_1')).toBe('/api/products/prod_1')
+  })
+
+  it('uses the product list payload from payload.data.products', async () => {
     const fetchMock = vi.fn(async (input: string) => {
-      if (input.startsWith('/api/admin/products/search?')) {
+      if (input.startsWith('/api/products?')) {
         return new Response(
           JSON.stringify({
             success: true,
-            products: [
-              {
-                id: 'prod_1',
-                title: 'Never Nothing',
-                handle: 'never-nothing',
-                status: 'ACTIVE',
-                fulfillmentType: 'PHYSICAL',
-                variants: [{ id: 'var_1', title: 'Black / Large', sku: 'NN-BLK' }],
-              },
-            ],
+            data: {
+              products: [
+                {
+                  id: 'prod_1',
+                  title: 'Never Nothing',
+                  handle: 'never-nothing',
+                  status: 'ACTIVE',
+                  fulfillmentType: 'PHYSICAL',
+                  variants: [{ id: 'var_1', sku: 'NN-BLK' }],
+                },
+              ],
+            },
           }),
           { status: 200 }
         )
@@ -61,7 +70,7 @@ describe('promotion catalog product loading', () => {
 
     const result = await fetchPromotionCatalogProducts('yo', fetchMock as unknown as typeof fetch)
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/products/search?query=yo&limit=25')
+    expect(fetchMock).toHaveBeenCalledWith('/api/products?page=1&pageSize=20&status=ACTIVE&search=yo')
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(result.totalResultCount).toBe(1)
     expect(result.eligibleResultCount).toBe(1)
@@ -72,27 +81,29 @@ describe('promotion catalog product loading', () => {
         handle: 'never-nothing',
         status: 'ACTIVE',
         fulfillmentType: 'PHYSICAL',
-        variants: [{ id: 'var_1', title: 'Black / Large', sku: 'NN-BLK' }],
+        variants: [{ id: 'var_1', title: 'Default', sku: 'NN-BLK' }],
       },
     ])
   })
 
   it('filters non-physical products and reports eligible counts for empty-state messaging', async () => {
     const fetchMock = vi.fn(async (input: string) => {
-      if (input.startsWith('/api/admin/products/search?')) {
+      if (input.startsWith('/api/products?')) {
         return new Response(
           JSON.stringify({
             success: true,
-            products: [
-              {
-                id: 'prod_digital',
-                title: 'Digital Pack',
-                handle: 'digital-pack',
-                status: 'ACTIVE',
-                fulfillmentType: 'DIGITAL',
-                variants: [{ id: 'var_digital', title: 'Download', sku: 'DIGI-1' }],
-              },
-            ],
+            data: {
+              products: [
+                {
+                  id: 'prod_digital',
+                  title: 'Digital Pack',
+                  handle: 'digital-pack',
+                  status: 'ACTIVE',
+                  fulfillmentType: 'DIGITAL',
+                  variants: [{ id: 'var_digital', title: 'Download', sku: 'DIGI-1' }],
+                },
+              ],
+            },
           }),
           { status: 200 }
         )
@@ -108,18 +119,8 @@ describe('promotion catalog product loading', () => {
     expect(result.rows).toEqual([])
   })
 
-  it('hydrates from /api/products/[id] when the fallback list payload lacks variant titles', async () => {
+  it('treats missing fulfillmentType as physical and requires active status', async () => {
     const fetchMock = vi.fn(async (input: string) => {
-      if (input.startsWith('/api/admin/products/search?')) {
-        return new Response(
-          JSON.stringify({
-            success: false,
-            error: 'missing',
-          }),
-          { status: 404 }
-        )
-      }
-
       if (input.startsWith('/api/products?')) {
         return new Response(
           JSON.stringify({
@@ -130,9 +131,16 @@ describe('promotion catalog product loading', () => {
                   id: 'prod_1',
                   title: 'Yo Momma',
                   handle: 'yo-momma',
-                  status: 'ACTIVE',
-                  fulfillmentType: 'PHYSICAL',
+                  status: 'active',
                   variants: [{ id: 'var_1', sku: 'YM-1' }],
+                },
+                {
+                  id: 'prod_2',
+                  title: 'Draft Hoodie',
+                  handle: 'draft-hoodie',
+                  status: 'DRAFT',
+                  fulfillmentType: 'PHYSICAL',
+                  variants: [{ id: 'var_2', sku: 'DH-1' }],
                 },
               ],
             },
@@ -141,6 +149,30 @@ describe('promotion catalog product loading', () => {
         )
       }
 
+      throw new Error(`Unexpected fetch: ${input}`)
+    })
+
+    const result = await fetchPromotionCatalogProducts('', fetchMock as unknown as typeof fetch)
+
+    expect(result.rows).toEqual([
+      expect.objectContaining({
+        id: 'prod_1',
+        fulfillmentType: 'PHYSICAL',
+        status: 'ACTIVE',
+      }),
+    ])
+  })
+
+  it('surfaces a useful error when the API fails', async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ success: false, error: 'boom' }), { status: 500 }))
+
+    await expect(fetchPromotionCatalogProducts('', fetchMock as unknown as typeof fetch)).rejects.toThrow(
+      'boom'
+    )
+  })
+
+  it('loads full variant detail from /api/products/[id]', async () => {
+    const fetchMock = vi.fn(async (input: string) => {
       if (input === '/api/products/prod_1') {
         return new Response(
           JSON.stringify({
@@ -161,49 +193,35 @@ describe('promotion catalog product loading', () => {
       throw new Error(`Unexpected fetch: ${input}`)
     })
 
-    const result = await fetchPromotionCatalogProducts('', fetchMock as unknown as typeof fetch)
-
-    expect(fetchMock).toHaveBeenCalledWith('/api/admin/products/search?limit=25')
-    expect(fetchMock).toHaveBeenCalledWith('/api/products?page=1&pageSize=25&status=ACTIVE')
-    expect(fetchMock).toHaveBeenCalledWith('/api/products/prod_1')
-    expect(result.rows[0]?.variants).toEqual([{ id: 'var_1', title: 'Default', sku: 'YM-1' }])
-  })
-
-  it('falls back to summary rows when detail hydration fails', async () => {
-    const fetchMock = vi.fn(async (input: string) => {
-      if (input.startsWith('/api/admin/products/search?')) {
-        return new Response(
-          JSON.stringify({
-            success: true,
-            products: [
-              {
-                id: 'prod_1',
-                title: 'Yo Momma',
-                handle: 'yo-momma',
-                status: 'ACTIVE',
-                fulfillmentType: 'PHYSICAL',
-                variants: [{ id: 'var_1', sku: 'YM-1' }],
-              },
-            ],
-          }),
-          { status: 200 }
-        )
-      }
-
-      return new Response(JSON.stringify({ success: false, error: 'not found' }), { status: 404 })
+    await expect(
+      fetchPromotionCatalogProductDetail('prod_1', fetchMock as unknown as typeof fetch)
+    ).resolves.toEqual({
+      id: 'prod_1',
+      title: 'Yo Momma',
+      handle: 'yo-momma',
+      status: 'ACTIVE',
+      fulfillmentType: 'PHYSICAL',
+      variants: [{ id: 'var_1', title: 'Default', sku: 'YM-1' }],
     })
-
-    const result = await fetchPromotionCatalogProducts('', fetchMock as unknown as typeof fetch)
-
-    expect(result.rows[0]?.variants).toEqual([{ id: 'var_1', title: 'Default', sku: 'YM-1' }])
   })
 
-  it('surfaces a useful error when the API fails', async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({ success: false, error: 'boom' }), { status: 500 }))
+  it('supports both known product payload shapes and falls back safely', () => {
+    expect(
+      getProductsFromPayload({
+        data: {
+          products: [{ id: 'prod_1' }],
+        },
+      })
+    ).toEqual([{ id: 'prod_1' }])
+    expect(getProductsFromPayload({ products: [{ id: 'prod_2' }] })).toEqual([{ id: 'prod_2' }])
+    expect(getProductsFromPayload({ success: true })).toEqual([])
+  })
 
-    await expect(fetchPromotionCatalogProducts('', fetchMock as unknown as typeof fetch)).rejects.toThrow(
-      'boom'
-    )
+  it('normalizes eligibility checks for active physical products only', () => {
+    expect(isEligiblePhysicalProduct({ status: 'active', fulfillmentType: 'physical' })).toBe(true)
+    expect(isEligiblePhysicalProduct({ status: 'ACTIVE', fulfillmentType: null })).toBe(true)
+    expect(isEligiblePhysicalProduct({ status: 'DRAFT', fulfillmentType: 'PHYSICAL' })).toBe(false)
+    expect(isEligiblePhysicalProduct({ status: 'ACTIVE', fulfillmentType: 'DIGITAL' })).toBe(false)
   })
 })
 
@@ -256,6 +274,52 @@ describe('promotions UI helpers', () => {
     expect(normalized.rewards).toHaveLength(0)
   })
 
+  it('resets FREE reward type when switching away from free gift', () => {
+    const normalized = normalizePromotionDraftForType({
+      ...createPromotionDraft('FREE_GIFT'),
+      type: 'BUY_X_GET_Y',
+      rewardType: 'FREE',
+      value: '0',
+    })
+
+    expect(normalized.rewardType).toBe('PERCENTAGE')
+    expect(normalized.value).toBe('')
+  })
+
+  it('builds product group discount payloads with fixed amount values in cents and no rewards', () => {
+    const draft = {
+      ...createPromotionDraft('PRODUCT_GROUP_DISCOUNT'),
+      name: 'Group savings',
+      rewardType: 'FIXED_AMOUNT' as const,
+      value: '5.00',
+      qualifiers: [
+        {
+          variantId: 'var_q',
+          productTitle: 'Hoodie',
+          variantTitle: 'Black',
+          sku: 'HD-1',
+          fulfillmentType: 'PHYSICAL',
+          quantity: 1,
+        },
+      ],
+      rewards: [
+        {
+          variantId: 'var_r',
+          productTitle: 'Hat',
+          variantTitle: 'Blue',
+          sku: 'HT-1',
+          fulfillmentType: 'PHYSICAL',
+          quantity: 1,
+        },
+      ],
+    }
+
+    const payload = buildPromotionPayloadFromDraft(draft)
+    expect(payload.rewardType).toBe('FIXED_AMOUNT')
+    expect(payload.value).toBe(500)
+    expect(payload.rewards).toEqual([])
+  })
+
   it('forces free gift payload to FREE reward type and zero value', () => {
     const draft = {
       ...createPromotionDraft('FREE_GIFT'),
@@ -289,7 +353,7 @@ describe('promotions UI helpers', () => {
     expect(payload.value).toBe(0)
   })
 
-  it('builds payload rows with required and reward quantities', () => {
+  it('builds buy x get y payload rows with required and reward quantities', () => {
     const draft = {
       ...createPromotionDraft('BUY_X_GET_Y'),
       name: 'Hoodie hat',
@@ -319,6 +383,64 @@ describe('promotions UI helpers', () => {
     const payload = buildPromotionPayloadFromDraft(draft)
     expect(payload.qualifiers).toEqual([{ variantId: 'var_q', requiredQuantity: 2 }])
     expect(payload.rewards).toEqual([{ variantId: 'var_r', rewardQuantity: 1 }])
+  })
+
+  it('maps promotion detail qualifiers, rewards, and fixed amount values back into the draft shape', () => {
+    const draft = toDraftFromDetail({
+      id: 'promo_1',
+      name: 'Hat bundle',
+      status: 'ACTIVE',
+      type: 'BUY_X_GET_Y',
+      rewardType: 'FIXED_AMOUNT',
+      value: 500,
+      startsAt: '2026-06-15T16:30:00.000Z',
+      endsAt: '2026-06-16T16:30:00.000Z',
+      usageLimit: 10,
+      priority: 25,
+      qualifiers: [
+        {
+          variantId: 'var_q',
+          productTitle: 'Hoodie',
+          variantTitle: 'Black',
+          sku: 'HD-1',
+          fulfillmentType: 'PHYSICAL',
+          requiredQuantity: 2,
+        },
+      ],
+      rewards: [
+        {
+          variantId: 'var_r',
+          productTitle: 'Hat',
+          variantTitle: 'Blue',
+          sku: 'HT-1',
+          fulfillmentType: 'PHYSICAL',
+          rewardQuantity: 1,
+        },
+      ],
+    })
+
+    expect(draft).toMatchObject({
+      id: 'promo_1',
+      name: 'Hat bundle',
+      status: 'ACTIVE',
+      type: 'BUY_X_GET_Y',
+      rewardType: 'FIXED_AMOUNT',
+      value: '5.00',
+      usageLimit: '10',
+      priority: '25',
+      qualifiers: [
+        expect.objectContaining({
+          variantId: 'var_q',
+          quantity: 2,
+        }),
+      ],
+      rewards: [
+        expect.objectContaining({
+          variantId: 'var_r',
+          quantity: 1,
+        }),
+      ],
+    })
   })
 
   it('formats reward summaries for percentage, fixed amount, and free gift', () => {
@@ -459,6 +581,47 @@ describe('promotions UI helpers', () => {
     expect(canSubmitPromotionDraft(buyX)).toBe(true)
   })
 
+  it('adds a selected variant immediately with quantity 1 and skips duplicates', () => {
+    const initialRows = [
+      {
+        variantId: 'var_q',
+        productTitle: 'Hoodie',
+        variantTitle: 'Black',
+        sku: 'HD-1',
+        fulfillmentType: 'PHYSICAL',
+        quantity: 3,
+      },
+    ]
+
+    const added = appendPromotionSelectionRow(initialRows, {
+      variantId: 'var_r',
+      productTitle: 'Hat',
+      variantTitle: 'Default',
+      sku: 'HAT-1',
+      fulfillmentType: 'PHYSICAL',
+    })
+    expect(added).toEqual([
+      initialRows[0],
+      {
+        variantId: 'var_r',
+        productTitle: 'Hat',
+        variantTitle: 'Default',
+        sku: 'HAT-1',
+        fulfillmentType: 'PHYSICAL',
+        quantity: 1,
+      },
+    ])
+
+    const duplicate = appendPromotionSelectionRow(added, {
+      variantId: 'var_r',
+      productTitle: 'Hat',
+      variantTitle: 'Default',
+      sku: 'HAT-1',
+      fulfillmentType: 'PHYSICAL',
+    })
+    expect(duplicate).toEqual(added)
+  })
+
   it('loads each picker section once on first open and keeps state isolated by section', () => {
     const initial = createPromotionCatalogState()
 
@@ -543,7 +706,7 @@ describe('promotions UI helpers', () => {
     expect(toggled.sections.qualifiers.pendingSelections).toHaveLength(1)
     expect(toggled.sections.rewards.pendingSelections).toHaveLength(0)
 
-    const closed = closePromotionCatalogState(toggled)
+    const closed = closePromotionCatalogState(toggled, 'qualifiers')
     expect(closed.openSection).toBeNull()
     expect(closed.sections.qualifiers.pendingSelections).toHaveLength(0)
     expect(closed.sections.rewards.pendingSelections).toHaveLength(0)
@@ -580,5 +743,64 @@ describe('promotions UI helpers', () => {
     expect(failed.sections.qualifiers.rows).toHaveLength(1)
     expect(failed.sections.qualifiers.loading).toBe(false)
     expect(failed.sections.qualifiers.error).toBe('Failed to search product catalog.')
+  })
+
+  it('stores product details inside the correct picker section', () => {
+    const initial = createPromotionCatalogState()
+    const next = resolvePromotionCatalogProductDetailSuccess(initial, 'rewards', 'prod_1', {
+      id: 'prod_1',
+      title: 'Classic Hat',
+      handle: 'classic-hat',
+      status: 'ACTIVE',
+      fulfillmentType: 'PHYSICAL',
+      variants: [{ id: 'var_1', title: 'Default', sku: 'HAT-DEFAULT' }],
+    })
+
+    expect(next.sections.rewards.productDetailsById.prod_1).toEqual(
+      expect.objectContaining({
+        id: 'prod_1',
+      })
+    )
+    expect(next.sections.qualifiers.productDetailsById.prod_1).toBeUndefined()
+  })
+
+  it('calls the promotion disable route through the shared admin helper', async () => {
+    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+      expect(input).toBe('/api/promotions/promo_1')
+      expect(init).toEqual({ method: 'DELETE' })
+
+      return new Response(JSON.stringify({ success: true, data: { message: 'Promotion disabled' } }), {
+        status: 200,
+      })
+    })
+
+    await expect(disablePromotionById('promo_1', fetchMock as unknown as typeof fetch)).resolves.toEqual({
+      message: 'Promotion disabled',
+    })
+  })
+
+  it('maps smart promotion rows for the unified promotions list', () => {
+    expect(
+      mapSmartPromotionListRow({
+        id: 'promo_1',
+        name: 'Weekend bundle',
+        status: 'ACTIVE',
+        type: 'PRODUCT_GROUP_DISCOUNT',
+        usageCount: 3,
+        usageLimit: 10,
+        updatedAt: '2026-06-17T00:00:00.000Z',
+      })
+    ).toMatchObject({
+      id: 'promotion-promo_1',
+      source: 'smart-promotion',
+      sourceId: 'promo_1',
+      method: 'Automatic',
+      typeKey: 'PRODUCT_GROUP_DISCOUNT',
+      typeLabel: 'Product group discount',
+      status: 'active',
+      statusLabel: 'Active',
+      usageLabel: '3 / 10',
+      summary: 'Product group discount',
+    })
   })
 })

@@ -19,24 +19,31 @@ import AdminToolbar from '../admin/ui/AdminToolbar';
 import { SmartPromotionFormSections } from './AutomaticPromotionsWorkspace';
 import styles from './DiscountsWorkspace.module.css';
 import {
+  appendPromotionSelectionRow,
   beginPromotionCatalogSearch,
   buildPromotionPayloadFromDraft,
   canSubmitPromotionDraft,
   createPromotionCatalogState,
   createPromotionDraft,
   closePromotionCatalogState,
+  disablePromotionById,
   extractPromotionValidationIssues,
+  fetchPromotionCatalogProductDetail,
   fetchPromotionCatalogProducts,
   formatPromotionStatusLabel,
   formatPromotionTypeLabel,
   getPromotionCatalogSectionState,
   getPromotionStatusTone,
+  isEligiblePhysicalProduct,
+  mapSmartPromotionListRow,
   normalizePromotionDraftForType,
   openPromotionCatalogSection,
+  resolvePromotionCatalogProductDetailSuccess,
   resolvePromotionCatalogSearchError,
   resolvePromotionCatalogSearchSuccess,
   shouldFetchPromotionCatalog,
   shouldLoadPromotionCatalogOnOpen,
+  toDraftFromDetail,
   togglePromotionPendingSelection,
   updatePromotionCatalogQuery,
 } from './promotions-ui.helpers';
@@ -212,37 +219,6 @@ function toLegacyTypeKey(method) {
   return `legacy_${String(method || '').replace(/\s+/g, '_')}`;
 }
 
-function toSmartDraftFromDetail(promotion) {
-  return {
-    id: promotion.id,
-    name: String(promotion.name || ''),
-    status: promotion.status || 'DRAFT',
-    type: promotion.type || 'PRODUCT_GROUP_DISCOUNT',
-    rewardType: promotion.rewardType || 'PERCENTAGE',
-    value: String(promotion.value ?? ''),
-    startsAt: promotion.startsAt ? new Date(new Date(promotion.startsAt).getTime() - new Date(promotion.startsAt).getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : '',
-    endsAt: promotion.endsAt ? new Date(new Date(promotion.endsAt).getTime() - new Date(promotion.endsAt).getTimezoneOffset() * 60_000).toISOString().slice(0, 16) : '',
-    usageLimit: promotion.usageLimit == null ? '' : String(promotion.usageLimit),
-    priority: promotion.priority == null ? '100' : String(promotion.priority),
-    qualifiers: (promotion.qualifiers || []).map((qualifier) => ({
-      variantId: qualifier.variantId,
-      productTitle: qualifier.productTitle,
-      variantTitle: qualifier.variantTitle,
-      sku: qualifier.sku || null,
-      fulfillmentType: qualifier.fulfillmentType || 'PHYSICAL',
-      quantity: Number(qualifier.requiredQuantity || 1),
-    })),
-    rewards: (promotion.rewards || []).map((reward) => ({
-      variantId: reward.variantId,
-      productTitle: reward.productTitle,
-      variantTitle: reward.variantTitle,
-      sku: reward.sku || null,
-      fulfillmentType: reward.fulfillmentType || 'PHYSICAL',
-      quantity: Number(reward.rewardQuantity || 1),
-    })),
-  };
-}
-
 function removePromotionSelection(setDraft, section, variantId) {
   setDraft((current) => ({
     ...current,
@@ -266,7 +242,7 @@ function updatePromotionSelectionQuantity(setDraft, section, variantId, quantity
 }
 
 function addPromotionVariantToSelection(setDraft, setCatalogState, section, product, variant) {
-  if (product.fulfillmentType !== 'PHYSICAL') {
+  if (!isEligiblePhysicalProduct(product)) {
     setCatalogState((current) => ({
       ...current,
       sections: {
@@ -298,13 +274,12 @@ function addPromotionVariantToSelection(setDraft, setCatalogState, section, prod
 
     return {
       ...current,
-      [section]: current[section].concat({
+      [section]: appendPromotionSelectionRow(current[section], {
         variantId: variant.id,
         productTitle: product.title,
         variantTitle: variant.title || 'Default',
         sku: variant.sku || null,
         fulfillmentType: product.fulfillmentType || 'PHYSICAL',
-        quantity: 1,
       }),
     };
   });
@@ -319,38 +294,44 @@ async function searchPromotionCatalog(catalogState, setCatalogState, section, op
   const requestId = sectionState.requestId + 1;
 
   setCatalogState((current) => beginPromotionCatalogSearch(current, section));
+  let result = null;
+  let errorMessage = '';
 
   try {
-    const result = await fetchPromotionCatalogProducts(queryValue);
-
-    setCatalogState((current) =>
-      resolvePromotionCatalogSearchSuccess(
-        current,
-        section,
-        result.rows,
-        requestId,
-        queryValue,
-        {
-          totalResultCount: result.totalResultCount,
-          eligibleResultCount: result.eligibleResultCount,
-        }
-      )
-    );
+    result = await fetchPromotionCatalogProducts(queryValue);
   } catch (error) {
-    setCatalogState((current) =>
-      resolvePromotionCatalogSearchError(
+    errorMessage = error instanceof Error ? error.message : 'Failed to load products. Try again.';
+  } finally {
+    setCatalogState((current) => {
+      if (result) {
+        return resolvePromotionCatalogSearchSuccess(
+          current,
+          section,
+          result.rows,
+          requestId,
+          queryValue,
+          {
+            totalResultCount: result.totalResultCount,
+            eligibleResultCount: result.eligibleResultCount,
+          }
+        );
+      }
+
+      return resolvePromotionCatalogSearchError(
         current,
         section,
-        error instanceof Error ? error.message : 'Failed to load products. Try again.',
+        errorMessage || 'Failed to load products. Try again.',
         requestId
-      )
-    );
+      );
+    });
   }
 }
 
 export default function DiscountsWorkspace() {
   const { discounts, addDiscount, updateDiscount } = useDiscounts();
   const hasAutoOpenedCreateRef = useRef(false);
+  const smartProductDetailRequestsRef = useRef(new Set());
+  const smartEditProductDetailRequestsRef = useRef(new Set());
   const [browseFilter, setBrowseFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -407,6 +388,120 @@ export default function DiscountsWorkspace() {
   }, [loadSmartPromotions]);
 
   useEffect(() => {
+    const openSection = smartCatalogState.openSection;
+    if (!openSection) return;
+
+    const sectionState = getPromotionCatalogSectionState(smartCatalogState, openSection);
+    const productIdsToLoad = sectionState.rows
+      .map((row) => row.id)
+      .filter((productId) => productId && !sectionState.productDetailsById[productId]);
+
+    if (!productIdsToLoad.length) return;
+
+    let cancelled = false;
+
+    for (const productId of productIdsToLoad) {
+      const requestKey = `${openSection}:${productId}`;
+      if (smartProductDetailRequestsRef.current.has(requestKey)) {
+        continue;
+      }
+
+      smartProductDetailRequestsRef.current.add(requestKey);
+      void (async () => {
+        try {
+          const productDetail = await fetchPromotionCatalogProductDetail(productId);
+          if (!productDetail || cancelled) return;
+
+          setSmartCatalogState((current) => {
+            const currentSection = getPromotionCatalogSectionState(current, openSection);
+            if (!currentSection.rows.some((row) => row.id === productId)) {
+              return current;
+            }
+
+            return resolvePromotionCatalogProductDetailSuccess(current, openSection, productId, productDetail);
+          });
+        } catch (error) {
+          console.error('[DiscountsWorkspace] failed to load promotion product detail', error);
+          if (cancelled) return;
+
+          setSmartCatalogState((current) => {
+            const currentSection = getPromotionCatalogSectionState(current, openSection);
+            const fallbackProduct = currentSection.rows.find((row) => row.id === productId);
+            if (!fallbackProduct) {
+              return current;
+            }
+
+            return resolvePromotionCatalogProductDetailSuccess(current, openSection, productId, fallbackProduct);
+          });
+        } finally {
+          smartProductDetailRequestsRef.current.delete(requestKey);
+        }
+      })();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [smartCatalogState]);
+
+  useEffect(() => {
+    const openSection = smartEditCatalogState.openSection;
+    if (!openSection) return;
+
+    const sectionState = getPromotionCatalogSectionState(smartEditCatalogState, openSection);
+    const productIdsToLoad = sectionState.rows
+      .map((row) => row.id)
+      .filter((productId) => productId && !sectionState.productDetailsById[productId]);
+
+    if (!productIdsToLoad.length) return;
+
+    let cancelled = false;
+
+    for (const productId of productIdsToLoad) {
+      const requestKey = `${openSection}:${productId}`;
+      if (smartEditProductDetailRequestsRef.current.has(requestKey)) {
+        continue;
+      }
+
+      smartEditProductDetailRequestsRef.current.add(requestKey);
+      void (async () => {
+        try {
+          const productDetail = await fetchPromotionCatalogProductDetail(productId);
+          if (!productDetail || cancelled) return;
+
+          setSmartEditCatalogState((current) => {
+            const currentSection = getPromotionCatalogSectionState(current, openSection);
+            if (!currentSection.rows.some((row) => row.id === productId)) {
+              return current;
+            }
+
+            return resolvePromotionCatalogProductDetailSuccess(current, openSection, productId, productDetail);
+          });
+        } catch (error) {
+          console.error('[DiscountsWorkspace] failed to load promotion edit product detail', error);
+          if (cancelled) return;
+
+          setSmartEditCatalogState((current) => {
+            const currentSection = getPromotionCatalogSectionState(current, openSection);
+            const fallbackProduct = currentSection.rows.find((row) => row.id === productId);
+            if (!fallbackProduct) {
+              return current;
+            }
+
+            return resolvePromotionCatalogProductDetailSuccess(current, openSection, productId, fallbackProduct);
+          });
+        } finally {
+          smartEditProductDetailRequestsRef.current.delete(requestKey);
+        }
+      })();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [smartEditCatalogState]);
+
+  useEffect(() => {
     if (hasAutoOpenedCreateRef.current) {
       return;
     }
@@ -451,21 +546,10 @@ export default function DiscountsWorkspace() {
     raw: discount,
   })), [discounts]);
 
-  const normalizedSmartRows = useMemo(() => smartPromotions.map((promotion) => ({
-    id: `promotion-${promotion.id}`,
-    source: 'smart-promotion',
-    sourceId: promotion.id,
-    name: promotion.name,
-    method: 'Automatic',
-    typeLabel: formatPromotionTypeLabel(promotion.type),
-    typeKey: promotion.type,
-    status: String(promotion.status || '').toLowerCase(),
-    statusLabel: formatPromotionStatusLabel(promotion.status),
-    usageLabel: `${promotion.usageCount || 0} / ${promotion.usageLimit == null ? 'No cap' : promotion.usageLimit}`,
-    updatedLabel: formatUpdatedDisplayLabel(promotion.updatedAt),
-    summary: formatPromotionTypeLabel(promotion.type),
-    raw: promotion,
-  })), [smartPromotions]);
+  const normalizedSmartRows = useMemo(
+    () => smartPromotions.map((promotion) => mapSmartPromotionListRow(promotion)),
+    [smartPromotions]
+  );
 
   const unifiedRows = useMemo(() => {
     const combined = normalizedLegacyRows.concat(normalizedSmartRows);
@@ -551,6 +635,7 @@ export default function DiscountsWorkspace() {
     setSmartValidationIssues([]);
     setSmartErrorMessage('');
     setSmartCatalogState(createPromotionCatalogState());
+    smartProductDetailRequestsRef.current.clear();
   }
 
   function openCreateFlow() {
@@ -564,6 +649,7 @@ export default function DiscountsWorkspace() {
     setSmartValidationIssues([]);
     setSmartErrorMessage('');
     setSmartCatalogState(createPromotionCatalogState());
+    smartProductDetailRequestsRef.current.clear();
   }
 
   function openLegacyEditor(discount) {
@@ -578,6 +664,7 @@ export default function DiscountsWorkspace() {
     setSmartEditValidationIssues([]);
     setSmartEditErrorMessage('');
     setSmartEditCatalogState(createPromotionCatalogState());
+    smartEditProductDetailRequestsRef.current.clear();
   }
 
   async function openSmartEditDrawer(promotionId) {
@@ -590,8 +677,9 @@ export default function DiscountsWorkspace() {
         setSmartEditErrorMessage(payload?.error || 'Failed to load promotion details.');
         return;
       }
-      setSmartEditDraft(toSmartDraftFromDetail(payload.data?.promotion || {}));
+      setSmartEditDraft(toDraftFromDetail(payload.data?.promotion || {}));
       setSmartEditCatalogState(createPromotionCatalogState());
+      smartEditProductDetailRequestsRef.current.clear();
       setSmartEditOpen(true);
     } catch (error) {
       console.error('[DiscountsWorkspace] failed to load promotion detail', error);
@@ -721,16 +809,11 @@ export default function DiscountsWorkspace() {
     if (!confirmed) return;
 
     try {
-      const response = await fetch(`/api/promotions/${promotionId}`, { method: 'DELETE' });
-      const payload = await response.json();
-      if (!payload?.success) {
-        setSmartPromotionsError(payload?.error || 'Failed to disable promotion.');
-        return;
-      }
+      await disablePromotionById(promotionId);
       await loadSmartPromotions();
     } catch (error) {
       console.error('[DiscountsWorkspace] failed to disable promotion', error);
-      setSmartPromotionsError('Failed to disable promotion.');
+      setSmartPromotionsError(error instanceof Error ? error.message : 'Failed to disable promotion.');
     }
   }
 
@@ -1101,12 +1184,14 @@ export default function DiscountsWorkspace() {
                         }
                       );
                     }
-                    setSmartCatalogState((current) => closePromotionCatalogState(current));
+                    setSmartCatalogState((current) => closePromotionCatalogState(current, section));
                   }}
                   onCatalogQueryChange={(section, value) =>
                     setSmartCatalogState((current) => updatePromotionCatalogQuery(current, section, value))
                   }
-                  onCancelPicker={() => setSmartCatalogState((current) => closePromotionCatalogState(current))}
+                  onCancelPicker={() =>
+                    setSmartCatalogState((current) => closePromotionCatalogState(current, current.openSection))
+                  }
                   onOpenPicker={(section) =>
                     (() => {
                       let shouldLoad = false;
@@ -1254,13 +1339,15 @@ export default function DiscountsWorkspace() {
                       sku: row.sku || null,
                     }
                   );
-                }
-                setSmartEditCatalogState((current) => closePromotionCatalogState(current));
-              }}
+                    }
+                    setSmartEditCatalogState((current) => closePromotionCatalogState(current, section));
+                  }}
               onCatalogQueryChange={(section, value) =>
                 setSmartEditCatalogState((current) => updatePromotionCatalogQuery(current, section, value))
               }
-              onCancelPicker={() => setSmartEditCatalogState((current) => closePromotionCatalogState(current))}
+              onCancelPicker={() =>
+                setSmartEditCatalogState((current) => closePromotionCatalogState(current, current.openSection))
+              }
               onOpenPicker={(section) =>
                 (() => {
                   let shouldLoad = false;

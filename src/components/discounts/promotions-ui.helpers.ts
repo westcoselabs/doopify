@@ -48,6 +48,7 @@ export type PromotionCatalogSectionState = {
   lastLoadedQuery: string
   loading: boolean
   pendingSelections: PromotionPendingSelection[]
+  productDetailsById: Record<string, PromotionCatalogProduct>
   query: string
   requestId: number
   rows: PromotionCatalogProduct[]
@@ -80,6 +81,24 @@ export type PromotionValidationIssue = {
   path: string
 }
 
+export type SmartPromotionListRow = {
+  id: string
+  method: 'Automatic'
+  name: string
+  raw: Record<string, unknown>
+  source: 'smart-promotion'
+  sourceId: string
+  status: string
+  statusLabel: string
+  summary: string
+  typeKey: string
+  typeLabel: string
+  updatedLabel: string
+  usageLabel: string
+}
+
+type SelectionDraftSection = PromotionDraft['qualifiers'] | PromotionDraft['rewards']
+
 type ListQueryParams = {
   page?: number
   pageSize?: number
@@ -90,6 +109,26 @@ type ListQueryParams = {
 
 function normalizeCatalogQuery(query: string) {
   return String(query || '').trim()
+}
+
+function toLocalDateTimeInput(value: unknown) {
+  if (!value) return ''
+  const date = new Date(String(value))
+  if (Number.isNaN(date.getTime())) return ''
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
+}
+
+function formatFixedAmountDraftValue(value: unknown) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed) || parsed <= 0) return ''
+  return (parsed / 100).toFixed(2)
+}
+
+function formatPromotionUpdatedLabel(value: unknown) {
+  if (!value) return '-'
+  const date = new Date(String(value))
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toLocaleDateString()
 }
 
 export function createPromotionDraft(type: PromotionType = 'PRODUCT_GROUP_DISCOUNT'): PromotionDraft {
@@ -118,6 +157,7 @@ export function createPromotionCatalogSectionState(): PromotionCatalogSectionSta
     loading: false,
     error: '',
     pendingSelections: [],
+    productDetailsById: {},
     hasLoaded: false,
     lastLoadedQuery: '',
     requestId: 0,
@@ -161,17 +201,24 @@ export function openPromotionCatalogSection(
   }
 }
 
-export function closePromotionCatalogState(catalogState: PromotionCatalogState): PromotionCatalogState {
+export function closePromotionCatalogState(
+  catalogState: PromotionCatalogState,
+  section: PromotionCatalogSection | null = catalogState.openSection
+): PromotionCatalogState {
+  if (!section) {
+    return {
+      ...catalogState,
+      openSection: null,
+    }
+  }
+
   return {
     ...catalogState,
     openSection: null,
     sections: {
-      qualifiers: {
-        ...catalogState.sections.qualifiers,
-        pendingSelections: [],
-      },
-      rewards: {
-        ...catalogState.sections.rewards,
+      ...catalogState.sections,
+      [section]: {
+        ...catalogState.sections[section],
         pendingSelections: [],
       },
     },
@@ -309,16 +356,14 @@ function normalizePromotionCatalogProduct(product: any): PromotionCatalogProduct
   }
 }
 
-function isEligiblePromotionCatalogProduct(product: PromotionCatalogProduct) {
+export function isEligiblePhysicalProduct(product: Pick<PromotionCatalogProduct, 'fulfillmentType' | 'status'>) {
   const fulfillmentType = normalizePromotionCatalogFulfillmentType(product.fulfillmentType)
   const status = normalizePromotionCatalogStatus(product.status)
-  const isPhysical = fulfillmentType === 'PHYSICAL'
-  const isActive = status == null || status === 'ACTIVE'
 
-  return isPhysical && isActive
+  return fulfillmentType === 'PHYSICAL' && status === 'ACTIVE'
 }
 
-function getProductsFromPayload(payload: PromotionCatalogPayload): unknown[] {
+export function getProductsFromPayload(payload: PromotionCatalogPayload): unknown[] {
   if (Array.isArray(payload?.data?.products)) {
     return payload.data.products
   }
@@ -328,14 +373,6 @@ function getProductsFromPayload(payload: PromotionCatalogPayload): unknown[] {
   }
 
   return []
-}
-
-function payloadProductsHaveVariantTitles(products: unknown[]) {
-  return products.every((product: any) =>
-    Array.isArray(product?.variants)
-      ? product.variants.every((variant: any) => Boolean(String(variant?.title || '').trim()))
-      : true
-  )
 }
 
 function getProductFromPayload(payload: PromotionCatalogPayload): unknown | null {
@@ -369,21 +406,10 @@ function getPromotionCatalogErrorMessage(payload: PromotionCatalogPayload | null
   return fallback
 }
 
-export function buildPromotionCatalogSearchUrl(query: string) {
-  const searchParams = new URLSearchParams()
-  const normalizedQuery = normalizeCatalogQuery(query)
-  if (normalizedQuery) {
-    searchParams.set('query', normalizedQuery)
-  }
-  searchParams.set('limit', '25')
-
-  return `/api/admin/products/search?${searchParams.toString()}`
-}
-
 export function buildPromotionCatalogListUrl(query: string) {
   const searchParams = new URLSearchParams({
     page: '1',
-    pageSize: '25',
+    pageSize: '20',
     status: 'ACTIVE',
   })
 
@@ -395,42 +421,35 @@ export function buildPromotionCatalogListUrl(query: string) {
   return `/api/products?${searchParams.toString()}`
 }
 
-async function hydratePromotionCatalogProduct(
-  product: PromotionCatalogProduct,
-  fetchImpl: typeof fetch
-): Promise<PromotionCatalogProduct> {
-  const response = await fetchImpl(`/api/products/${encodeURIComponent(product.id)}`)
+export function buildPromotionCatalogProductDetailUrl(productId: string) {
+  return `/api/products/${encodeURIComponent(productId)}`
+}
+
+export async function fetchPromotionCatalogProductDetail(
+  productId: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<PromotionCatalogProduct | null> {
+  const response = await fetchImpl(buildPromotionCatalogProductDetailUrl(productId))
   const payload = await parseJsonSafely(response)
 
   if (!response.ok || !payload?.success) {
-    return product
+    throw new Error(getPromotionCatalogErrorMessage(payload, 'Failed to load products. Try again.'))
   }
 
   const detailProduct = getProductFromPayload(payload)
   if (!detailProduct) {
-    return product
+    return null
   }
 
-  const normalized = normalizePromotionCatalogProduct(detailProduct)
-  return {
-    ...product,
-    ...normalized,
-    variants: normalized.variants,
-  }
+  return normalizePromotionCatalogProduct(detailProduct)
 }
 
 export async function fetchPromotionCatalogProducts(
   query: string,
   fetchImpl: typeof fetch = fetch
 ): Promise<PromotionCatalogFetchResult> {
-  const catalogSearchUrl = buildPromotionCatalogSearchUrl(query)
-  let response = await fetchImpl(catalogSearchUrl)
-  let payload = await parseJsonSafely(response)
-
-  if (!response.ok || !payload?.success) {
-    response = await fetchImpl(buildPromotionCatalogListUrl(query))
-    payload = await parseJsonSafely(response)
-  }
+  const response = await fetchImpl(buildPromotionCatalogListUrl(query))
+  const payload = await parseJsonSafely(response)
 
   if (!response.ok || !payload?.success) {
     throw new Error(getPromotionCatalogErrorMessage(payload, 'Failed to load products. Try again.'))
@@ -438,25 +457,33 @@ export async function fetchPromotionCatalogProducts(
 
   const payloadProducts = getProductsFromPayload(payload)
   const summaryProducts = payloadProducts.map(normalizePromotionCatalogProduct)
-  const eligibleProducts = summaryProducts.filter((product) => product.id).filter(isEligiblePromotionCatalogProduct)
-  const rowsHaveVariantTitles = payloadProductsHaveVariantTitles(payloadProducts)
-
-  const hydratedProducts = rowsHaveVariantTitles
-    ? eligibleProducts
-    : await Promise.all(
-        eligibleProducts.map(async (product) => {
-          try {
-            return await hydratePromotionCatalogProduct(product, fetchImpl)
-          } catch {
-            return product
-          }
-        })
-      )
+  const eligibleProducts = summaryProducts.filter((product) => product.id).filter(isEligiblePhysicalProduct)
 
   return {
-    rows: hydratedProducts,
+    rows: eligibleProducts,
     totalResultCount: summaryProducts.length,
     eligibleResultCount: eligibleProducts.length,
+  }
+}
+
+export function resolvePromotionCatalogProductDetailSuccess(
+  catalogState: PromotionCatalogState,
+  section: PromotionCatalogSection,
+  productId: string,
+  productDetail: PromotionCatalogProduct
+): PromotionCatalogState {
+  return {
+    ...catalogState,
+    sections: {
+      ...catalogState.sections,
+      [section]: {
+        ...catalogState.sections[section],
+        productDetailsById: {
+          ...catalogState.sections[section].productDetailsById,
+          [productId]: productDetail,
+        },
+      },
+    },
   }
 }
 
@@ -515,22 +542,31 @@ export function resolvePromotionCatalogSearchError(
 }
 
 export function normalizePromotionDraftForType(draft: PromotionDraft): PromotionDraft {
-  if (draft.type === 'FREE_GIFT') {
+  const normalizedDraft: PromotionDraft =
+    draft.type !== 'FREE_GIFT' && draft.rewardType === 'FREE'
+      ? {
+          ...draft,
+          rewardType: 'PERCENTAGE',
+          value: draft.value === '0' ? '' : draft.value,
+        }
+      : draft
+
+  if (normalizedDraft.type === 'FREE_GIFT') {
     return {
-      ...draft,
+      ...normalizedDraft,
       rewardType: 'FREE',
       value: '0',
     }
   }
 
-  if (draft.type === 'PRODUCT_GROUP_DISCOUNT') {
+  if (normalizedDraft.type === 'PRODUCT_GROUP_DISCOUNT') {
     return {
-      ...draft,
+      ...normalizedDraft,
       rewards: [],
     }
   }
 
-  return draft
+  return normalizedDraft
 }
 
 export function buildPromotionListQuery(params: ListQueryParams): string {
@@ -565,7 +601,15 @@ function normalizeQuantity(value: number) {
 export function buildPromotionPayloadFromDraft(draft: PromotionDraft) {
   const normalized = normalizePromotionDraftForType(draft)
   const rewardType = normalized.type === 'FREE_GIFT' ? 'FREE' : normalized.rewardType
-  const value = normalized.type === 'FREE_GIFT' ? 0 : Number(normalized.value || 0)
+  const parsedValue = Number(normalized.value || 0)
+  const value =
+    normalized.type === 'FREE_GIFT'
+      ? 0
+      : rewardType === 'FIXED_AMOUNT'
+        ? Math.round(parsedValue * 100)
+        : Number.isFinite(parsedValue)
+          ? parsedValue
+          : 0
 
   return {
     name: normalized.name.trim(),
@@ -606,6 +650,97 @@ export function canSubmitPromotionDraft(draft: PromotionDraft) {
   }
 
   return true
+}
+
+export function appendPromotionSelectionRow(
+  rows: SelectionDraftSection,
+  selection: Omit<PromotionVariantSelection, 'quantity'> & { quantity?: number }
+) {
+  if (rows.some((row) => row.variantId === selection.variantId)) {
+    return rows
+  }
+
+  const nextQuantity =
+    typeof selection.quantity === 'number' && Number.isFinite(selection.quantity)
+      ? Math.max(1, Math.round(selection.quantity))
+      : 1
+
+  return rows.concat({
+    ...selection,
+    quantity: nextQuantity,
+  })
+}
+
+export function toDraftFromDetail(promotion: any): PromotionDraft {
+  const rewardType = (promotion?.rewardType || 'PERCENTAGE') as PromotionRewardType
+  const type = (promotion?.type || 'PRODUCT_GROUP_DISCOUNT') as PromotionType
+  const status = (promotion?.status || 'DRAFT') as PromotionStatus
+
+  return normalizePromotionDraftForType({
+    id: promotion?.id ? String(promotion.id) : null,
+    name: String(promotion?.name || ''),
+    status,
+    type,
+    rewardType,
+    value:
+      rewardType === 'FIXED_AMOUNT'
+        ? formatFixedAmountDraftValue(promotion?.value)
+        : String(promotion?.value ?? ''),
+    startsAt: toLocalDateTimeInput(promotion?.startsAt),
+    endsAt: toLocalDateTimeInput(promotion?.endsAt),
+    usageLimit: promotion?.usageLimit == null ? '' : String(promotion.usageLimit),
+    priority: promotion?.priority == null ? '100' : String(promotion.priority),
+    qualifiers: (promotion?.qualifiers || []).map((qualifier: any) => ({
+      variantId: qualifier.variantId,
+      productTitle: qualifier.productTitle,
+      variantTitle: qualifier.variantTitle,
+      sku: qualifier.sku || null,
+      fulfillmentType: qualifier.fulfillmentType || 'PHYSICAL',
+      quantity: Number(qualifier.requiredQuantity || 1),
+    })),
+    rewards: (promotion?.rewards || []).map((reward: any) => ({
+      variantId: reward.variantId,
+      productTitle: reward.productTitle,
+      variantTitle: reward.variantTitle,
+      sku: reward.sku || null,
+      fulfillmentType: reward.fulfillmentType || 'PHYSICAL',
+      quantity: Number(reward.rewardQuantity || 1),
+    })),
+  })
+}
+
+export function mapSmartPromotionListRow(promotion: Record<string, any>): SmartPromotionListRow {
+  return {
+    id: `promotion-${promotion.id}`,
+    source: 'smart-promotion',
+    sourceId: String(promotion.id),
+    name: String(promotion.name || ''),
+    method: 'Automatic',
+    typeLabel: formatPromotionTypeLabel(String(promotion.type || '')),
+    typeKey: String(promotion.type || ''),
+    status: String(promotion.status || '').toLowerCase(),
+    statusLabel: formatPromotionStatusLabel(String(promotion.status || '')),
+    usageLabel: `${promotion.usageCount || 0} / ${promotion.usageLimit == null ? 'No cap' : promotion.usageLimit}`,
+    updatedLabel: formatPromotionUpdatedLabel(promotion.updatedAt),
+    summary: formatPromotionTypeLabel(String(promotion.type || '')),
+    raw: promotion,
+  }
+}
+
+export async function disablePromotionById(
+  promotionId: string,
+  fetchImpl: typeof fetch = fetch
+): Promise<{ message: string }> {
+  const response = await fetchImpl(`/api/promotions/${promotionId}`, { method: 'DELETE' })
+  const payload = await parseJsonSafely(response)
+
+  if (!response.ok || !payload?.success) {
+    throw new Error(getPromotionCatalogErrorMessage(payload, 'Failed to disable promotion.'))
+  }
+
+  return {
+    message: 'Promotion disabled',
+  }
 }
 
 export function formatPromotionTypeLabel(type: string) {

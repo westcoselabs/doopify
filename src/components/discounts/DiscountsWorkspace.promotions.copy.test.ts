@@ -24,6 +24,7 @@ describe('Promotions workspace copy', () => {
 
   it('renders a unified promotions table instead of separate discount-code and automatic-offer sections', () => {
     const file = read('src/components/discounts/DiscountsWorkspace.js')
+    const helpers = read('src/components/discounts/promotions-ui.helpers.ts')
     expect(file).toContain("header: 'Name'")
     expect(file).toContain("header: 'Method'")
     expect(file).toContain("header: 'Type'")
@@ -32,9 +33,10 @@ describe('Promotions workspace copy', () => {
     expect(file).toContain("header: 'Updated'")
     expect(file).toContain("header: 'Actions'")
     expect(file).toContain("source: 'discount-code'")
-    expect(file).toContain("source: 'smart-promotion'")
+    expect(file).toContain('mapSmartPromotionListRow(promotion)')
     expect(file).toContain("method: 'Code'")
-    expect(file).toContain("method: 'Automatic'")
+    expect(helpers).toContain("method: 'Automatic'")
+    expect(helpers).toContain("source: 'smart-promotion'")
     expect(file).toContain('Search promotions...')
     expect(file).not.toContain('<h2>Discount codes</h2>')
     expect(file).not.toContain('<h2>Automatic offers</h2>')
@@ -136,8 +138,19 @@ describe('Promotions workspace copy', () => {
     expect(smartFile).toContain('quantityLabel="Reward quantity"')
     expect(smartFile).toContain('onRemoveSelection(\'qualifiers\', variantId)')
     expect(smartFile).toContain('onRemoveSelection(\'rewards\', variantId)')
-    expect(smartFile).toContain('[section]: current[section].concat({')
+    expect(smartFile).toContain('[section]: appendPromotionSelectionRow(current[section], {')
     expect(smartFile).toContain('const existing = current[section].find((row) => row.variantId === variant.id)')
+  })
+
+  it('renders validation feedback inside the smart promotion drawer sections', () => {
+    const smartFile = read('src/components/discounts/AutomaticPromotionsWorkspace.js')
+    expect(smartFile).toContain('validationByPath.name?.length')
+    expect(smartFile).toContain('validationByPath.value?.length')
+    expect(smartFile).toContain('validationByPath.qualifiers?.length')
+    expect(smartFile).toContain('validationByPath.rewards?.length')
+    expect(smartFile).toContain('validationByPath.startsAt?.length')
+    expect(smartFile).toContain('validationByPath.endsAt?.length')
+    expect(smartFile).toContain('validationByPath.usageLimit?.length')
   })
 
   it('keeps unified-list styling and stronger picker styling intact', () => {

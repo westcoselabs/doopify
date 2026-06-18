@@ -13,6 +13,7 @@ import AdminToolbar from '../admin/ui/AdminToolbar';
 import PromotionVariantCommandPicker from './PromotionVariantCommandPicker';
 import styles from './AutomaticPromotionsWorkspace.module.css';
 import {
+  appendPromotionSelectionRow,
   beginPromotionCatalogSearch,
   buildPromotionListQuery,
   buildPromotionPayloadFromDraft,
@@ -21,21 +22,26 @@ import {
   closePromotionCatalogState,
   createPromotionCatalogState,
   createPromotionDraft,
+  disablePromotionById,
   extractPromotionValidationIssues,
+  fetchPromotionCatalogProductDetail,
   formatPromotionStatusLabel,
   formatPromotionTypeLabel,
   fetchPromotionCatalogProducts,
   formatRewardSummary,
   getPromotionCatalogSectionState,
+  isEligiblePhysicalProduct,
   getPromotionStatusTone,
   normalizePromotionDraftForType,
   openPromotionCatalogSection,
   PROMOTION_STATUSES,
   PROMOTION_TYPES,
+  resolvePromotionCatalogProductDetailSuccess,
   resolvePromotionCatalogSearchError,
   resolvePromotionCatalogSearchSuccess,
   shouldFetchPromotionCatalog,
   shouldLoadPromotionCatalogOnOpen,
+  toDraftFromDetail,
   togglePromotionPendingSelection as togglePromotionCatalogPendingSelection,
   updatePromotionCatalogQuery,
 } from './promotions-ui.helpers';
@@ -87,44 +93,6 @@ export const TYPE_CARD_COPY = {
     title: 'Free gift',
   },
 };
-
-function toLocalDateTimeInput(value) {
-  if (!value) return '';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '';
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
-}
-
-function toDraftFromDetail(promotion) {
-  return {
-    id: promotion.id,
-    name: String(promotion.name || ''),
-    status: promotion.status || 'DRAFT',
-    type: promotion.type || 'PRODUCT_GROUP_DISCOUNT',
-    rewardType: promotion.rewardType || 'PERCENTAGE',
-    value: String(promotion.value ?? ''),
-    startsAt: toLocalDateTimeInput(promotion.startsAt),
-    endsAt: toLocalDateTimeInput(promotion.endsAt),
-    usageLimit: promotion.usageLimit == null ? '' : String(promotion.usageLimit),
-    priority: promotion.priority == null ? '100' : String(promotion.priority),
-    qualifiers: (promotion.qualifiers || []).map((qualifier) => ({
-      variantId: qualifier.variantId,
-      productTitle: qualifier.productTitle,
-      variantTitle: qualifier.variantTitle,
-      sku: qualifier.sku || null,
-      fulfillmentType: qualifier.fulfillmentType || 'PHYSICAL',
-      quantity: Number(qualifier.requiredQuantity || 1),
-    })),
-    rewards: (promotion.rewards || []).map((reward) => ({
-      variantId: reward.variantId,
-      productTitle: reward.productTitle,
-      variantTitle: reward.variantTitle,
-      sku: reward.sku || null,
-      fulfillmentType: reward.fulfillmentType || 'PHYSICAL',
-      quantity: Number(reward.rewardQuantity || 1),
-    })),
-  };
-}
 
 function rowsToNameSummary(rows) {
   if (!rows.length) return 'None selected';
@@ -193,6 +161,7 @@ function PromotionVariantPicker({
   catalogError,
   catalogEligibleCount,
   catalogLoading,
+  catalogProductDetailsById,
   catalogQuery,
   catalogRows,
   catalogTotalCount,
@@ -218,6 +187,7 @@ function PromotionVariantPicker({
       catalogError={catalogError}
       catalogEligibleCount={catalogEligibleCount}
       catalogLoading={catalogLoading}
+      catalogProductDetailsById={catalogProductDetailsById}
       catalogQuery={catalogQuery}
       catalogRows={catalogRows}
       catalogTotalCount={catalogTotalCount}
@@ -348,6 +318,7 @@ export function SmartPromotionFormSections({
             catalogError={qualifierCatalogState.error}
             catalogEligibleCount={qualifierCatalogState.eligibleResultCount}
             catalogLoading={qualifierCatalogState.loading}
+            catalogProductDetailsById={qualifierCatalogState.productDetailsById}
             catalogQuery={qualifierCatalogState.query}
             catalogRows={qualifierCatalogState.rows}
             catalogTotalCount={qualifierCatalogState.totalResultCount}
@@ -404,6 +375,7 @@ export function SmartPromotionFormSections({
                 catalogError={rewardCatalogState.error}
                 catalogEligibleCount={rewardCatalogState.eligibleResultCount}
                 catalogLoading={rewardCatalogState.loading}
+                catalogProductDetailsById={rewardCatalogState.productDetailsById}
                 catalogQuery={rewardCatalogState.query}
                 catalogRows={rewardCatalogState.rows}
                 catalogTotalCount={rewardCatalogState.totalResultCount}
@@ -452,9 +424,19 @@ export function SmartPromotionFormSections({
                   type="number"
                   value={draft.value}
                 />
+                {validationByPath.value?.length ? (
+                  <small className={styles.fieldError}>{validationByPath.value[0]}</small>
+                ) : null}
               </AdminField>
             </div>
           )}
+          {validationByPath.rewards?.length ? (
+            <div className={styles.inlineErrorList}>
+              {validationByPath.rewards.map((message, index) => (
+                <p key={`rewards-${message}-${index}`}>{message}</p>
+              ))}
+            </div>
+          ) : null}
         </AdminFormSection>
       ) : null}
 
@@ -471,6 +453,9 @@ export function SmartPromotionFormSections({
                 type="datetime-local"
                 value={draft.startsAt}
               />
+              {validationByPath.startsAt?.length ? (
+                <small className={styles.fieldError}>{validationByPath.startsAt[0]}</small>
+              ) : null}
             </AdminField>
             <AdminField label="Ends at">
               <AdminInput
@@ -478,6 +463,9 @@ export function SmartPromotionFormSections({
                 type="datetime-local"
                 value={draft.endsAt}
               />
+              {validationByPath.endsAt?.length ? (
+                <small className={styles.fieldError}>{validationByPath.endsAt[0]}</small>
+              ) : null}
             </AdminField>
             <AdminField label="Usage limit">
               <AdminInput
@@ -487,6 +475,9 @@ export function SmartPromotionFormSections({
                 type="number"
                 value={draft.usageLimit}
               />
+              {validationByPath.usageLimit?.length ? (
+                <small className={styles.fieldError}>{validationByPath.usageLimit[0]}</small>
+              ) : null}
             </AdminField>
             <AdminField
               hint="Lower numbers run first when promotions tie. The best discount usually wins automatically."
@@ -499,6 +490,13 @@ export function SmartPromotionFormSections({
               />
             </AdminField>
           </div>
+          {validationByPath.qualifiers?.length ? (
+            <div className={styles.inlineErrorList}>
+              {validationByPath.qualifiers.map((message, index) => (
+                <p key={`qualifiers-${message}-${index}`}>{message}</p>
+              ))}
+            </div>
+          ) : null}
         </AdminFormSection>
       ) : null}
 
@@ -572,6 +570,7 @@ export default function AutomaticPromotionsWorkspace({
   const [validationIssues, setValidationIssues] = useState([]);
   const [catalogState, setCatalogState] = useState(() => createPromotionCatalogState());
   const lastCreateTokenRef = useRef(-1);
+  const productDetailRequestsRef = useRef(new Set());
   const isEditMode = Boolean(draft.id);
   const canSubmitPromotion = useMemo(() => canSubmitPromotionDraft(draft), [draft]);
 
@@ -619,6 +618,7 @@ export default function AutomaticPromotionsWorkspace({
   function resetDrawerState(nextDraft) {
     setDraft(nextDraft);
     setValidationIssues([]);
+    productDetailRequestsRef.current.clear();
     setCatalogState(createPromotionCatalogState());
   }
 
@@ -685,7 +685,7 @@ export default function AutomaticPromotionsWorkspace({
   }
 
   function addVariantToSelection(section, product, variant) {
-    if (product.fulfillmentType !== 'PHYSICAL') {
+    if (!isEligiblePhysicalProduct(product)) {
       setCatalogState((current) => ({
         ...current,
         sections: {
@@ -717,13 +717,12 @@ export default function AutomaticPromotionsWorkspace({
 
       return {
         ...current,
-        [section]: current[section].concat({
+        [section]: appendPromotionSelectionRow(current[section], {
           variantId: variant.id,
           productTitle: product.title,
           variantTitle: variant.title || 'Default',
           sku: variant.sku || null,
           fulfillmentType: product.fulfillmentType || 'PHYSICAL',
-          quantity: 1,
         }),
       };
     });
@@ -754,7 +753,7 @@ export default function AutomaticPromotionsWorkspace({
         }
       );
     }
-    setCatalogState((current) => closePromotionCatalogState(current));
+    setCatalogState((current) => closePromotionCatalogState(current, section));
   }
 
   async function searchCatalog(section, options = { force: true }) {
@@ -766,34 +765,99 @@ export default function AutomaticPromotionsWorkspace({
     const requestId = sectionState.requestId + 1;
 
     setCatalogState((current) => beginPromotionCatalogSearch(current, section));
+    let result = null;
+    let errorMessage = '';
 
     try {
-      const result = await fetchPromotionCatalogProducts(queryValue);
-
-      setCatalogState((current) =>
-        resolvePromotionCatalogSearchSuccess(
-          current,
-          section,
-          result.rows,
-          requestId,
-          queryValue,
-          {
-            totalResultCount: result.totalResultCount,
-            eligibleResultCount: result.eligibleResultCount,
-          }
-        )
-      );
+      result = await fetchPromotionCatalogProducts(queryValue);
     } catch (error) {
-      setCatalogState((current) =>
-        resolvePromotionCatalogSearchError(
+      errorMessage = error instanceof Error ? error.message : 'Failed to load products. Try again.';
+    } finally {
+      setCatalogState((current) => {
+        if (result) {
+          return resolvePromotionCatalogSearchSuccess(
+            current,
+            section,
+            result.rows,
+            requestId,
+            queryValue,
+            {
+              totalResultCount: result.totalResultCount,
+              eligibleResultCount: result.eligibleResultCount,
+            }
+          );
+        }
+
+        return resolvePromotionCatalogSearchError(
           current,
           section,
-          error instanceof Error ? error.message : 'Failed to load products. Try again.',
+          errorMessage || 'Failed to load products. Try again.',
           requestId
-        )
-      );
+        );
+      });
     }
   }
+
+  useEffect(() => {
+    const openSection = catalogState.openSection;
+    if (!openSection) return;
+
+    const sectionState = getPromotionCatalogSectionState(catalogState, openSection);
+    const productIdsToLoad = sectionState.rows
+      .map((row) => row.id)
+      .filter((productId) => productId && !sectionState.productDetailsById[productId]);
+
+    if (!productIdsToLoad.length) return;
+
+    let cancelled = false;
+
+    for (const productId of productIdsToLoad) {
+      const requestKey = `${openSection}:${productId}`;
+      if (productDetailRequestsRef.current.has(requestKey)) {
+        continue;
+      }
+
+      productDetailRequestsRef.current.add(requestKey);
+      void (async () => {
+        try {
+          const productDetail = await fetchPromotionCatalogProductDetail(productId);
+          if (!productDetail || cancelled) {
+            return;
+          }
+
+          setCatalogState((current) => {
+            const currentSection = getPromotionCatalogSectionState(current, openSection);
+            if (!currentSection.rows.some((row) => row.id === productId)) {
+              return current;
+            }
+
+            return resolvePromotionCatalogProductDetailSuccess(current, openSection, productId, productDetail);
+          });
+        } catch (error) {
+          console.error('[AutomaticPromotionsWorkspace] failed to load product detail', error);
+          if (cancelled) {
+            return;
+          }
+
+          setCatalogState((current) => {
+            const currentSection = getPromotionCatalogSectionState(current, openSection);
+            const fallbackProduct = currentSection.rows.find((row) => row.id === productId);
+            if (!fallbackProduct) {
+              return current;
+            }
+
+            return resolvePromotionCatalogProductDetailSuccess(current, openSection, productId, fallbackProduct);
+          });
+        } finally {
+          productDetailRequestsRef.current.delete(requestKey);
+        }
+      })();
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [catalogState]);
 
   async function handleSavePromotion() {
     setSaving(true);
@@ -838,16 +902,11 @@ export default function AutomaticPromotionsWorkspace({
 
     setErrorMessage('');
     try {
-      const response = await fetch(`/api/promotions/${promotionId}`, { method: 'DELETE' });
-      const payload = await response.json();
-      if (!payload?.success) {
-        setErrorMessage(parseApiErrorMessage(payload, 'Failed to disable promotion.'));
-        return;
-      }
+      await disablePromotionById(promotionId);
       await loadPromotions();
     } catch (error) {
       console.error('[AutomaticPromotionsWorkspace] failed to disable promotion', error);
-      setErrorMessage('Failed to disable promotion.');
+      setErrorMessage(error instanceof Error ? error.message : 'Failed to disable promotion.');
     }
   }
 
@@ -996,7 +1055,9 @@ export default function AutomaticPromotionsWorkspace({
             onCatalogQueryChange={(section, value) =>
               setCatalogState((current) => updatePromotionCatalogQuery(current, section, value))
             }
-            onCancelPicker={() => setCatalogState((current) => closePromotionCatalogState(current))}
+            onCancelPicker={() =>
+              setCatalogState((current) => closePromotionCatalogState(current, current.openSection))
+            }
             onOpenPicker={openCatalogPicker}
             onRemoveSelection={removeSelection}
             onSearchCatalog={(section) => void searchCatalog(section)}
