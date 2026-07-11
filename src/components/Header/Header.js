@@ -40,9 +40,11 @@ export default function Header({
   const [shortcutLabel, setShortcutLabel] = useState('Cmd+K');
 
   useEffect(() => {
-    if (typeof navigator === 'undefined') return;
-    const isMac = /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
-    setShortcutLabel(isMac ? 'Cmd+K' : 'Ctrl+K');
+    const timer = window.setTimeout(() => {
+      const isMac = /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
+      setShortcutLabel(isMac ? 'Cmd+K' : 'Ctrl+K');
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   function openCommandPalette() {

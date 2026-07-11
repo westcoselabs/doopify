@@ -50,3 +50,7 @@ next-env.d.ts
 .vercel
 
 /test-result
+
+# generated repository maps and local agent worktrees
+/graphify-out/
+/.claude/

@@ -393,7 +393,10 @@ export default function DiscountsWorkspace() {
   }, []);
 
   useEffect(() => {
-    void loadSmartPromotions();
+    const timer = window.setTimeout(() => {
+      void loadSmartPromotions();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadSmartPromotions]);
 
   useEffect(() => {

@@ -194,12 +194,13 @@ export default function CheckoutSuccessClientPage() {
   }, []);
 
   useEffect(() => {
-    if (!paymentIntentId) {
+    const timer = window.setTimeout(() => {
+      if (paymentIntentId) {
+        setStatusAccessToken(window.sessionStorage.getItem(`doopify:checkout-status:${paymentIntentId}`));
+      }
       setStatusTokenLoaded(true);
-      return;
-    }
-    setStatusAccessToken(window.sessionStorage.getItem(`doopify:checkout-status:${paymentIntentId}`));
-    setStatusTokenLoaded(true);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [paymentIntentId]);
 
   useEffect(() => {

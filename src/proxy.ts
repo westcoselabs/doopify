@@ -32,8 +32,12 @@ function isPublicMediaReadRequest(pathname: string, method: string) {
   return method === 'GET' && /^\/api\/media\/[^/]+$/.test(pathname)
 }
 
-function nextWithSecurityHeaders() {
-  return applySecurityHeaders(NextResponse.next())
+function nextWithSecurityHeaders(pathname = '') {
+  const response = applySecurityHeaders(NextResponse.next())
+  if (pathname === '/checkout' || pathname === '/checkout/success') {
+    response.headers.set('Referrer-Policy', 'no-referrer')
+  }
+  return response
 }
 
 function jsonWithSecurityHeaders(body: unknown, init: ResponseInit) {
@@ -48,14 +52,14 @@ export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl
 
   if (isPublicMediaReadRequest(pathname, req.method)) {
-    return nextWithSecurityHeaders()
+    return nextWithSecurityHeaders(pathname)
   }
 
   const isPublic = PUBLIC_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
-  if (isPublic) return nextWithSecurityHeaders()
+  if (isPublic) return nextWithSecurityHeaders(pathname)
 
   if (!pathname.startsWith('/api/') && !isAdminPage(pathname)) {
-    return nextWithSecurityHeaders()
+    return nextWithSecurityHeaders(pathname)
   }
 
   const token = req.cookies.get('doopify_token')?.value
@@ -84,7 +88,7 @@ export async function proxy(req: NextRequest) {
     return res
   }
 
-  const res = nextWithSecurityHeaders()
+  const res = nextWithSecurityHeaders(pathname)
   res.headers.set('x-user-id', payload.userId)
   res.headers.set('x-user-role', payload.role)
   res.headers.set('x-user-email', payload.email)

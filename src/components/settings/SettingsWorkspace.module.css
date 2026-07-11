@@ -707,9 +707,9 @@
   line-height: 1.35;
 }
 
-:global(.admin-input),
-:global(.admin-textarea),
-:global(.admin-select__trigger) {
+.page :global(.admin-input),
+.page :global(.admin-textarea),
+.page :global(.admin-select__trigger) {
   border: 1px solid var(--glass-border);
   background: color-mix(in srgb, var(--surface-container-low) 84%, transparent);
   color: var(--on-surface);
@@ -720,20 +720,20 @@
   line-height: 1.45;
 }
 
-:global(.admin-input::placeholder),
-:global(.admin-textarea::placeholder) {
+.page :global(.admin-input::placeholder),
+.page :global(.admin-textarea::placeholder) {
   color: var(--on-surface-variant);
 }
 
-:global(.admin-input:focus),
-:global(.admin-textarea:focus),
-:global(.admin-select__trigger:focus-visible) {
+.page :global(.admin-input:focus),
+.page :global(.admin-textarea:focus),
+.page :global(.admin-select__trigger:focus-visible) {
   outline: none;
   border-color: var(--glass-border-strong);
   box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.16);
 }
 
-:global(.admin-textarea) {
+.page :global(.admin-textarea) {
   min-height: 5.75rem;
   resize: vertical;
 }

@@ -107,6 +107,13 @@ describe('proxy auth protection and security headers', () => {
     expect(mocks.verifyToken).not.toHaveBeenCalled()
   })
 
+  it('uses a no-referrer policy for checkout pages', async () => {
+    const response = await proxy(new NextRequest('http://localhost/checkout/success'))
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('Referrer-Policy')).toBe('no-referrer')
+  })
+
   it('keeps GET /api/media/:assetId public for storefront image delivery', async () => {
     const response = await proxy(new NextRequest('http://localhost/api/media/asset_1'))
 

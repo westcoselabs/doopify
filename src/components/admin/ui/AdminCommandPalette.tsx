@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
@@ -32,10 +32,6 @@ export default function AdminCommandPalette() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [isMac, setIsMac] = useState(false);
 
-  useEffect(() => {
-    setIsMac(isMacPlatform());
-  }, []);
-
   const commandGroups = useMemo<AdminCommandGroup[]>(() => getAdminCommandGroups(), []);
 
   const filteredGroups = useMemo(
@@ -54,6 +50,24 @@ export default function AdminCommandPalette() {
     [filteredGroups]
   );
 
+  const selectedIndex = Math.min(activeIndex, Math.max(flatCommands.length - 1, 0));
+
+  const openPalette = useCallback(() => {
+    setQuery("");
+    setActiveIndex(0);
+    setIsMac(isMacPlatform());
+    setOpen(true);
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  }, []);
+
+  const togglePalette = useCallback(() => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    openPalette();
+  }, [open, openPalette]);
+
   useEffect(() => {
     const handlePaletteEvent = (event: Event) => {
       const customEvent = event as CustomEvent<{ action?: string }>;
@@ -63,11 +77,11 @@ export default function AdminCommandPalette() {
         return;
       }
       if (action === "toggle") {
-        setOpen((current) => !current);
+        togglePalette();
         return;
       }
 
-      setOpen(true);
+      openPalette();
     };
 
     window.addEventListener("admin-command-palette", handlePaletteEvent);
@@ -75,7 +89,7 @@ export default function AdminCommandPalette() {
     return () => {
       window.removeEventListener("admin-command-palette", handlePaletteEvent);
     };
-  }, []);
+  }, [openPalette, togglePalette]);
 
   useEffect(() => {
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
@@ -84,7 +98,7 @@ export default function AdminCommandPalette() {
 
       if (isModifier && key === "k") {
         event.preventDefault();
-        setOpen((current) => !current);
+        togglePalette();
         return;
       }
 
@@ -95,21 +109,7 @@ export default function AdminCommandPalette() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
-
-  useEffect(() => {
-    if (!open) return;
-
-    setQuery("");
-    setActiveIndex(0);
-    window.setTimeout(() => inputRef.current?.focus(), 0);
-  }, [open]);
-
-  useEffect(() => {
-    if (activeIndex > flatCommands.length - 1) {
-      setActiveIndex(0);
-    }
-  }, [activeIndex, flatCommands]);
+  }, [togglePalette]);
 
   useEffect(() => {
     if (!open) return;
@@ -159,7 +159,7 @@ export default function AdminCommandPalette() {
 
     if (event.key === "Enter") {
       event.preventDefault();
-      runCommand(flatCommands[activeIndex]?.item);
+      runCommand(flatCommands[selectedIndex]?.item);
       return;
     }
 
@@ -210,7 +210,7 @@ export default function AdminCommandPalette() {
 
                     return (
                       <button
-                        className={`admin-command-palette__item ${flatIndex === activeIndex ? "is-active" : ""}`}
+                        className={`admin-command-palette__item ${flatIndex === selectedIndex ? "is-active" : ""}`}
                         key={`${group.heading}-${command.label}`}
                         onClick={() => runCommand(command)}
                         type="button"

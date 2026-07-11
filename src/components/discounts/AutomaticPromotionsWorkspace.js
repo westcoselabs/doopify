@@ -555,7 +555,10 @@ export default function AutomaticPromotionsWorkspace({
   }, [search, statusFilter, typeFilter]);
 
   useEffect(() => {
-    void loadPromotions();
+    const timer = window.setTimeout(() => {
+      void loadPromotions();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [loadPromotions]);
 
   useEffect(() => {
