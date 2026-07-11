@@ -5,6 +5,7 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   ENCRYPTION_KEY: z.string().trim().min(32, 'ENCRYPTION_KEY must be at least 32 characters').optional(),
+  ENCRYPTION_KEY_PREVIOUS: z.string().trim().min(32, 'ENCRYPTION_KEY_PREVIOUS must be at least 32 characters').optional(),
   STRIPE_SECRET_KEY: z.string().min(1).optional(),
   STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().min(1).optional(),
@@ -27,12 +28,15 @@ const envSchema = z.object({
   SETUP_TOKEN: z.string().min(8).optional(),
   OWNER_MFA_GRACE_PERIOD_DAYS: z.string().min(1).optional(),
 }).superRefine((value, context) => {
-  if (value.NODE_ENV === 'production' && !value.ENCRYPTION_KEY) {
+  if (value.NODE_ENV !== 'test' && !value.ENCRYPTION_KEY) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
       path: ['ENCRYPTION_KEY'],
-      message: 'ENCRYPTION_KEY is required in production',
+      message: 'ENCRYPTION_KEY is required outside test environments',
     })
+  }
+  if (value.NODE_ENV !== 'test' && value.ENCRYPTION_KEY && /default|replace|changeme|example|sample|generate-a-random|insecure/i.test(value.ENCRYPTION_KEY)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['ENCRYPTION_KEY'], message: 'ENCRYPTION_KEY must not use a default or placeholder value' })
   }
 })
 
