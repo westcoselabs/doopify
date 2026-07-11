@@ -274,6 +274,7 @@ Shipped:
 - generated Graphify repository artifacts are removed and guarded by `npm run repo:check`
 - dashboard data contexts are route-scoped, so settings/products/orders/customers/discounts APIs are no longer eagerly fetched on unrelated admin pages
 - Settings now renders connection status through a shared, unit-tested provider view model; shipping credential disconnects and unsaved credential entry have explicit confirmation/close guards
+- mutation-capable Playwright suites are blocked without an isolated `DATABASE_URL_TEST` and no longer read the normal `.env` database URL
 
 ### Remaining Phase 4 Priorities
 

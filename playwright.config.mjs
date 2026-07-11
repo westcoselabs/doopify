@@ -2,12 +2,37 @@ import { defineConfig, devices } from '@playwright/test'
 
 const baseURL = process.env.E2E_BASE_URL || 'http://127.0.0.1:3000'
 const isLocalBaseURL = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(baseURL)
+const databaseUrlTest = String(process.env.DATABASE_URL_TEST || '').trim()
 
 if (!isLocalBaseURL && process.env.E2E_ALLOW_REMOTE !== '1') {
   throw new Error(
     `Refusing to run E2E against non-local base URL "${baseURL}". Set E2E_ALLOW_REMOTE=1 to override.`
   )
 }
+
+if (!databaseUrlTest) {
+  throw new Error('Refusing to run E2E without DATABASE_URL_TEST configured for disposable storage.')
+}
+
+if (databaseUrlTest === process.env.DATABASE_URL) {
+  throw new Error('Refusing to run E2E: DATABASE_URL_TEST must not match DATABASE_URL.')
+}
+
+try {
+  const schema = new URL(databaseUrlTest).searchParams.get('schema') || 'public'
+  if (schema === 'public' && process.env.ALLOW_PUBLIC_TEST_SCHEMA !== '1') {
+    throw new Error('E2E requires DATABASE_URL_TEST with a dedicated non-public schema.')
+  }
+} catch (error) {
+  if (error instanceof Error && error.message.includes('dedicated non-public schema')) {
+    throw error
+  }
+  throw new Error('E2E requires a valid DATABASE_URL_TEST connection string with a dedicated schema.')
+}
+
+// Playwright worker code and the local Next server must share the disposable
+// database; never let either fall through to .env's normal DATABASE_URL.
+process.env.DATABASE_URL = databaseUrlTest
 
 const useWebServer = isLocalBaseURL && process.env.E2E_SKIP_WEBSERVER !== '1'
 function isPlaceholderStripeValue(value) {
@@ -33,6 +58,9 @@ const stripePublishableKeyForE2E = isPlaceholderStripeValue(
 
 const e2eWebServerEnv = {
   ...process.env,
+  DATABASE_URL: databaseUrlTest,
+  DATABASE_URL_TEST: databaseUrlTest,
+  JWT_SECRET: process.env.E2E_JWT_SECRET || 'e2e-local-only-jwt-secret-with-at-least-32-characters',
   STRIPE_SECRET_KEY: stripeSecretKeyForE2E,
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: stripePublishableKeyForE2E,
 }

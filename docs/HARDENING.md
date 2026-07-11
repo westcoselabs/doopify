@@ -267,6 +267,7 @@ These invariants should not be broken by future work:
 - Stripe runtime status and checkout config routes must never expose raw Stripe secret key or webhook secret; publishable key exposure must remain explicit and source-labeled
 - provider verification failures should be represented as provider status `ERROR` (normal setup state) rather than treated as app-level exceptions
 - retryable provider failures must retain the last verified credential/runtime state and record the new attempt separately; only definitive credential failures may invalidate prior verification
+- Playwright mutation suites must require `DATABASE_URL_TEST` on a dedicated non-public schema and must never read `.env` to obtain a normal development database URL
 - manual, EasyPost, and Shippo shipping quotes should flow through a normalized internal quote shape before checkout/admin consumers use rate data
 
 ## Refund And Return Invariants

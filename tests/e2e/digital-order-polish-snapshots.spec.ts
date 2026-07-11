@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient, UserRole } from '@prisma/client'
@@ -15,37 +13,18 @@ type AuthSession = {
   userId: string
 }
 
-function readEnvValue(name: string): string {
-  const envPath = join(process.cwd(), '.env')
-  const source = readFileSync(envPath, 'utf8')
-  const line = source
-    .split(/\r?\n/)
-    .find((entry) => entry.trim().startsWith(`${name}=`))
-
-  if (!line) {
-    throw new Error(`Missing ${name} in .env`)
-  }
-
-  const rawValue = line.slice(line.indexOf('=') + 1).trim()
-  return rawValue.replace(/^['"]|['"]$/g, '')
-}
-
-if (!process.env.DATABASE_URL) {
-  process.env.DATABASE_URL = readEnvValue('DATABASE_URL')
-}
-
-if (!process.env.JWT_SECRET) {
-  process.env.JWT_SECRET = readEnvValue('JWT_SECRET')
-}
+const databaseUrlTest = String(process.env.DATABASE_URL_TEST || '').trim()
+if (!databaseUrlTest) throw new Error('DATABASE_URL_TEST is required for mutation-capable E2E tests.')
+const jwtSecret = String(process.env.E2E_JWT_SECRET || process.env.JWT_SECRET || '').trim()
+if (!jwtSecret) throw new Error('E2E_JWT_SECRET or JWT_SECRET is required for test-session signing.')
 
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
-    connectionString: process.env.DATABASE_URL as string,
+    connectionString: databaseUrlTest,
   }),
 })
 
 async function createAdminSession(): Promise<AuthSession> {
-  const jwtSecret = process.env.JWT_SECRET || readEnvValue('JWT_SECRET')
   const email = `playwright-digital-polish-${Date.now()}-${Math.floor(Math.random() * 10_000)}@example.com`
 
   const user = await prisma.user.create({
