@@ -1,4 +1,5 @@
 import AbandonedCheckoutsWorkspace from '@/components/abandoned-checkouts/AbandonedCheckoutsWorkspace';
+import DashboardRouteProviders from '@/components/dashboard/DashboardRouteProviders';
 
 export const metadata = {
   title: 'Doopify | Abandoned Checkouts',
@@ -6,5 +7,9 @@ export const metadata = {
 };
 
 export default function AdminAbandonedCheckoutsPage() {
-  return <AbandonedCheckoutsWorkspace />;
+  return (
+    <DashboardRouteProviders>
+      <AbandonedCheckoutsWorkspace />
+    </DashboardRouteProviders>
+  );
 }

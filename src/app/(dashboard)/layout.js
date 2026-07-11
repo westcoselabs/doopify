@@ -2,11 +2,6 @@ import '../_styles/shared-base.css';
 import '../_styles/dashboard-theme.css';
 import Script from 'next/script';
 import { inter, manrope } from '../_shared/fonts';
-import { OrdersProvider } from '@/context/OrdersContext';
-import { CustomersProvider } from '@/context/CustomersContext';
-import { DiscountsProvider } from '@/context/DiscountsContext';
-import { ProductsProvider } from '@/context/ProductsContext';
-import { SettingsProvider } from '@/context/SettingsContext';
 import AdminThemeProvider from '@/components/admin/ui/AdminThemeProvider';
 import AdminCommandPalette from '@/components/admin/ui/AdminCommandPalette';
 import AdminSpotlightRuntime from '@/components/admin/ui/AdminSpotlightRuntime';
@@ -51,19 +46,9 @@ export default function DashboardLayout({ children }) {
       </head>
       <body className={`${inter.variable} ${manrope.variable} dashboard-body`} suppressHydrationWarning>
         <AdminThemeProvider>
-          <SettingsProvider>
-            <ProductsProvider>
-              <OrdersProvider>
-                <CustomersProvider>
-                  <DiscountsProvider>
-                    {children}
-                    <AdminSpotlightRuntime />
-                    <AdminCommandPalette />
-                  </DiscountsProvider>
-                </CustomersProvider>
-              </OrdersProvider>
-            </ProductsProvider>
-          </SettingsProvider>
+          {children}
+          <AdminSpotlightRuntime />
+          <AdminCommandPalette />
         </AdminThemeProvider>
       </body>
     </html>

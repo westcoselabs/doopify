@@ -1,4 +1,5 @@
 import AdminDashboardWorkspace from '@/components/admin/AdminDashboardWorkspace';
+import DashboardRouteProviders from '@/components/dashboard/DashboardRouteProviders';
 
 export const metadata = {
   title: 'Doopify | Admin Dashboard',
@@ -6,5 +7,9 @@ export const metadata = {
 };
 
 export default function AdminDashboardPage() {
-  return <AdminDashboardWorkspace />;
+  return (
+    <DashboardRouteProviders customers orders products>
+      <AdminDashboardWorkspace />
+    </DashboardRouteProviders>
+  );
 }

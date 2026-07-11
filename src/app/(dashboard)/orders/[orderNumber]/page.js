@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import OrderDetailClientPage from '@/components/orders/OrderDetailClientPage';
+import DashboardRouteProviders from '@/components/dashboard/DashboardRouteProviders';
 
 export default async function OrderDetailPage({ params }) {
   const resolvedParams = await params;
@@ -9,5 +10,9 @@ export default async function OrderDetailPage({ params }) {
     notFound();
   }
 
-  return <OrderDetailClientPage orderNumber={orderNumber} />;
+  return (
+    <DashboardRouteProviders orders>
+      <OrderDetailClientPage orderNumber={orderNumber} />
+    </DashboardRouteProviders>
+  );
 }

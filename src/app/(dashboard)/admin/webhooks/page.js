@@ -1,4 +1,5 @@
 import WebhookDeliveriesWorkspace from '@/components/webhooks/WebhookDeliveriesWorkspace';
+import DashboardRouteProviders from '@/components/dashboard/DashboardRouteProviders';
 
 export const metadata = {
   title: 'Doopify | Delivery logs',
@@ -6,5 +7,9 @@ export const metadata = {
 };
 
 export default function AdminWebhooksPage() {
-  return <WebhookDeliveriesWorkspace />;
+  return (
+    <DashboardRouteProviders>
+      <WebhookDeliveriesWorkspace />
+    </DashboardRouteProviders>
+  );
 }

@@ -1,4 +1,5 @@
 import CollectionsWorkspace from '@/components/collections/CollectionsWorkspace';
+import DashboardRouteProviders from '@/components/dashboard/DashboardRouteProviders';
 
 export const metadata = {
   title: 'Doopify | Collections',
@@ -6,5 +7,9 @@ export const metadata = {
 };
 
 export default function AdminCollectionsPage() {
-  return <CollectionsWorkspace />;
+  return (
+    <DashboardRouteProviders>
+      <CollectionsWorkspace />
+    </DashboardRouteProviders>
+  );
 }
