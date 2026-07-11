@@ -16,6 +16,7 @@
     "test:e2e:install": "playwright install --with-deps chromium",
     "test:integration": "node scripts/run-integration-tests.mjs",
     "media:migrate-object-storage": "node scripts/migrate-media-to-object-storage.mjs",
+    "secrets:reencrypt": "node --experimental-strip-types scripts/reencrypt-secrets.ts",
     "doopify:doctor": "node scripts/doopify-cli.mjs doctor",
     "doopify:setup": "node scripts/doopify-cli.mjs setup",
     "doopify:env:push": "node scripts/doopify-cli.mjs env push",

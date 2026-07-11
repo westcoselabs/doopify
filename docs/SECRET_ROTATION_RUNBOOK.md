@@ -51,8 +51,12 @@ Rotate these secrets regularly and after any suspected exposure:
 ### Encryption Key
 
 - Existing encrypted rows (provider secrets, integration headers, MFA secrets) depend on `ENCRYPTION_KEY`.
-- Use a controlled migration plan before changing it in production.
-- Do not rotate encryption key ad hoc without a re-encryption strategy.
+- Deploy the new `ENCRYPTION_KEY` with the old value in `ENCRYPTION_KEY_PREVIOUS`; the application writes versioned envelopes and can read legacy/current envelopes during the overlap.
+- First run `npm run secrets:reencrypt -- --dry-run`. It reads encrypted rows and reports only metadata counts; it never prints plaintext or secret values.
+- Review the dry-run report, back up the database, then run `npm run secrets:reencrypt -- --apply --confirm-reencrypt`.
+- The command verifies each replacement before writing it. If a row is unreadable, it does not overwrite that row; retain the prior key, restore the row from a verified backup if needed, and rerun after correction.
+- Verify checkout, provider status, outbound webhooks, MFA login, and digital-download access before removing `ENCRYPTION_KEY_PREVIOUS`.
+- Do not rotate encryption key ad hoc, generate a new key automatically, or remove the previous key before the validation window closes.
 
 ### Stripe + Webhooks
 
