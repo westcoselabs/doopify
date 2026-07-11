@@ -182,4 +182,3 @@ When a shipped/pending/deferred status changes, update:
 Do not recreate `CLAUDE.md`, phase kickoff docs, or a duplicate phase-completion roadmap.
 
 Internal planning docs live in `docs/archive/internal/`. Do not treat them as current status.
-
