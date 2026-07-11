@@ -64,6 +64,7 @@ vi.mock('@/server/shipping/shipping-provider.service', () => ({
 import {
   getProviderStatus,
   getRuntimeProviderConnection,
+  sanitizeProviderError,
   getStripeProviderStatusSnapshot,
   saveProviderCredentials,
   verifyProviderConnection,
@@ -378,6 +379,18 @@ describe('provider connection service', () => {
     } finally {
       mocks.decrypt.mockImplementation((value: string) => value.replace(/^enc:/, ''))
     }
+  })
+
+  it('redacts Stripe, Shippo, EasyPost, and named credential values from provider errors', () => {
+    const raw = 'Shippo rejected shippo_test_abc123; EasyPost EZAKabc123; apiKey=plain_candidate; bearer sk_test_abc123'
+    const sanitized = sanitizeProviderError(raw)
+
+    expect(sanitized).not.toContain('shippo_test_abc123')
+    expect(sanitized).not.toContain('EZAKabc123')
+    expect(sanitized).not.toContain('plain_candidate')
+    expect(sanitized).not.toContain('sk_test_abc123')
+    expect(sanitized).toContain('shippo_***')
+    expect(sanitized).toContain('EZAK***')
   })
 
   it('reports unreadable Stripe credential storage without exposing ciphertext', async () => {

@@ -88,11 +88,14 @@ class ProviderVerificationError extends Error {
 
 const KNOWN_PROVIDERS = new Set<SupportedProvider>(Object.keys(PROVIDER_CONFIG) as SupportedProvider[])
 
-function sanitizeProviderError(error: unknown) {
+export function sanitizeProviderError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
   return message
     .replace(/(sk|pk|rk|re|whsec)_[A-Za-z0-9_-]+/g, '$1_***')
+    .replace(/shippo_(?:test|live)_[A-Za-z0-9_-]+/gi, 'shippo_***')
+    .replace(/EZAK[A-Za-z0-9_-]+/g, 'EZAK***')
     .replace(/bearer\s+[A-Za-z0-9._-]+/gi, 'bearer ***')
+    .replace(/((?:api[_ -]?key|token|password|secret)\s*[=:]\s*)[^\s,;]+/gi, '$1***')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, 280)
