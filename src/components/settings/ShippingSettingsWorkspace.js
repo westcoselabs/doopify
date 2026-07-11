@@ -753,6 +753,9 @@ export default function ShippingSettingsWorkspace({
       setError("Select a provider to disconnect.");
       return;
     }
+    if (!window.confirm(`Disconnect ${formatShippingProviderName(provider)}? This removes its saved credentials from Doopify.`)) {
+      return;
+    }
 
     setSaving(true);
     setError("");
@@ -1813,6 +1816,7 @@ export default function ShippingSettingsWorkspace({
 
       <AdminDrawer
         open={providerDrawerOpen}
+        isDirty={Boolean(providerForm.token.trim())}
         onClose={() => setProviderDrawerOpen(false)}
         title="Manage provider"
         subtitle="Credentials, verification, usage, and disconnect."

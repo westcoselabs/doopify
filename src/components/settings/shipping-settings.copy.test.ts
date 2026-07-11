@@ -219,4 +219,10 @@ describe('shipping settings UX copy and validation', () => {
     expect(source).toContain('connected. Live rates provider selected.')
     expect(source).toContain('connected for labels. Live rates provider not selected.')
   })
+
+  it('confirms before disconnecting saved provider credentials and guards unsaved token entry on close', () => {
+    const source = read(WORKSPACE)
+    expect(source).toContain('Disconnect ${formatShippingProviderName(provider)}? This removes its saved credentials from Doopify.')
+    expect(source).toContain('isDirty={Boolean(providerForm.token.trim())}')
+  })
 })

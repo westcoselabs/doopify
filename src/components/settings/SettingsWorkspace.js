@@ -1949,6 +1949,7 @@ export default function SettingsWorkspace() {
     []
   );
   const stripeCredentialMeta = providerStatusMap.STRIPE?.credentialMeta || [];
+  const stripeDrawerHasUnsavedCredentialChange = Object.values(stripeCredentialReplaceByField).some(Boolean);
   const stripeSavedCredentialMeta = stripeCredentialMeta.filter((entry) => entry.present);
   const stripeCredentialMaskMap = useMemo(
     () =>
@@ -4920,6 +4921,7 @@ export default function SettingsWorkspace() {
         </div>
       </div>
       <AdminDrawer
+        isDirty={stripeDrawerHasUnsavedCredentialChange}
         onClose={closePaymentDrawer}
         open={Boolean(activePaymentDrawer)}
         subtitle={
