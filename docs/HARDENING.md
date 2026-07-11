@@ -261,11 +261,12 @@ These invariants should not be broken by future work:
 - checkout rates decide what customers pay; label providers create postage after order placement
 - manual shipping and manual fulfillment paths must remain available without live carrier credentials
 - shipping setup wizard/status/test-rate admin routes must remain admin-authorized and must not expose provider credentials
-- shipping provider connect/disconnect/test routes must remain admin-authorized, store credentials only in encrypted `IntegrationSecret` rows, and never return credential values
+- shipping provider connect/disconnect/test routes must remain owner-authorized, store credentials only in encrypted `IntegrationSecret` rows, and never return credential values
 - owner-only provider settings gateway routes must remain masked-response only, never return raw credential values, and persist provider credentials in encrypted `IntegrationSecret` rows
 - Settings -> Payments keeps provider credential entry inside slide-over drawers; the main page should remain status-only and must not render raw provider secrets
 - Stripe runtime status and checkout config routes must never expose raw Stripe secret key or webhook secret; publishable key exposure must remain explicit and source-labeled
 - provider verification failures should be represented as provider status `ERROR` (normal setup state) rather than treated as app-level exceptions
+- retryable provider failures must retain the last verified credential/runtime state and record the new attempt separately; only definitive credential failures may invalidate prior verification
 - manual, EasyPost, and Shippo shipping quotes should flow through a normalized internal quote shape before checkout/admin consumers use rate data
 
 ## Refund And Return Invariants

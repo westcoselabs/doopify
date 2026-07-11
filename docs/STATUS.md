@@ -2,7 +2,7 @@
 
 > Canonical status snapshot for developers, maintainers, and AI agents.
 >
-> Documentation refresh: May 5, 2026
+> Documentation refresh: July 10, 2026
 > Last repo verification recorded in active docs: May 5, 2026
 > Current active phase: **Phase 26 - Production Security And Compliance Baseline (in progress)**
 
@@ -266,6 +266,11 @@ Shipped:
 - customer export foundation added at `GET /api/customers/[id]/export` with audit event emission
 - customer detail mutation/read routes now enforce admin auth
 - legal/storefront compliance endpoints now include `/privacy`, `/terms`, and `/.well-known/security.txt`
+- provider credential records now use a canonical built-in-provider selector, owner-only credential operations, explicit retryable verification attempts, and secret-safe connection snapshots that preserve a known verified state through temporary provider failures
+- checkout status uses a hashed, POST-only capability stored in browser session storage (never a URL), with IP rate limiting, a time-bounded redacted legacy path, and idempotent checkout attempts
+- session hashing has a staged legacy-token compatibility migration; encrypted values now use versioned envelopes with a previous-key read window
+- checkout and success pages send a `no-referrer` policy; the shared admin drawer now traps/restores focus, isolates background content, supports accessible keyboard tabs, and supports dirty-close confirmation
+- generated Graphify repository artifacts are removed and guarded by `npm run repo:check`
 
 ### Remaining Phase 4 Priorities
 

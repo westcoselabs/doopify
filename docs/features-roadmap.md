@@ -394,6 +394,13 @@ Goals:
 - backup/restore drill + secret rotation operational runbooks
 - customer data posture documentation and admin export baseline
 
+Recent hardening delivered within this phase:
+
+- canonical provider credential resolution and retry-safe verification state
+- owner-only provider secret operations and masked, server-owned status DTOs
+- checkout capability-token URL removal, idempotency, rate limits, and a documented legacy reconciliation window
+- staged session-token compatibility and versioned encrypted-secret envelopes with previous-key reads
+
 ## Phase 20 — Pilot Polish And Setup UX
 
 Status: active

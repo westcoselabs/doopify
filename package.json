@@ -34,6 +34,7 @@
     "db:seed": "node prisma/seed.mjs",
     "db:seed:bootstrap": "node ./scripts/bootstrap-store.mjs",
     "db:ensure-store": "node ./scripts/ensure-store.mjs",
+    "repo:check": "node scripts/check-repository-hygiene.mjs",
     "postinstall": "prisma generate"
   },
   "dependencies": {
