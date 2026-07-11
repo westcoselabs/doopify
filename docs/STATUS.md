@@ -271,6 +271,8 @@ Shipped:
 - session hashing has a staged legacy-token compatibility migration; encrypted values now use versioned envelopes with a previous-key read window
 - checkout and success pages send a `no-referrer` policy; the shared admin drawer now traps/restores focus, isolates background content, supports accessible keyboard tabs, and supports dirty-close confirmation
 - generated Graphify repository artifacts are removed and guarded by `npm run repo:check`
+- dashboard data contexts are route-scoped, so settings/products/orders/customers/discounts APIs are no longer eagerly fetched on unrelated admin pages
+- Settings now renders connection status through a shared, unit-tested provider view model; shipping credential disconnects and unsaved credential entry have explicit confirmation/close guards
 
 ### Remaining Phase 4 Priorities
 
