@@ -525,7 +525,8 @@ model PasswordReset {
 
 model Session {
   id        String   @id @default(cuid())
-  tokenHash String   @unique @map("token")
+  tokenHash String?  @unique
+  legacyToken String? @unique @map("token")
   userId    String
   expiresAt DateTime
   ip        String?
@@ -534,6 +535,7 @@ model Session {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([tokenHash])
+  @@index([legacyToken])
   @@index([userId])
   @@map("sessions")
 }

@@ -124,7 +124,7 @@ export async function loginUser(email: string, password: string, context?: Sessi
 }
 
 export async function logoutUser(token: string) {
-  await prisma.session.deleteMany({ where: { tokenHash: hashSessionToken(token) } })
+  await prisma.session.deleteMany({ where: { OR: [{ tokenHash: hashSessionToken(token) }, { legacyToken: token }] } })
 }
 
 export async function createUser(data: {
@@ -169,7 +169,12 @@ export async function changePassword(
   await prisma.$transaction(async (tx) => {
     await tx.user.update({ where: { id: userId }, data: { passwordHash } })
     if (currentSessionToken) {
-      await tx.session.deleteMany({ where: { userId, NOT: { tokenHash: hashSessionToken(currentSessionToken) } } })
+      await tx.session.deleteMany({
+        where: {
+          userId,
+          NOT: { OR: [{ tokenHash: hashSessionToken(currentSessionToken) }, { legacyToken: currentSessionToken }] },
+        },
+      })
     } else {
       await tx.session.deleteMany({ where: { userId } })
     }
@@ -178,7 +183,10 @@ export async function changePassword(
 
 export async function revokeOtherSessions(userId: string, currentSessionToken: string): Promise<number> {
   const { count } = await prisma.session.deleteMany({
-    where: { userId, NOT: { tokenHash: hashSessionToken(currentSessionToken) } },
+    where: {
+      userId,
+      NOT: { OR: [{ tokenHash: hashSessionToken(currentSessionToken) }, { legacyToken: currentSessionToken }] },
+    },
   })
   return count
 }

@@ -4,7 +4,7 @@ import type { NextResponse } from 'next/server'
 
 import { getCookieValue } from '@/lib/cookies'
 import { env } from '@/lib/env'
-import { hashSessionToken } from '@/lib/session-token'
+import { legacySessionTokenMatches, sessionTokenMatches } from '@/lib/session-token'
 import { prisma } from './prisma'
 
 const JWT_SECRET = env.JWT_SECRET
@@ -37,7 +37,8 @@ export async function verifyToken(token: string): Promise<JWTPayload | null> {
   let session:
     | {
         id: string
-        tokenHash: string
+        tokenHash: string | null
+        legacyToken: string | null
         expiresAt: Date
         user: {
           id: string
@@ -53,6 +54,7 @@ export async function verifyToken(token: string): Promise<JWTPayload | null> {
       select: {
         id: true,
         tokenHash: true,
+        legacyToken: true,
         expiresAt: true,
         user: {
           select: {
@@ -68,7 +70,9 @@ export async function verifyToken(token: string): Promise<JWTPayload | null> {
     return null
   }
 
-  if (!session || session.tokenHash !== hashSessionToken(token)) {
+  const legacyCutoff = new Date(process.env.SESSION_LEGACY_TOKEN_CUTOFF ?? '2026-07-17T00:00:00.000Z')
+  const legacyAllowed = Number.isFinite(legacyCutoff.getTime()) && Date.now() < legacyCutoff.getTime()
+  if (!session || (!sessionTokenMatches(session.tokenHash, token) && !(legacyAllowed && legacySessionTokenMatches(session.legacyToken, token)))) {
     return null
   }
 

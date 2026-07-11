@@ -60,7 +60,10 @@ describe('auth service — changePassword / revokeOtherSessions', () => {
         data: { passwordHash: 'new_hashed_pw' },
       })
       expect(mocks.prisma.session.deleteMany).toHaveBeenCalledWith({
-        where: { userId: 'u1', NOT: { tokenHash: hashSessionToken('current_session_token') } },
+        where: {
+          userId: 'u1',
+          NOT: { OR: [{ tokenHash: hashSessionToken('current_session_token') }, { legacyToken: 'current_session_token' }] },
+        },
       })
     })
 
@@ -121,7 +124,10 @@ describe('auth service — changePassword / revokeOtherSessions', () => {
       const count = await revokeOtherSessions('u1', 'keep_this_token')
 
       expect(mocks.prisma.session.deleteMany).toHaveBeenCalledWith({
-        where: { userId: 'u1', NOT: { tokenHash: hashSessionToken('keep_this_token') } },
+        where: {
+          userId: 'u1',
+          NOT: { OR: [{ tokenHash: hashSessionToken('keep_this_token') }, { legacyToken: 'keep_this_token' }] },
+        },
       })
       expect(count).toBe(3)
     })
