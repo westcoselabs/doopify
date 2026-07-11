@@ -49,6 +49,10 @@ import {
 } from './shipping-save-button.helpers';
 import { isSettingsTabLoadingState } from './settings-skeleton.helpers';
 import { calculateTaxPreview } from './tax-preview.helpers';
+import {
+  describeProviderGatewayStatus,
+  isLikelyVerificationTimeout,
+} from './provider-status-view-model';
 
 const SETTINGS_SECTIONS = [
   { id: 'general', label: 'General' },
@@ -137,13 +141,6 @@ const SETUP_ENV_TEMPLATE = [
   '# SETUP_TOKEN is optional in local dev; required in production first-owner bootstrap',
   'SETUP_TOKEN=',
 ].join('\n');
-
-const PROVIDER_STATE_TONE = {
-  VERIFIED: 'success',
-  CREDENTIALS_SAVED: 'warning',
-  ERROR: 'danger',
-  NOT_CONFIGURED: 'warning',
-};
 
 const PROVIDER_SOURCE_LABEL = {
   db: 'DB credentials',
@@ -637,53 +634,6 @@ function describeResendSetup(checkById) {
   };
 }
 
-function describeProviderGatewayStatus(providerStatus, fallbackStatus) {
-  if (!providerStatus) return fallbackStatus;
-
-  if (providerStatus.credentialStorageState === 'UNREADABLE') {
-    return {
-      label: 'Credentials need replacement',
-      tone: 'danger',
-      detail: 'Saved credentials cannot be decrypted with the current encryption key. Restore the original key or replace the credentials.',
-      sourceLabel: PROVIDER_SOURCE_LABEL[providerStatus.source] || 'DB credentials',
-      lastVerifiedAt: providerStatus.lastVerifiedAt || null,
-    };
-  }
-
-  const verificationTimeoutLike =
-    providerStatus.state === 'ERROR' && isLikelyVerificationTimeout(providerStatus.lastError);
-
-  const stateLabelMap = {
-    VERIFIED: 'Verified',
-    CREDENTIALS_SAVED: 'Credentials saved',
-    ERROR: verificationTimeoutLike ? 'Verification unavailable' : 'Error',
-    NOT_CONFIGURED: 'Not configured',
-  };
-
-  const label = stateLabelMap[providerStatus.state] || 'Not configured';
-  const tone = verificationTimeoutLike ? 'warning' : PROVIDER_STATE_TONE[providerStatus.state] || 'warning';
-  const sourceLabel = PROVIDER_SOURCE_LABEL[providerStatus.source] || 'Not active';
-
-  let detail = `Source: ${sourceLabel}.`;
-  if (providerStatus.state === 'VERIFIED') {
-    detail = `Verified connection. Source: ${sourceLabel}.`;
-  } else if (providerStatus.state === 'CREDENTIALS_SAVED') {
-    detail = `Credentials saved. API verification has not been completed from this screen.`;
-  } else if (providerStatus.state === 'ERROR') {
-    detail = verificationTimeoutLike
-        ? 'Saved configuration is present, but verification is temporarily unavailable.'
-      : providerStatus.lastError || 'Provider verification failed. Review credentials and retry.';
-  }
-
-  return {
-    label,
-    tone,
-    detail,
-    sourceLabel,
-    lastVerifiedAt: providerStatus.lastVerifiedAt || null,
-  };
-}
-
 function describeStripeSavedStatus(stripeStatus, fallbackProviderStatus, fallbackStatus) {
   if (!stripeStatus || typeof stripeStatus !== 'object') {
     return describeProviderGatewayStatus(fallbackProviderStatus, fallbackStatus);
@@ -745,17 +695,6 @@ function normalizeStatusLabel(value) {
     .toLowerCase()
     .replace(/_/g, ' ')
     .trim();
-}
-
-function isLikelyVerificationTimeout(value) {
-  const normalized = normalizeStatusLabel(value);
-  if (!normalized) return false;
-  return (
-    normalized.includes('timeout') ||
-    normalized.includes('timed out') ||
-    normalized.includes('network') ||
-    normalized.includes('temporarily unavailable')
-  );
 }
 
 function formatEventType(value) {
