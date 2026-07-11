@@ -8,22 +8,19 @@ vi.mock('@/server/services/checkout.service', () => ({
   getCheckoutStatus: mocks.getCheckoutStatus,
 }))
 
-import { GET } from './route'
+import { POST } from './route'
 
-describe('GET /api/checkout/status', () => {
+describe('POST /api/checkout/status', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('returns 400 when payment_intent is missing', async () => {
-    const response = await GET(new Request('http://localhost/api/checkout/status'))
+  it('returns 422 when status access fields are missing', async () => {
+    const response = await POST(new Request('http://localhost/api/checkout/status', { method: 'POST' }))
     const payload = await response.json()
 
-    expect(response.status).toBe(400)
-    expect(payload).toEqual({
-      success: false,
-      error: 'payment_intent is required',
-    })
+    expect(response.status).toBe(422)
+    expect(payload.success).toBe(false)
     expect(mocks.getCheckoutStatus).not.toHaveBeenCalled()
   })
 
@@ -37,9 +34,7 @@ describe('GET /api/checkout/status', () => {
       checkoutStatus: 'COMPLETED',
     })
 
-    const response = await GET(
-      new Request('http://localhost/api/checkout/status?payment_intent=pi_status_check&status_token=status-token-123456789012345678901234567890')
-    )
+    const response = await POST(new Request('http://localhost/api/checkout/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paymentIntentId: 'pi_status_check', statusToken: 'status-token-123456789012345678901234567890' }) }))
     const payload = await response.json()
 
     expect(response.status).toBe(200)
@@ -60,21 +55,19 @@ describe('GET /api/checkout/status', () => {
     )
   })
 
-  it('returns 400 when status_token is missing', async () => {
-    const response = await GET(new Request('http://localhost/api/checkout/status?payment_intent=pi_status_check'))
+  it('rejects payment intent IDs without a status token', async () => {
+    const response = await POST(new Request('http://localhost/api/checkout/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paymentIntentId: 'pi_status_check' }) }))
     const payload = await response.json()
 
-    expect(response.status).toBe(400)
-    expect(payload).toEqual({ success: false, error: 'status_token is required' })
+    expect(response.status).toBe(422)
+    expect(payload.success).toBe(false)
     expect(mocks.getCheckoutStatus).not.toHaveBeenCalled()
   })
 
   it('returns 500 when checkout status lookup fails', async () => {
     mocks.getCheckoutStatus.mockRejectedValue(new Error('status unavailable'))
 
-    const response = await GET(
-      new Request('http://localhost/api/checkout/status?payment_intent=pi_status_error&status_token=status-token-123456789012345678901234567890')
-    )
+    const response = await POST(new Request('http://localhost/api/checkout/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paymentIntentId: 'pi_status_error', statusToken: 'status-token-123456789012345678901234567890' }) }))
     const payload = await response.json()
 
     expect(response.status).toBe(500)
@@ -105,9 +98,7 @@ describe('GET /api/checkout/status', () => {
       checkoutStatus: 'COMPLETED',
     })
 
-    const response = await GET(
-      new Request('http://localhost/api/checkout/status?payment_intent=pi_digital_status&status_token=status-token-123456789012345678901234567890')
-    )
+    const response = await POST(new Request('http://localhost/api/checkout/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paymentIntentId: 'pi_digital_status', statusToken: 'status-token-123456789012345678901234567890' }) }))
     const payload = await response.json()
 
     expect(response.status).toBe(200)

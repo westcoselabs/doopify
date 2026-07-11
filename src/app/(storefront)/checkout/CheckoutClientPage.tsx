@@ -95,6 +95,7 @@ type PromotionApplication = {
 
 type CheckoutData = {
   clientSecret: string
+  paymentIntentId: string
   statusAccessToken: string
   currency?: string
   subtotal: number
@@ -901,6 +902,12 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
       }
 
       setCheckout(payload.data);
+      if (payload.data?.paymentIntentId && payload.data?.statusAccessToken) {
+        window.sessionStorage.setItem(
+          `doopify:checkout-status:${payload.data.paymentIntentId}`,
+          payload.data.statusAccessToken
+        );
+      }
       if (payload.data?.selectedShippingRate?.id) {
         setSelectedShippingQuoteId(payload.data.selectedShippingRate.id);
       }
@@ -953,7 +960,6 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
       }
 
       const successUrl = new URL('/checkout/success', window.location.origin);
-      successUrl.searchParams.set('status_token', checkout.statusAccessToken);
       const result = await stripeRef.current.confirmPayment({
         elements: elementsRef.current,
         clientSecret: checkout.clientSecret,

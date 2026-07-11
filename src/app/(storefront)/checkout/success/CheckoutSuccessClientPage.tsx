@@ -154,7 +154,8 @@ function formatPaymentReference(paymentIntentId: string | null) {
 export default function CheckoutSuccessClientPage() {
   const searchParams = useSearchParams();
   const paymentIntentId = searchParams.get('payment_intent');
-  const statusAccessToken = searchParams.get('status_token');
+  const [statusAccessToken, setStatusAccessToken] = useState<string | null>(null);
+  const [statusTokenLoaded, setStatusTokenLoaded] = useState(false);
   const { clearCart } = useCart() as CartContextValue;
 
   const [status, setStatus] = useState<CheckoutStatus>('processing');
@@ -193,11 +194,21 @@ export default function CheckoutSuccessClientPage() {
   }, []);
 
   useEffect(() => {
+    if (!paymentIntentId) {
+      setStatusTokenLoaded(true);
+      return;
+    }
+    setStatusAccessToken(window.sessionStorage.getItem(`doopify:checkout-status:${paymentIntentId}`));
+    setStatusTokenLoaded(true);
+  }, [paymentIntentId]);
+
+  useEffect(() => {
     let cancelled = false;
     let timer: number | null = null;
     const startedAt = Date.now();
 
     async function pollStatus() {
+      if (!statusTokenLoaded) return;
       if (!paymentIntentId || !statusAccessToken) {
         setStatus('failed');
         setFailureReason('We could not securely locate this checkout. Return to the store if you need help.');
@@ -205,12 +216,13 @@ export default function CheckoutSuccessClientPage() {
       }
 
       try {
-        const response = await fetch(
-          `/api/checkout/status?payment_intent=${encodeURIComponent(paymentIntentId)}&status_token=${encodeURIComponent(statusAccessToken)}`,
-          {
+        const response = await fetch('/api/checkout/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          referrerPolicy: 'no-referrer',
+          body: JSON.stringify({ paymentIntentId, statusToken: statusAccessToken }),
           cache: 'no-store',
-          }
-        );
+        });
         const payload = (await response.json().catch(() => null)) as ApiResponse<CheckoutStatusResponseData> | null;
 
         if (!response.ok || !payload?.success) {
@@ -287,7 +299,7 @@ export default function CheckoutSuccessClientPage() {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [clearCart, paymentIntentId, pollCycle, statusAccessToken]);
+  }, [clearCart, paymentIntentId, pollCycle, statusAccessToken, statusTokenLoaded]);
 
   const support = useMemo(() => resolveSupportSummary(store), [store]);
   const paymentReference = useMemo(() => formatPaymentReference(paymentIntentId), [paymentIntentId])
