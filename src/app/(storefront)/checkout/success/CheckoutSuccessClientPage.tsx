@@ -209,7 +209,7 @@ export default function CheckoutSuccessClientPage() {
 
     async function pollStatus() {
       if (!statusTokenLoaded) return;
-      if (!paymentIntentId || !statusAccessToken) {
+      if (!paymentIntentId) {
         setStatus('failed');
         setFailureReason('We could not securely locate this checkout. Return to the store if you need help.');
         return;
@@ -220,7 +220,10 @@ export default function CheckoutSuccessClientPage() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           referrerPolicy: 'no-referrer',
-          body: JSON.stringify({ paymentIntentId, statusToken: statusAccessToken }),
+          body: JSON.stringify({
+            paymentIntentId,
+            ...(statusAccessToken ? { statusToken: statusAccessToken } : {}),
+          }),
           cache: 'no-store',
         });
         const payload = (await response.json().catch(() => null)) as ApiResponse<CheckoutStatusResponseData> | null;

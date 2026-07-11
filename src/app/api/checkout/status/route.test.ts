@@ -55,13 +55,14 @@ describe('POST /api/checkout/status', () => {
     )
   })
 
-  it('rejects payment intent IDs without a status token', async () => {
+  it('permits a redacted legacy reconciliation request without a status token', async () => {
+    mocks.getCheckoutStatus.mockResolvedValue({ status: 'paid', checkoutStatus: 'COMPLETED', legacy: true })
     const response = await POST(new Request('http://localhost/api/checkout/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paymentIntentId: 'pi_status_check' }) }))
     const payload = await response.json()
 
-    expect(response.status).toBe(422)
-    expect(payload.success).toBe(false)
-    expect(mocks.getCheckoutStatus).not.toHaveBeenCalled()
+    expect(response.status).toBe(200)
+    expect(payload).toEqual({ success: true, data: { status: 'paid', checkoutStatus: 'COMPLETED', legacy: true } })
+    expect(mocks.getCheckoutStatus).toHaveBeenCalledWith('pi_status_check', null)
   })
 
   it('returns 500 when checkout status lookup fails', async () => {

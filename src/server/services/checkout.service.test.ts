@@ -2554,4 +2554,26 @@ describe('checkout service', () => {
     await expect(getCheckoutStatus('pi_other_customer', 'e'.repeat(43))).resolves.toBeNull()
     expect(mocks.getOrderByPaymentIntentId).not.toHaveBeenCalled()
   })
+
+  it('returns only redacted reconciliation state for a legacy pre-token checkout', async () => {
+    mocks.prisma.checkoutSession.findFirst.mockResolvedValueOnce({
+      status: 'COMPLETED',
+      failureReason: null,
+      createdAt: new Date('2026-07-09T00:00:00.000Z'),
+      statusTokenHash: null,
+    })
+
+    const status = await getCheckoutStatus('pi_legacy_paid', null)
+
+    expect(status).toEqual({ status: 'paid', checkoutStatus: 'COMPLETED', legacy: true })
+    expect(mocks.getOrderByPaymentIntentId).not.toHaveBeenCalled()
+    expect(mocks.getBuyerDigitalDownloadAvailabilityForPaidOrder).not.toHaveBeenCalled()
+  })
+
+  it('does not allow a tokenless status request for a new checkout', async () => {
+    mocks.prisma.checkoutSession.findFirst.mockResolvedValueOnce(null)
+
+    await expect(getCheckoutStatus('pi_new_checkout', null)).resolves.toBeNull()
+    expect(mocks.getOrderByPaymentIntentId).not.toHaveBeenCalled()
+  })
 })

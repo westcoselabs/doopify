@@ -1063,7 +1063,15 @@ export async function markCheckoutSessionFailed(input: {
   return updated
 }
 
-export async function getCheckoutStatus(paymentIntentId: string, statusAccessToken: string): Promise<{
+const DEFAULT_LEGACY_CHECKOUT_STATUS_CUTOFF = '2026-08-10T00:00:00.000Z'
+
+function legacyCheckoutStatusCutoff() {
+  const configured = process.env.CHECKOUT_LEGACY_STATUS_CUTOFF?.trim() || DEFAULT_LEGACY_CHECKOUT_STATUS_CUTOFF
+  const cutoff = new Date(configured)
+  return Number.isNaN(cutoff.getTime()) ? new Date(DEFAULT_LEGACY_CHECKOUT_STATUS_CUTOFF) : cutoff
+}
+
+export async function getCheckoutStatus(paymentIntentId: string, statusAccessToken?: string | null): Promise<{
   status: 'processing' | 'paid' | 'failed'
   orderNumber?: number
   total?: number
@@ -1080,20 +1088,43 @@ export async function getCheckoutStatus(paymentIntentId: string, statusAccessTok
   digitalDownloadsPending?: boolean
   reason?: string | null
   checkoutStatus?: CheckoutSessionStatus
+  legacy?: boolean
 } | null> {
-  const checkoutSession = await prisma.checkoutSession.findFirst({
-    where: {
-      paymentIntentId,
-      statusTokenHash: hashCheckoutStatusAccessToken(statusAccessToken),
-    },
-    select: {
-      status: true,
-      failureReason: true,
-    },
-  })
+  const normalizedToken = statusAccessToken?.trim() || null
+  const checkoutSession = normalizedToken
+    ? await prisma.checkoutSession.findFirst({
+        where: {
+          paymentIntentId,
+          statusTokenHash: hashCheckoutStatusAccessToken(normalizedToken),
+        },
+        select: { status: true, failureReason: true, createdAt: true, statusTokenHash: true },
+      })
+    : await prisma.checkoutSession.findFirst({
+        where: {
+          paymentIntentId,
+          statusTokenHash: null,
+          createdAt: { lt: legacyCheckoutStatusCutoff() },
+        },
+        select: { status: true, failureReason: true, createdAt: true, statusTokenHash: true },
+      })
 
   if (!checkoutSession) {
     return null
+  }
+
+  if (!normalizedToken) {
+    // Compatibility only for pre-capability checkouts. Never disclose order,
+    // payment, customer, or digital-download details on this legacy path.
+    return {
+      status:
+        checkoutSession.status === 'FAILED'
+          ? 'failed'
+          : checkoutSession.status === 'COMPLETED'
+            ? 'paid'
+            : 'processing',
+      checkoutStatus: checkoutSession.status,
+      legacy: true,
+    }
   }
 
   const existingOrder = await getOrderByPaymentIntentId(paymentIntentId)

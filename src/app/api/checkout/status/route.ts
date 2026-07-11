@@ -23,12 +23,12 @@ export async function POST(req: Request) {
 
   const body = await parseBody(req)
   const payload = body && typeof body === 'object' ? body as Record<string, unknown> : null
-  if (!payload || typeof payload.paymentIntentId !== 'string' || typeof payload.statusToken !== 'string') {
-    return unprocessable('paymentIntentId and statusToken are required')
+  if (!payload || typeof payload.paymentIntentId !== 'string' || (payload.statusToken != null && typeof payload.statusToken !== 'string')) {
+    return unprocessable('paymentIntentId is required and statusToken must be a string when provided')
   }
 
   try {
-    const status = await getCheckoutStatus(payload.paymentIntentId, payload.statusToken)
+    const status = await getCheckoutStatus(payload.paymentIntentId, typeof payload.statusToken === 'string' ? payload.statusToken : null)
     if (!status) {
       // Do not reveal whether a payment intent or checkout session exists.
       return err('Checkout status is unavailable', 404)
