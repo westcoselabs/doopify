@@ -44,6 +44,7 @@ const mocks = vi.hoisted(() => ({
   disconnectShippingProvider: vi.fn(),
   getShippingProviderConnectionStatus: vi.fn(),
   testShippingProviderConnection: vi.fn(),
+  testShippingProviderConnectionWithApiKey: vi.fn(),
 }))
 
 vi.mock('@/lib/env', () => ({ env: mocks.env }))
@@ -57,6 +58,7 @@ vi.mock('@/server/shipping/shipping-provider.service', () => ({
   disconnectShippingProvider: mocks.disconnectShippingProvider,
   getShippingProviderConnectionStatus: mocks.getShippingProviderConnectionStatus,
   testShippingProviderConnection: mocks.testShippingProviderConnection,
+  testShippingProviderConnectionWithApiKey: mocks.testShippingProviderConnectionWithApiKey,
 }))
 
 import {
@@ -920,6 +922,99 @@ describe('provider connection service', () => {
       ([arg]) => Array.isArray(arg?.where?.key?.in)
     )
     expect(metaDeleteCalls.length).toBe(0)
+  })
+
+  it('preserves verified Stripe runtime eligibility when a verification timeout is retryable', async () => {
+    const integration = {
+      id: 'int_stripe_retryable',
+      providerKey: 'STRIPE',
+      type: 'PAYMENT_STRIPE',
+      status: 'ACTIVE',
+      createdAt: new Date('2026-07-11T10:00:00.000Z'),
+      updatedAt: new Date('2026-07-11T10:00:00.000Z'),
+      secrets: [
+        { id: 'sec_1', key: 'PUBLISHABLE_KEY', value: 'enc:pk_test_retryable_1234' },
+        { id: 'sec_2', key: 'SECRET_KEY', value: 'enc:sk_test_retryable_5678' },
+        { id: 'sec_3', key: 'MODE', value: 'enc:test' },
+        { id: 'sec_4', key: 'META_LAST_VERIFIED_AT', value: 'enc:2026-07-11T09:00:00.000Z' },
+        { id: 'sec_5', key: 'META_VERIFICATION_DATA', value: 'enc:{"accountId":"acct_previous"}' },
+      ],
+    }
+    mocks.prisma.integration.findMany.mockResolvedValue([integration])
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network timeout')))
+
+    const result = await verifyProviderConnection('STRIPE')
+
+    expect(result.verification).toMatchObject({ ok: false, retryable: true })
+    expect(result.status).toMatchObject({
+      state: 'VERIFIED',
+      verificationState: 'VERIFIED',
+      runtimeEligible: true,
+    })
+    expect(mocks.prisma.integrationSecret.upsert).toHaveBeenCalledWith(
+      expect.objectContaining({ create: expect.objectContaining({ key: 'META_LAST_ATTEMPT_STATUS' }) })
+    )
+    const invalidation = (mocks.prisma.integrationSecret.deleteMany.mock.calls as Array<[any]>).some(
+      ([arg]) => Array.isArray(arg?.where?.key?.in) && arg.where.key.in.includes('META_LAST_VERIFIED_AT')
+    )
+    expect(invalidation).toBe(false)
+  })
+
+  it('invalidates verified Stripe runtime eligibility only after a definitive credential rejection', async () => {
+    const integration = {
+      id: 'int_stripe_definitive',
+      providerKey: 'STRIPE',
+      type: 'PAYMENT_STRIPE',
+      status: 'ACTIVE',
+      createdAt: new Date('2026-07-11T10:00:00.000Z'),
+      updatedAt: new Date('2026-07-11T10:00:00.000Z'),
+      secrets: [
+        { id: 'sec_1', key: 'PUBLISHABLE_KEY', value: 'enc:pk_test_definitive_1234' },
+        { id: 'sec_2', key: 'SECRET_KEY', value: 'enc:sk_test_definitive_5678' },
+        { id: 'sec_3', key: 'MODE', value: 'enc:test' },
+        { id: 'sec_4', key: 'META_LAST_VERIFIED_AT', value: 'enc:2026-07-11T09:00:00.000Z' },
+      ],
+    }
+    mocks.prisma.integration.findMany.mockResolvedValue([integration])
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('invalid api key', { status: 401 })))
+
+    const result = await verifyProviderConnection('STRIPE')
+
+    expect(result.verification).toMatchObject({ ok: false, retryable: false })
+    const invalidation = (mocks.prisma.integrationSecret.deleteMany.mock.calls as Array<[any]>).some(
+      ([arg]) => Array.isArray(arg?.where?.key?.in) && arg.where.key.in.includes('META_LAST_VERIFIED_AT')
+    )
+    expect(invalidation).toBe(true)
+  })
+
+  it('tests a shipping candidate without persisting or invalidating the saved connection', async () => {
+    const integration = {
+      id: 'int_shippo_saved',
+      providerKey: 'SHIPPO',
+      type: 'SHIPPING_SHIPPO',
+      status: 'ACTIVE',
+      createdAt: new Date('2026-07-11T10:00:00.000Z'),
+      updatedAt: new Date('2026-07-11T10:00:00.000Z'),
+      secrets: [
+        { id: 'sec_1', key: 'API_KEY', value: 'enc:shippo_saved_key' },
+        { id: 'sec_2', key: 'META_LAST_VERIFIED_AT', value: 'enc:2026-07-11T09:00:00.000Z' },
+      ],
+    }
+    mocks.prisma.integration.findMany.mockResolvedValue([integration])
+    mocks.getShippingProviderConnectionStatus.mockResolvedValue({
+      provider: 'SHIPPO', integrationType: 'SHIPPING_SHIPPO', integrationId: 'int_shippo_saved',
+      integrationStatus: 'ACTIVE', hasCredentials: true, connected: true, updatedAt: '2026-07-11T10:00:00.000Z',
+    })
+    mocks.testShippingProviderConnectionWithApiKey.mockResolvedValue({
+      ok: false, message: 'Shippo authentication failed (401)', retryable: false,
+    })
+
+    const result = await verifyProviderConnection('SHIPPO', { candidateApiKey: 'shippo_candidate_key' })
+
+    expect(mocks.testShippingProviderConnectionWithApiKey).toHaveBeenCalledWith('SHIPPO', 'shippo_candidate_key')
+    expect(result.verification).toMatchObject({ ok: false, candidate: true, retryable: false })
+    expect(mocks.prisma.integrationSecret.upsert).not.toHaveBeenCalled()
+    expect(mocks.prisma.integrationSecret.deleteMany).not.toHaveBeenCalled()
   })
 })
 

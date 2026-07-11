@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  requireAdmin: vi.fn(),
+  requireOwner: vi.fn(),
   connectShippingProvider: vi.fn(),
 }))
 
 vi.mock('@/server/auth/require-auth', () => ({
-  requireAdmin: mocks.requireAdmin,
+  requireOwner: mocks.requireOwner,
 }))
 
 vi.mock('@/server/shipping/shipping-provider.service', () => ({
@@ -20,8 +20,8 @@ describe('settings shipping connect-provider route', () => {
     vi.clearAllMocks()
   })
 
-  it('POST requires admin auth', async () => {
-    mocks.requireAdmin.mockResolvedValue({
+  it('POST requires owner auth', async () => {
+    mocks.requireOwner.mockResolvedValue({
       ok: false,
       response: new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401 }),
     })
@@ -38,8 +38,26 @@ describe('settings shipping connect-provider route', () => {
     expect(mocks.connectShippingProvider).not.toHaveBeenCalled()
   })
 
+  it('rejects an authenticated non-owner', async () => {
+    mocks.requireOwner.mockResolvedValue({
+      ok: false,
+      response: new Response(JSON.stringify({ success: false, error: 'Forbidden' }), { status: 403 }),
+    })
+
+    const response = await POST(
+      new Request('http://localhost/api/settings/shipping/connect-provider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'EASYPOST', apiKey: 'candidate' }),
+      })
+    )
+
+    expect(response.status).toBe(403)
+    expect(mocks.connectShippingProvider).not.toHaveBeenCalled()
+  })
+
   it('returns provider status without credentials', async () => {
-    mocks.requireAdmin.mockResolvedValue({
+    mocks.requireOwner.mockResolvedValue({
       ok: true,
       user: { id: 'owner_1', email: 'owner@example.com', role: 'OWNER' },
     })

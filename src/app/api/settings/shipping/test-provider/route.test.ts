@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  requireAdmin: vi.fn(),
+  requireOwner: vi.fn(),
   verifyProviderConnection: vi.fn(),
 }))
 
 vi.mock('@/server/auth/require-auth', () => ({
-  requireAdmin: mocks.requireAdmin,
+  requireOwner: mocks.requireOwner,
 }))
 
 vi.mock('@/server/services/provider-connection.service', () => ({
@@ -20,8 +20,8 @@ describe('settings shipping test-provider route', () => {
     vi.clearAllMocks()
   })
 
-  it('POST requires admin auth', async () => {
-    mocks.requireAdmin.mockResolvedValue({
+  it('POST requires owner auth', async () => {
+    mocks.requireOwner.mockResolvedValue({
       ok: false,
       response: new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401 }),
     })
@@ -39,7 +39,7 @@ describe('settings shipping test-provider route', () => {
   })
 
   it('returns provider test result without secret values', async () => {
-    mocks.requireAdmin.mockResolvedValue({
+    mocks.requireOwner.mockResolvedValue({
       ok: true,
       user: { id: 'owner_1', email: 'owner@example.com', role: 'OWNER' },
     })
@@ -83,8 +83,69 @@ describe('settings shipping test-provider route', () => {
     expect(JSON.stringify(payload)).not.toContain('apiKey')
   })
 
+  it('passes a typed candidate key to the server without persisting it in the response', async () => {
+    mocks.requireOwner.mockResolvedValue({
+      ok: true,
+      user: { id: 'owner_1', email: 'owner@example.com', role: 'OWNER' },
+    })
+    mocks.verifyProviderConnection.mockResolvedValue({
+      status: { provider: 'SHIPPO' },
+      verification: { ok: true, candidate: true, message: 'Candidate connection test succeeded.' },
+    })
+
+    const response = await POST(
+      new Request('http://localhost/api/settings/shipping/test-provider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'SHIPPO', apiKey: 'shippo_candidate_key' }),
+      })
+    )
+
+    expect(response.status).toBe(200)
+    expect(mocks.verifyProviderConnection).toHaveBeenCalledWith('SHIPPO', {
+      candidateApiKey: 'shippo_candidate_key',
+    })
+    expect(JSON.stringify(await response.json())).not.toContain('shippo_candidate_key')
+  })
+
+  it('rejects masked candidate values before verification', async () => {
+    mocks.requireOwner.mockResolvedValue({
+      ok: true,
+      user: { id: 'owner_1', email: 'owner@example.com', role: 'OWNER' },
+    })
+
+    const response = await POST(
+      new Request('http://localhost/api/settings/shipping/test-provider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'SHIPPO', apiKey: 'shippo_******1234' }),
+      })
+    )
+
+    expect(response.status).toBe(422)
+    expect(mocks.verifyProviderConnection).not.toHaveBeenCalled()
+  })
+
+  it('rejects an authenticated non-owner', async () => {
+    mocks.requireOwner.mockResolvedValue({
+      ok: false,
+      response: new Response(JSON.stringify({ success: false, error: 'Forbidden' }), { status: 403 }),
+    })
+
+    const response = await POST(
+      new Request('http://localhost/api/settings/shipping/test-provider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'SHIPPO' }),
+      })
+    )
+
+    expect(response.status).toBe(403)
+    expect(mocks.verifyProviderConnection).not.toHaveBeenCalled()
+  })
+
   it('returns a controlled verification failure payload when provider setup is incomplete', async () => {
-    mocks.requireAdmin.mockResolvedValue({
+    mocks.requireOwner.mockResolvedValue({
       ok: true,
       user: { id: 'owner_1', email: 'owner@example.com', role: 'OWNER' },
     })
@@ -116,7 +177,7 @@ describe('settings shipping test-provider route', () => {
   })
 
   it('returns 500 for unexpected server errors', async () => {
-    mocks.requireAdmin.mockResolvedValue({
+    mocks.requireOwner.mockResolvedValue({
       ok: true,
       user: { id: 'owner_1', email: 'owner@example.com', role: 'OWNER' },
     })

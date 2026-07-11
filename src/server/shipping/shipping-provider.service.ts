@@ -1,6 +1,10 @@
 import type { IntegrationStatus, ShippingLiveProvider } from '@prisma/client'
 
 import { prisma } from '@/lib/prisma'
+import {
+  pickCanonicalProviderIntegration,
+  resolveCanonicalProviderIntegration,
+} from '@/server/services/provider-integration-resolver'
 import { decrypt, encrypt } from '@/server/utils/crypto'
 import type { ShippingRateQuote, ShippingRateRequest } from '@/server/shipping/shipping-rate.types'
 
@@ -60,21 +64,9 @@ export type DisconnectShippingProviderInput = {
   clearCredentials?: boolean
 }
 
-async function findLatestProviderIntegration(provider: ShippingLiveProvider) {
-  return prisma.integration.findFirst({
-    where: { type: providerToIntegrationType(provider) },
-    include: {
-      secrets: {
-        select: { key: true, value: true },
-      },
-    },
-    orderBy: { createdAt: 'desc' },
-  })
-}
-
 function toConnectionStatus(
   provider: ShippingLiveProvider,
-  integration: Awaited<ReturnType<typeof findLatestProviderIntegration>>
+  integration: Awaited<ReturnType<typeof resolveCanonicalProviderIntegration>>
 ): ShippingProviderConnectionStatus {
   const secretKey = PROVIDER_SECRET_KEY[provider]
   const hasCredentials = Boolean(integration?.secrets.some((secret) => secret.key === secretKey && secret.value))
@@ -93,7 +85,7 @@ function toConnectionStatus(
 }
 
 async function getProviderApiKey(provider: ShippingLiveProvider) {
-  const integration = await findLatestProviderIntegration(provider)
+  const integration = await resolveCanonicalProviderIntegration(provider)
   if (!integration || integration.status !== 'ACTIVE') {
     return null
   }
@@ -120,7 +112,7 @@ export async function getShippingProviderApiKey(provider: ShippingLiveProvider) 
 }
 
 export async function getShippingProviderConnectionStatus(provider: ShippingLiveProvider) {
-  const integration = await findLatestProviderIntegration(provider)
+  const integration = await resolveCanonicalProviderIntegration(provider)
   return toConnectionStatus(provider, integration)
 }
 
@@ -135,11 +127,20 @@ export async function connectShippingProvider(input: ConnectShippingProviderInpu
   const providerSecretKey = PROVIDER_SECRET_KEY[provider]
 
   await prisma.$transaction(async (tx) => {
-    const existing = await tx.integration.findFirst({
+    const existingIntegrations = await tx.integration.findMany({
       where: { type: integrationType },
-      orderBy: { createdAt: 'desc' },
-      select: { id: true },
+      select: {
+        id: true,
+        providerKey: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        secrets: {
+          select: { id: true, key: true, value: true },
+        },
+      },
     })
+    const existing = pickCanonicalProviderIntegration(provider, existingIntegrations)
 
     const integration =
       existing != null
@@ -149,6 +150,7 @@ export async function connectShippingProvider(input: ConnectShippingProviderInpu
               name: PROVIDER_NAME[provider],
               status: 'ACTIVE',
               type: integrationType,
+              providerKey: provider,
             },
             select: { id: true },
           })
@@ -157,6 +159,7 @@ export async function connectShippingProvider(input: ConnectShippingProviderInpu
               name: PROVIDER_NAME[provider],
               type: integrationType,
               status: 'ACTIVE',
+              providerKey: provider,
             },
             select: { id: true },
           })
@@ -185,7 +188,7 @@ export async function connectShippingProvider(input: ConnectShippingProviderInpu
 export async function disconnectShippingProvider(input: DisconnectShippingProviderInput) {
   const { provider, clearCredentials = false } = input
   const integrationType = providerToIntegrationType(provider)
-  const integration = await findLatestProviderIntegration(provider)
+  const integration = await resolveCanonicalProviderIntegration(provider)
 
   if (!integration) {
     return getShippingProviderConnectionStatus(provider)
@@ -238,13 +241,25 @@ export async function testShippingProviderConnection(provider: ShippingLiveProvi
     }
   }
 
-  const adapter = resolveProviderAdapter(provider)
-  const result = await adapter.testConnection({ apiKey: credentials.apiKey })
+  const result = await testShippingProviderConnectionWithApiKey(provider, credentials.apiKey)
   return {
     provider,
     status,
     result,
   }
+}
+
+/** Tests a candidate key without persisting or returning it. */
+export async function testShippingProviderConnectionWithApiKey(
+  provider: ShippingLiveProvider,
+  apiKey: string
+): Promise<ShippingProviderConnectionResult> {
+  const normalizedApiKey = normalizeApiKey(apiKey)
+  if (!normalizedApiKey) {
+    return { ok: false, message: 'Provider API key is required.' }
+  }
+
+  return resolveProviderAdapter(provider).testConnection({ apiKey: normalizedApiKey })
 }
 
 export async function getShippingProviderLiveRates(input: {

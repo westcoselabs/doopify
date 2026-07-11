@@ -728,10 +728,14 @@ export default function ShippingSettingsWorkspace({
     setProviderVerifyLoading(true);
     setError("");
     try {
+      const candidateApiKey = providerForm.token.trim();
       const data = await fetch("/api/settings/shipping/test-provider", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider }),
+        body: JSON.stringify({
+          provider,
+          ...(candidateApiKey ? { apiKey: candidateApiKey } : {}),
+        }),
       }).then(parseApiJson);
 
       setProviderTestMessage(data?.result?.message || "Provider verification completed.");
@@ -1529,7 +1533,7 @@ export default function ShippingSettingsWorkspace({
                       disabled={providerVerifyLoading || providerForm.provider === "NONE"}
                       onClick={verifyProvider}
                     >
-                      {providerVerifyLoading ? "Verifying..." : "Verify provider"}
+                      {providerVerifyLoading ? "Testing..." : "Test connection"}
                     </AdminButton>
                     <AdminButton
                       size="sm"
@@ -1880,7 +1884,7 @@ export default function ShippingSettingsWorkspace({
                 variant="secondary"
                 onClick={verifyProvider}
               >
-                {providerVerifyLoading ? "Verifying..." : "Verify provider"}
+                {providerVerifyLoading ? "Testing..." : "Test connection"}
               </AdminButton>
             </div>
           </AdminCard>

@@ -47,6 +47,7 @@ export const easypostProviderAdapter: ShippingProviderAdapter = {
         return {
           ok: false,
           message: `EasyPost authentication failed (${response.status}): ${truncate(bodyText || 'Request failed')}`,
+          retryable: response.status === 429 || response.status >= 500,
         }
       }
 
@@ -68,6 +69,7 @@ export const easypostProviderAdapter: ShippingProviderAdapter = {
       return {
         ok: false,
         message: `EasyPost connection test failed: ${message}`,
+        retryable: true,
       }
     }
   },

@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 import { err, ok, parseBody, unprocessable } from '@/lib/api'
-import { requireAdmin } from '@/server/auth/require-auth'
+import { requireOwner } from '@/server/auth/require-auth'
 import { disconnectShippingProvider } from '@/server/shipping/shipping-provider.service'
 
 export const runtime = 'nodejs'
@@ -12,7 +12,7 @@ const disconnectProviderSchema = z.object({
 })
 
 export async function POST(req: Request) {
-  const auth = await requireAdmin(req)
+  const auth = await requireOwner(req)
   if (!auth.ok) return auth.response
 
   const body = await parseBody(req)

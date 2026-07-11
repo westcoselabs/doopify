@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   prisma: {
     integration: {
-      findFirst: vi.fn(),
+      findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
       updateMany: vi.fn(),
@@ -68,15 +68,18 @@ describe('shipping provider service', () => {
   })
 
   it('connects provider credentials using encrypted integration secrets', async () => {
-    mocks.prisma.integration.findFirst
-      .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce({
+    const connectedIntegration = {
         id: 'int_1',
+        providerKey: 'EASYPOST',
         type: 'SHIPPING_EASYPOST',
         status: 'ACTIVE',
+        createdAt: new Date('2026-04-29T18:40:00.000Z'),
         updatedAt: new Date('2026-04-29T18:40:00.000Z'),
-        secrets: [{ key: 'API_KEY', value: 'enc:ep_test_key' }],
-      })
+        secrets: [{ id: 'sec_1', key: 'API_KEY', value: 'enc:ep_test_key' }],
+      }
+    mocks.prisma.integration.findMany
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([connectedIntegration])
     mocks.prisma.integration.create.mockResolvedValue({ id: 'int_1' })
     mocks.prisma.integrationSecret.upsert.mockResolvedValue({ id: 'sec_1' })
 
@@ -105,21 +108,27 @@ describe('shipping provider service', () => {
   })
 
   it('disconnects provider and reports inactive status', async () => {
-    mocks.prisma.integration.findFirst
-      .mockResolvedValueOnce({
+    const activeIntegration = {
         id: 'int_2',
+        providerKey: 'SHIPPO',
         type: 'SHIPPING_SHIPPO',
         status: 'ACTIVE',
+        createdAt: new Date('2026-04-29T18:41:00.000Z'),
         updatedAt: new Date('2026-04-29T18:41:00.000Z'),
-        secrets: [{ key: 'API_KEY', value: 'enc:shippo_test_key' }],
-      })
-      .mockResolvedValueOnce({
+        secrets: [{ id: 'sec_1', key: 'API_KEY', value: 'enc:shippo_test_key' }],
+      }
+    const inactiveIntegration = {
         id: 'int_2',
+        providerKey: 'SHIPPO',
         type: 'SHIPPING_SHIPPO',
         status: 'INACTIVE',
+        createdAt: new Date('2026-04-29T18:41:00.000Z'),
         updatedAt: new Date('2026-04-29T18:41:30.000Z'),
-        secrets: [{ key: 'API_KEY', value: 'enc:shippo_test_key' }],
-      })
+        secrets: [{ id: 'sec_1', key: 'API_KEY', value: 'enc:shippo_test_key' }],
+      }
+    mocks.prisma.integration.findMany
+      .mockResolvedValueOnce([activeIntegration])
+      .mockResolvedValueOnce([inactiveIntegration])
     mocks.prisma.integration.update.mockResolvedValue({ id: 'int_2', status: 'INACTIVE' })
     mocks.prisma.integration.updateMany.mockResolvedValue({ count: 0 })
     mocks.prisma.integrationSecret.deleteMany.mockResolvedValue({ count: 1 })
@@ -144,21 +153,16 @@ describe('shipping provider service', () => {
   })
 
   it('tests provider connection using decrypted saved credentials', async () => {
-    mocks.prisma.integration.findFirst
-      .mockResolvedValueOnce({
+    const integration = {
         id: 'int_1',
+        providerKey: 'EASYPOST',
         type: 'SHIPPING_EASYPOST',
         status: 'ACTIVE',
+        createdAt: new Date('2026-04-29T18:42:00.000Z'),
         updatedAt: new Date('2026-04-29T18:42:00.000Z'),
-        secrets: [{ key: 'API_KEY', value: 'enc:ep_test_key' }],
-      })
-      .mockResolvedValueOnce({
-        id: 'int_1',
-        type: 'SHIPPING_EASYPOST',
-        status: 'ACTIVE',
-        updatedAt: new Date('2026-04-29T18:42:00.000Z'),
-        secrets: [{ key: 'API_KEY', value: 'enc:ep_test_key' }],
-      })
+        secrets: [{ id: 'sec_1', key: 'API_KEY', value: 'enc:ep_test_key' }],
+      }
+    mocks.prisma.integration.findMany.mockResolvedValue([integration])
     mocks.easypostTestConnection.mockResolvedValue({
       ok: true,
       message: 'EasyPost connection successful.',
@@ -180,13 +184,15 @@ describe('shipping provider service', () => {
   })
 
   it('reports disconnected provider when no active credentials exist', async () => {
-    mocks.prisma.integration.findFirst.mockResolvedValue({
+    mocks.prisma.integration.findMany.mockResolvedValue([{
       id: 'int_3',
+      providerKey: 'EASYPOST',
       type: 'SHIPPING_EASYPOST',
       status: 'INACTIVE',
+      createdAt: new Date('2026-04-29T18:43:00.000Z'),
       updatedAt: new Date('2026-04-29T18:43:00.000Z'),
       secrets: [],
-    })
+    }])
 
     const status = await getShippingProviderConnectionStatus('EASYPOST')
     expect(status).toMatchObject({

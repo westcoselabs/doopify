@@ -237,6 +237,7 @@ enum JobStatus {
 
 model Store {
   id                String   @id @default(cuid())
+  singletonKey      String?  @unique
   name              String
   email             String?
   phone             String?
@@ -1410,6 +1411,7 @@ model AnalyticsEvent {
 
 model Integration {
   id            String             @id @default(cuid())
+  providerKey   String?            @unique
   name          String
   type          String             @default("CUSTOM")
   webhookUrl    String?

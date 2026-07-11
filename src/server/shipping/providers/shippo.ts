@@ -115,6 +115,7 @@ export const shippoProviderAdapter: ShippingProviderAdapter = {
         return {
           ok: false,
           message: `Shippo authentication failed (${response.status}): ${truncate(bodyText || 'Request failed')}`,
+          retryable: response.status === 429 || response.status >= 500,
         }
       }
 
@@ -146,6 +147,7 @@ export const shippoProviderAdapter: ShippingProviderAdapter = {
       return {
         ok: false,
         message: `Shippo connection test failed: ${message}`,
+        retryable: true,
       }
     }
   },

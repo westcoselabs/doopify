@@ -3,6 +3,7 @@ import type { ShippingRateQuote, ShippingRateRequest } from '@/server/shipping/s
 export type ShippingProviderConnectionResult = {
   ok: boolean
   message: string
+  retryable?: boolean
   accountId?: string
   accountType?: string
 }

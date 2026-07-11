@@ -4,9 +4,13 @@ import {
   connectShippingProvider,
   disconnectShippingProvider,
   getShippingProviderConnectionStatus,
-  testShippingProviderConnection,
+  testShippingProviderConnectionWithApiKey,
 } from '@/server/shipping/shipping-provider.service'
 import { hasRealCredential, normalizeCredential } from '@/server/services/credential-readiness'
+import {
+  pickCanonicalProviderIntegration,
+  resolveCanonicalProviderIntegration,
+} from '@/server/services/provider-integration-resolver'
 import { decrypt, encrypt } from '@/server/utils/crypto'
 
 export type SupportedProvider = 'SHIPPO' | 'EASYPOST' | 'RESEND' | 'SMTP' | 'STRIPE'
@@ -65,7 +69,22 @@ const META_VERIFIED_AT = 'META_VERIFIED_AT'
 const META_LAST_VERIFIED_AT = 'META_LAST_VERIFIED_AT'
 const META_LAST_ERROR = 'META_LAST_ERROR'
 const META_VERIFICATION_DATA = 'META_VERIFICATION_DATA'
+const META_LAST_ATTEMPT_AT = 'META_LAST_ATTEMPT_AT'
+const META_LAST_ATTEMPT_STATUS = 'META_LAST_ATTEMPT_STATUS'
+const META_LAST_ATTEMPT_ERROR = 'META_LAST_ATTEMPT_ERROR'
+const META_LAST_ATTEMPT_RETRYABLE = 'META_LAST_ATTEMPT_RETRYABLE'
 const MASK_TOKEN = '******'
+
+type VerificationAttemptStatus = 'SUCCEEDED' | 'RETRYABLE_FAILURE' | 'DEFINITIVE_FAILURE'
+
+class ProviderVerificationError extends Error {
+  constructor(
+    message: string,
+    readonly retryable: boolean
+  ) {
+    super(message)
+  }
+}
 
 const KNOWN_PROVIDERS = new Set<SupportedProvider>(Object.keys(PROVIDER_CONFIG) as SupportedProvider[])
 
@@ -109,88 +128,15 @@ function isShippingProvider(provider: SupportedProvider): provider is 'SHIPPO' |
   return provider === 'SHIPPO' || provider === 'EASYPOST'
 }
 
-type ProviderIntegrationRecord = {
-  id: string
-  status: 'ACTIVE' | 'INACTIVE'
-  createdAt: Date
-  updatedAt: Date
-  secrets: Array<{
-    id: string
-    key: string
-    value: string
-  }>
-}
-
-async function listProviderIntegrations(provider: SupportedProvider): Promise<ProviderIntegrationRecord[]> {
-  return prisma.integration.findMany({
-    where: {
-      type: PROVIDER_CONFIG[provider].integrationType,
-    },
-    include: {
-      secrets: {
-        select: {
-          id: true,
-          key: true,
-          value: true,
-        },
-      },
-    },
-    orderBy: [
-      {
-        updatedAt: 'desc',
-      },
-      {
-        createdAt: 'desc',
-      },
-    ],
-  })
-}
-
-function sortByRecency<T extends { updatedAt: Date; createdAt: Date }>(left: T, right: T) {
-  return right.updatedAt.getTime() - left.updatedAt.getTime() || right.createdAt.getTime() - left.createdAt.getTime()
-}
-
-function pickPreferredActiveProviderIntegration(
-  provider: SupportedProvider,
-  integrations: ProviderIntegrationRecord[]
-) {
-  const activeIntegrations = integrations.filter((integration) => integration.status === 'ACTIVE')
-  if (!activeIntegrations.length) return null
-
-  const activeWithMeta = activeIntegrations.map((integration) => {
-    const secretMap = buildSecretMap(integration.secrets)
-    const verification = extractVerificationMeta(secretMap)
-    const hasCredentials = hasRequiredSecrets(provider, secretMap)
-    return {
-      integration,
-      hasCredentials,
-      verified: Boolean(verification.lastVerifiedAt),
-    }
-  })
-
-  const verifiedCredentialed = activeWithMeta
-    .filter((entry) => entry.hasCredentials && entry.verified)
-    .map((entry) => entry.integration)
-    .sort(sortByRecency)
-  if (verifiedCredentialed.length) return verifiedCredentialed[0]
-
-  const credentialed = activeWithMeta
-    .filter((entry) => entry.hasCredentials)
-    .map((entry) => entry.integration)
-    .sort(sortByRecency)
-  if (credentialed.length) return credentialed[0]
-
-  return [...activeIntegrations].sort(sortByRecency)[0]
-}
-
 async function findPreferredProviderIntegration(provider: SupportedProvider) {
-  const integrations = await listProviderIntegrations(provider)
-  if (!integrations.length) return null
+  return resolveCanonicalProviderIntegration(provider)
+}
 
-  const preferredActive = pickPreferredActiveProviderIntegration(provider, integrations)
-  if (preferredActive) return preferredActive
+function isRetryableProviderError(error: unknown) {
+  if (error instanceof ProviderVerificationError) return error.retryable
 
-  return [...integrations].sort(sortByRecency)[0]
+  const message = String(error instanceof Error ? error.message : error).toLowerCase()
+  return /timeout|timed out|network|fetch failed|econnreset|econnrefused|temporar|unavailable|\b429\b|\b5\d\d\b/.test(message)
 }
 
 function buildSecretMap(secrets: Array<{ key: string; value: string }>) {
@@ -217,6 +163,10 @@ function extractVerificationMeta(secretMap: Map<string, string>) {
   const lastVerifiedAt = extractDecryptedSecret(secretMap, META_LAST_VERIFIED_AT)
   const lastError = extractDecryptedSecret(secretMap, META_LAST_ERROR)
   const verificationDataRaw = extractDecryptedSecret(secretMap, META_VERIFICATION_DATA)
+  const lastAttemptAt = extractDecryptedSecret(secretMap, META_LAST_ATTEMPT_AT)
+  const lastAttemptStatus = extractDecryptedSecret(secretMap, META_LAST_ATTEMPT_STATUS) as VerificationAttemptStatus | null
+  const lastAttemptError = extractDecryptedSecret(secretMap, META_LAST_ATTEMPT_ERROR)
+  const lastAttemptRetryable = extractDecryptedSecret(secretMap, META_LAST_ATTEMPT_RETRYABLE) === 'true'
 
   let verificationData: Record<string, unknown> | null = null
   if (verificationDataRaw) {
@@ -235,6 +185,15 @@ function extractVerificationMeta(secretMap: Map<string, string>) {
     lastVerifiedAt: lastVerifiedAt || verifiedAt || null,
     lastError: lastError || null,
     verificationData,
+    lastAttemptAt: lastAttemptAt || null,
+    lastAttemptStatus:
+      lastAttemptStatus === 'SUCCEEDED' ||
+      lastAttemptStatus === 'RETRYABLE_FAILURE' ||
+      lastAttemptStatus === 'DEFINITIVE_FAILURE'
+        ? lastAttemptStatus
+        : null,
+    lastAttemptError: lastAttemptError || null,
+    lastAttemptRetryable,
   }
 }
 
@@ -337,12 +296,40 @@ function safeCredentialMetadata(provider: SupportedProvider, secretMap: Map<stri
 
 async function updateVerificationMeta(input: {
   integrationId: string
-  verified: boolean
+  outcome: VerificationAttemptStatus
   errorMessage?: string
   verificationData?: Record<string, unknown> | null
 }) {
   await prisma.$transaction(async (tx) => {
-    if (input.verified) {
+    const attemptAtValue = encrypt(new Date().toISOString())
+    const retryable = input.outcome === 'RETRYABLE_FAILURE'
+    const attemptError = input.errorMessage ? encrypt(sanitizeProviderError(input.errorMessage)) : null
+
+    for (const [key, value] of [
+      [META_LAST_ATTEMPT_AT, attemptAtValue],
+      [META_LAST_ATTEMPT_STATUS, encrypt(input.outcome)],
+      [META_LAST_ATTEMPT_RETRYABLE, encrypt(retryable ? 'true' : 'false')],
+    ] as const) {
+      await tx.integrationSecret.upsert({
+        where: { integrationId_key: { integrationId: input.integrationId, key } },
+        create: { integrationId: input.integrationId, key, value },
+        update: { value },
+      })
+    }
+
+    if (attemptError) {
+      await tx.integrationSecret.upsert({
+        where: { integrationId_key: { integrationId: input.integrationId, key: META_LAST_ATTEMPT_ERROR } },
+        create: { integrationId: input.integrationId, key: META_LAST_ATTEMPT_ERROR, value: attemptError },
+        update: { value: attemptError },
+      })
+    } else {
+      await tx.integrationSecret.deleteMany({
+        where: { integrationId: input.integrationId, key: META_LAST_ATTEMPT_ERROR },
+      })
+    }
+
+    if (input.outcome === 'SUCCEEDED') {
       const verifiedAtValue = encrypt(new Date().toISOString())
       const verificationDataValue = input.verificationData
         ? encrypt(JSON.stringify(input.verificationData))
@@ -411,6 +398,12 @@ async function updateVerificationMeta(input: {
       return
     }
 
+    if (input.outcome === 'RETRYABLE_FAILURE') {
+      // A transient test error must not invalidate an otherwise verified
+      // connection or force runtime selection away from saved DB credentials.
+      return
+    }
+
     const errorText = sanitizeProviderError(input.errorMessage || 'Provider verification failed')
     await tx.integrationSecret.upsert({
       where: {
@@ -447,6 +440,39 @@ function normalizeStripeMode(value: unknown) {
 
   if (normalized === 'test' || normalized === 'live') return normalized
   throw new Error('Stripe mode must be "test" or "live"')
+}
+
+function deriveCanonicalStatusDimensions(input: {
+  hasIntegration: boolean
+  hasCredentials: boolean
+  credentialStorageState: CredentialStorageState
+  lastVerifiedAt: string | null
+  lastError: string | null
+  lastAttemptStatus: VerificationAttemptStatus | null
+}) {
+  const persistenceState = !input.hasIntegration
+    ? 'NOT_SAVED' as const
+    : input.credentialStorageState === 'UNREADABLE'
+      ? 'UNREADABLE' as const
+      : 'SAVED' as const
+  const verificationState = input.lastError
+    ? 'DEFINITIVE_ERROR' as const
+    : input.lastVerifiedAt
+      ? 'VERIFIED' as const
+      : input.lastAttemptStatus === 'RETRYABLE_FAILURE'
+        ? 'RETRYABLE_ERROR' as const
+        : 'UNVERIFIED' as const
+  const runtimeEligible = input.hasCredentials && Boolean(input.lastVerifiedAt) && !input.lastError
+  const recommendedAction =
+    persistenceState === 'UNREADABLE' || verificationState === 'DEFINITIVE_ERROR'
+      ? 'REPLACE_CREDENTIALS' as const
+      : !input.hasCredentials
+        ? 'SAVE_CREDENTIALS' as const
+        : verificationState === 'RETRYABLE_ERROR' || verificationState === 'UNVERIFIED'
+          ? 'RETRY_TEST' as const
+          : 'NONE' as const
+
+  return { persistenceState, verificationState, runtimeEligible, recommendedAction }
 }
 
 function getStripeKeyMode(value: string, prefix: 'pk' | 'sk') {
@@ -589,19 +615,8 @@ async function upsertProviderIntegrationCredentials(input: {
           },
         },
       },
-      orderBy: [
-        {
-          updatedAt: 'desc',
-        },
-        {
-          createdAt: 'desc',
-        },
-      ],
     })
-    const existing = pickPreferredActiveProviderIntegration(
-      provider,
-      existingIntegrations as ProviderIntegrationRecord[]
-    )
+    const existing = pickCanonicalProviderIntegration(provider, existingIntegrations)
 
     const integration =
       existing != null
@@ -613,6 +628,7 @@ async function upsertProviderIntegrationCredentials(input: {
               name: config.displayName,
               status: 'ACTIVE',
               type: config.integrationType,
+              providerKey: provider,
             },
             select: {
               id: true,
@@ -623,6 +639,7 @@ async function upsertProviderIntegrationCredentials(input: {
               name: config.displayName,
               status: 'ACTIVE',
               type: config.integrationType,
+              providerKey: provider,
             },
             select: {
               id: true,
@@ -653,7 +670,16 @@ async function upsertProviderIntegrationCredentials(input: {
         where: {
           integrationId: integration.id,
           key: {
-            in: [META_VERIFIED_AT, META_LAST_VERIFIED_AT, META_LAST_ERROR, META_VERIFICATION_DATA],
+            in: [
+              META_VERIFIED_AT,
+              META_LAST_VERIFIED_AT,
+              META_LAST_ERROR,
+              META_VERIFICATION_DATA,
+              META_LAST_ATTEMPT_AT,
+              META_LAST_ATTEMPT_STATUS,
+              META_LAST_ATTEMPT_ERROR,
+              META_LAST_ATTEMPT_RETRYABLE,
+            ],
           },
         },
       })
@@ -815,6 +841,14 @@ export type ProviderStatus = {
   source: ProviderSource
   hasCredentials: boolean
   credentialStorageState: CredentialStorageState
+  persistenceState: 'NOT_SAVED' | 'SAVED' | 'UNREADABLE'
+  verificationState: 'UNVERIFIED' | 'VERIFIED' | 'RETRYABLE_ERROR' | 'DEFINITIVE_ERROR'
+  runtimeEligible: boolean
+  lastAttemptAt: string | null
+  lastAttemptStatus: VerificationAttemptStatus | null
+  lastAttemptError: string | null
+  lastAttemptRetryable: boolean
+  recommendedAction: 'SAVE_CREDENTIALS' | 'RETRY_TEST' | 'REPLACE_CREDENTIALS' | 'NONE'
   verifiedAt: string | null
   lastVerifiedAt: string | null
   lastError: string | null
@@ -846,6 +880,14 @@ export type StripeProviderStatusSnapshot = {
   source: ProviderSource
   runtimeSource: ProviderSource
   credentialStorageState?: CredentialStorageState
+  persistenceState?: ProviderStatus['persistenceState']
+  verificationState?: ProviderStatus['verificationState']
+  runtimeEligible?: boolean
+  lastAttemptAt?: string | null
+  lastAttemptStatus?: VerificationAttemptStatus | null
+  lastAttemptError?: string | null
+  lastAttemptRetryable?: boolean
+  recommendedAction?: ProviderStatus['recommendedAction']
 }
 
 function normalizeStringValue(value: unknown) {
@@ -923,6 +965,14 @@ export async function getStripeProviderStatusSnapshot(): Promise<StripeProviderS
     source,
     runtimeSource: runtime.source,
     credentialStorageState,
+    persistenceState: status.persistenceState,
+    verificationState: status.verificationState,
+    runtimeEligible: status.runtimeEligible,
+    lastAttemptAt: status.lastAttemptAt,
+    lastAttemptStatus: status.lastAttemptStatus,
+    lastAttemptError: status.lastAttemptError,
+    lastAttemptRetryable: status.lastAttemptRetryable,
+    recommendedAction: status.recommendedAction,
   }
 }
 
@@ -933,6 +983,19 @@ export async function getProviderStatus(provider: SupportedProvider): Promise<Pr
     const secretMap = integration ? buildSecretMap(integration.secrets) : new Map<string, string>()
     const verification = extractVerificationMeta(secretMap)
     const runtime = await getRuntimeProviderConnectionInternal(provider)
+    const credentialStorageState: CredentialStorageState = integration
+      ? hasUndecryptableRequiredSecret(provider, secretMap)
+        ? 'UNREADABLE'
+        : 'READY'
+      : 'NOT_CONFIGURED'
+    const canonical = deriveCanonicalStatusDimensions({
+      hasIntegration: Boolean(integration),
+      hasCredentials: shippingStatus.hasCredentials,
+      credentialStorageState,
+      lastVerifiedAt: verification.lastVerifiedAt,
+      lastError: verification.lastError,
+      lastAttemptStatus: verification.lastAttemptStatus,
+    })
 
     return {
       provider,
@@ -946,15 +1009,16 @@ export async function getProviderStatus(provider: SupportedProvider): Promise<Pr
       }),
       source: runtime.source,
       hasCredentials: shippingStatus.hasCredentials,
-      credentialStorageState: integration
-        ? hasUndecryptableRequiredSecret(provider, secretMap)
-          ? 'UNREADABLE'
-          : 'READY'
-        : 'NOT_CONFIGURED',
+      credentialStorageState,
+      ...canonical,
       verifiedAt: verification.verifiedAt,
       lastVerifiedAt: verification.lastVerifiedAt,
       lastError: verification.lastError,
       verificationData: verification.verificationData,
+      lastAttemptAt: verification.lastAttemptAt,
+      lastAttemptStatus: verification.lastAttemptStatus,
+      lastAttemptError: verification.lastAttemptError,
+      lastAttemptRetryable: verification.lastAttemptRetryable,
       updatedAt: shippingStatus.updatedAt,
       credentialMeta: safeCredentialMetadata(provider, secretMap),
     }
@@ -965,6 +1029,14 @@ export async function getProviderStatus(provider: SupportedProvider): Promise<Pr
 
   if (!integration) {
     const runtime = await getRuntimeProviderConnectionInternal(provider)
+    const canonical = deriveCanonicalStatusDimensions({
+      hasIntegration: false,
+      hasCredentials: runtime.source !== 'none',
+      credentialStorageState: 'NOT_CONFIGURED',
+      lastVerifiedAt: null,
+      lastError: null,
+      lastAttemptStatus: null,
+    })
     return {
       provider,
       category: config.category,
@@ -973,10 +1045,15 @@ export async function getProviderStatus(provider: SupportedProvider): Promise<Pr
       source: runtime.source,
       hasCredentials: runtime.source !== 'none',
       credentialStorageState: 'NOT_CONFIGURED',
+      ...canonical,
       verifiedAt: null,
       lastVerifiedAt: null,
       lastError: null,
       verificationData: null,
+      lastAttemptAt: null,
+      lastAttemptStatus: null,
+      lastAttemptError: null,
+      lastAttemptRetryable: false,
       updatedAt: null,
       credentialMeta: [],
     }
@@ -990,6 +1067,14 @@ export async function getProviderStatus(provider: SupportedProvider): Promise<Pr
   const verification = extractVerificationMeta(secretMap)
   const runtime = await getRuntimeProviderConnectionInternal(provider)
   const effectiveSource: ProviderSource = hasCredentials ? 'db' : runtime.source
+  const canonical = deriveCanonicalStatusDimensions({
+    hasIntegration: true,
+    hasCredentials,
+    credentialStorageState,
+    lastVerifiedAt: verification.lastVerifiedAt,
+    lastError: verification.lastError,
+    lastAttemptStatus: verification.lastAttemptStatus,
+  })
 
   return {
     provider,
@@ -1004,10 +1089,15 @@ export async function getProviderStatus(provider: SupportedProvider): Promise<Pr
     source: effectiveSource,
     hasCredentials,
     credentialStorageState,
+    ...canonical,
     verifiedAt: verification.verifiedAt,
     lastVerifiedAt: verification.lastVerifiedAt,
     lastError: verification.lastError,
     verificationData: verification.verificationData,
+    lastAttemptAt: verification.lastAttemptAt,
+    lastAttemptStatus: verification.lastAttemptStatus,
+    lastAttemptError: verification.lastAttemptError,
+    lastAttemptRetryable: verification.lastAttemptRetryable,
     updatedAt: integration.updatedAt.toISOString(),
     credentialMeta: safeCredentialMetadata(provider, secretMap),
   }
@@ -1101,7 +1191,10 @@ async function verifyResendApi(apiKey: string) {
   const responseText = await response.text()
 
   if (!response.ok) {
-    throw new Error(`Resend verification failed: ${responseText}`)
+    throw new ProviderVerificationError(
+      `Resend verification failed (${response.status}): ${sanitizeProviderError(responseText || 'Request failed')}`,
+      response.status === 429 || response.status >= 500
+    )
   }
 
   let domainCount: number | null = null
@@ -1131,7 +1224,10 @@ async function verifyStripeApi(secretKey: string) {
   const responseText = await response.text()
 
   if (!response.ok) {
-    throw new Error(`Stripe verification failed: ${responseText}`)
+    throw new ProviderVerificationError(
+      `Stripe verification failed (${response.status}): ${sanitizeProviderError(responseText || 'Request failed')}`,
+      response.status === 429 || response.status >= 500
+    )
   }
 
   let metadata: Record<string, unknown> = {}
@@ -1172,9 +1268,15 @@ async function verifySmtpConnection(credentials: Record<string, string>) {
   }
 }
 
-export async function verifyProviderConnection(provider: SupportedProvider) {
+export async function verifyProviderConnection(
+  provider: SupportedProvider,
+  options?: { candidateApiKey?: string | null }
+) {
   const integration = await findPreferredProviderIntegration(provider)
-  if (!integration) {
+  const candidateApiKey = isShippingProvider(provider) ? trimToNull(options?.candidateApiKey) : null
+  const testingCandidate = Boolean(candidateApiKey)
+
+  if (!integration && !testingCandidate) {
     // Verification only runs against DB-saved credentials. When the runtime is
     // satisfied purely by .env fallback keys, make that explicit instead of
     // implying nothing is configured — local checkout keeps using the env keys.
@@ -1188,10 +1290,10 @@ export async function verifyProviderConnection(provider: SupportedProvider) {
     throw new Error('Provider is not configured. Save credentials first.')
   }
 
-  const secretMap = buildSecretMap(integration.secrets)
+  const secretMap = integration ? buildSecretMap(integration.secrets) : new Map<string, string>()
   const credentials = getDecryptedCredentials(provider, secretMap)
 
-  if (!hasRequiredSecrets(provider, secretMap)) {
+  if (!testingCandidate && !hasRequiredSecrets(provider, secretMap)) {
     // Distinguish "saved but undecryptable" (ENCRYPTION_KEY changed) from
     // "genuinely incomplete" so the operator gets safe, actionable guidance.
     if (hasUndecryptableRequiredSecret(provider, secretMap)) {
@@ -1207,15 +1309,15 @@ export async function verifyProviderConnection(provider: SupportedProvider) {
     let verificationData: Record<string, unknown> | null = null
 
     if (isShippingProvider(provider)) {
-      const result = await testShippingProviderConnection(provider)
-      if (!result.result.ok) {
-        throw new Error(result.result.message || 'Provider verification failed')
+      const result = await testShippingProviderConnectionWithApiKey(provider, candidateApiKey || credentials.API_KEY)
+      if (!result.ok) {
+        throw new ProviderVerificationError(result.message || 'Provider verification failed', Boolean(result.retryable))
       }
 
       verificationData = {
-        message: result.result.message,
-        accountId: result.result.accountId,
-        accountType: result.result.accountType,
+        message: result.message,
+        accountId: result.accountId,
+        accountType: result.accountType,
       }
     } else if (provider === 'RESEND') {
       verificationData = await verifyResendApi(credentials.API_KEY)
@@ -1225,32 +1327,41 @@ export async function verifyProviderConnection(provider: SupportedProvider) {
       verificationData = await verifyStripeApi(credentials.SECRET_KEY)
     }
 
-    await updateVerificationMeta({
-      integrationId: integration.id,
-      verified: true,
-      verificationData,
-    })
+    if (integration && !testingCandidate) {
+      await updateVerificationMeta({
+        integrationId: integration.id,
+        outcome: 'SUCCEEDED',
+        verificationData,
+      })
+    }
 
     return {
       status: await getProviderStatus(provider),
       verification: {
         ok: true,
-        message: 'Provider verification succeeded.',
+        message: testingCandidate ? 'Candidate connection test succeeded. Save credentials to use this key.' : 'Provider verification succeeded.',
         metadata: verificationData,
+        candidate: testingCandidate,
       },
     }
   } catch (error) {
-    await updateVerificationMeta({
-      integrationId: integration.id,
-      verified: false,
-      errorMessage: sanitizeProviderError(error),
-    })
+    if (integration && !testingCandidate) {
+      await updateVerificationMeta({
+        integrationId: integration.id,
+        outcome: isRetryableProviderError(error) ? 'RETRYABLE_FAILURE' : 'DEFINITIVE_FAILURE',
+        errorMessage: sanitizeProviderError(error),
+      })
+    }
 
     return {
       status: await getProviderStatus(provider),
       verification: {
         ok: false,
-        message: sanitizeProviderError(error),
+        message: testingCandidate
+          ? `Candidate connection test failed: ${sanitizeProviderError(error)}`
+          : sanitizeProviderError(error),
+        candidate: testingCandidate,
+        retryable: isRetryableProviderError(error),
       },
     }
   }
