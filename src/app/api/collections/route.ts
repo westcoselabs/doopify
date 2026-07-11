@@ -2,6 +2,7 @@ import { revalidatePath } from 'next/cache'
 import { z } from 'zod'
 
 import { err, ok, parseBody, unprocessable } from '@/lib/api'
+import { requireAdmin } from '@/server/auth/require-auth'
 import { createCollection, getCollectionSummaries } from '@/server/services/collection.service'
 
 const COLLECTION_SORT_VALUES = ['MANUAL', 'NEWEST', 'TITLE_ASC', 'PRICE_ASC', 'PRICE_DESC'] as const
@@ -27,6 +28,9 @@ function revalidateCollectionPaths(handle?: string) {
 }
 
 export async function GET(req: Request) {
+  const auth = await requireAdmin(req)
+  if (!auth.ok) return auth.response
+
   try {
     const { searchParams } = new URL(req.url)
     const result = await getCollectionSummaries({
@@ -42,6 +46,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const auth = await requireAdmin(req)
+  if (!auth.ok) return auth.response
+
   const body = await parseBody(req)
   if (!body) return err('Invalid request body')
 

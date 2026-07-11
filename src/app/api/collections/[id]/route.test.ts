@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   updateCollection: vi.fn(),
   deleteCollection: vi.fn(),
   revalidatePath: vi.fn(),
+  requireAdmin: vi.fn(),
 }))
 
 vi.mock('next/cache', () => ({
@@ -19,11 +20,33 @@ vi.mock('@/server/services/collection.service', () => ({
   deleteCollection: mocks.deleteCollection,
 }))
 
+vi.mock('@/server/auth/require-auth', () => ({
+  requireAdmin: mocks.requireAdmin,
+}))
+
 import { DELETE, GET, PATCH } from './route'
 
 describe('collection id route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.requireAdmin.mockResolvedValue({
+      ok: true,
+      user: { id: 'user_1', email: 'staff@example.com', role: 'STAFF' },
+    })
+  })
+
+  it('requires route-level admin authorization before reading collection details', async () => {
+    mocks.requireAdmin.mockResolvedValue({
+      ok: false,
+      response: new Response(JSON.stringify({ success: false, error: 'Forbidden' }), { status: 403 }),
+    })
+
+    const response = await GET(new Request('http://localhost/api/collections/col_1'), {
+      params: Promise.resolve({ id: 'col_1' }),
+    })
+
+    expect(response.status).toBe(403)
+    expect(mocks.getCollection).not.toHaveBeenCalled()
   })
 
   it('returns 404 when a collection does not exist', async () => {

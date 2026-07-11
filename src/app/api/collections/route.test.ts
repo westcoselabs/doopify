@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   getCollectionSummaries: vi.fn(),
   createCollection: vi.fn(),
   revalidatePath: vi.fn(),
+  requireAdmin: vi.fn(),
 }))
 
 vi.mock('next/cache', () => ({
@@ -15,11 +16,31 @@ vi.mock('@/server/services/collection.service', () => ({
   createCollection: mocks.createCollection,
 }))
 
+vi.mock('@/server/auth/require-auth', () => ({
+  requireAdmin: mocks.requireAdmin,
+}))
+
 import { GET, POST } from './route'
 
 describe('collections route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.requireAdmin.mockResolvedValue({
+      ok: true,
+      user: { id: 'user_1', email: 'staff@example.com', role: 'STAFF' },
+    })
+  })
+
+  it('requires route-level admin authorization before reading collections', async () => {
+    mocks.requireAdmin.mockResolvedValue({
+      ok: false,
+      response: new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 401 }),
+    })
+
+    const response = await GET(new Request('http://localhost/api/collections'))
+
+    expect(response.status).toBe(401)
+    expect(mocks.getCollectionSummaries).not.toHaveBeenCalled()
   })
 
   it('passes the optional search query through to collection summaries', async () => {
