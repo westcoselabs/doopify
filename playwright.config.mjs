@@ -33,6 +33,8 @@ try {
 // Playwright worker code and the local Next server must share the disposable
 // database; never let either fall through to .env's normal DATABASE_URL.
 process.env.DATABASE_URL = databaseUrlTest
+const jwtSecretForE2E = process.env.E2E_JWT_SECRET || 'e2e-local-only-jwt-secret-with-at-least-32-characters'
+process.env.JWT_SECRET = jwtSecretForE2E
 
 const useWebServer = isLocalBaseURL && process.env.E2E_SKIP_WEBSERVER !== '1'
 function isPlaceholderStripeValue(value) {
@@ -60,7 +62,7 @@ const e2eWebServerEnv = {
   ...process.env,
   DATABASE_URL: databaseUrlTest,
   DATABASE_URL_TEST: databaseUrlTest,
-  JWT_SECRET: process.env.E2E_JWT_SECRET || 'e2e-local-only-jwt-secret-with-at-least-32-characters',
+  JWT_SECRET: jwtSecretForE2E,
   STRIPE_SECRET_KEY: stripeSecretKeyForE2E,
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: stripePublishableKeyForE2E,
 }

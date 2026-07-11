@@ -14,6 +14,7 @@ describe('E2E database isolation', () => {
     expect(config).toContain('DATABASE_URL_TEST must not match DATABASE_URL')
     expect(config).toContain('dedicated non-public schema')
     expect(config).toContain('DATABASE_URL: databaseUrlTest')
+    expect(config).toContain('process.env.JWT_SECRET = jwtSecretForE2E')
   })
 
   it('keeps mutation-capable E2E specs from reading the normal .env database', () => {
