@@ -25,6 +25,10 @@ import {
   isCheckoutShippingQuoteId,
   storeCheckoutShippingQuote,
 } from '@/server/checkout/shipping-quote-cache'
+import {
+  createCheckoutStatusAccessToken,
+  hashCheckoutStatusAccessToken,
+} from '@/server/checkout/checkout-status-access'
 import { emitInternalEvent } from '@/server/events/dispatcher'
 import { getStripeRuntimeConnection } from '@/server/payments/stripe-runtime.service'
 import {
@@ -805,9 +809,11 @@ export async function createCheckoutPaymentIntent(input: {
     ...(promotionApplications.length ? { promotionApplications } : {}),
   }
 
+  const statusAccessToken = createCheckoutStatusAccessToken()
   const checkoutSession = await prisma.checkoutSession.create({
     data: {
       paymentIntentId: paymentIntent.id,
+      statusTokenHash: hashCheckoutStatusAccessToken(statusAccessToken),
       customerId: customer?.id,
       email: normalizedEmail,
       currency,
@@ -831,6 +837,7 @@ export async function createCheckoutPaymentIntent(input: {
   return {
     checkoutSessionId: checkoutSession.id,
     paymentIntentId: paymentIntent.id,
+    statusAccessToken,
     clientSecret: paymentIntent.client_secret,
     currency,
     ...mapCheckoutPricingForPresentation(pricingWithSelectedShipping),
@@ -1032,7 +1039,7 @@ export async function markCheckoutSessionFailed(input: {
   return updated
 }
 
-export async function getCheckoutStatus(paymentIntentId: string): Promise<{
+export async function getCheckoutStatus(paymentIntentId: string, statusAccessToken: string): Promise<{
   status: 'processing' | 'paid' | 'failed'
   orderNumber?: number
   total?: number
@@ -1049,7 +1056,22 @@ export async function getCheckoutStatus(paymentIntentId: string): Promise<{
   digitalDownloadsPending?: boolean
   reason?: string | null
   checkoutStatus?: CheckoutSessionStatus
-}> {
+} | null> {
+  const checkoutSession = await prisma.checkoutSession.findFirst({
+    where: {
+      paymentIntentId,
+      statusTokenHash: hashCheckoutStatusAccessToken(statusAccessToken),
+    },
+    select: {
+      status: true,
+      failureReason: true,
+    },
+  })
+
+  if (!checkoutSession) {
+    return null
+  }
+
   const existingOrder = await getOrderByPaymentIntentId(paymentIntentId)
   if (existingOrder) {
     const digitalDownloads = await getBuyerDigitalDownloadAvailabilityForPaidOrder({
@@ -1073,18 +1095,6 @@ export async function getCheckoutStatus(paymentIntentId: string): Promise<{
         : {}),
       checkoutStatus: 'COMPLETED',
     }
-  }
-
-  const checkoutSession = await prisma.checkoutSession.findUnique({
-    where: { paymentIntentId },
-    select: {
-      status: true,
-      failureReason: true,
-    },
-  })
-
-  if (!checkoutSession) {
-    return { status: 'processing' }
   }
 
   if (checkoutSession.status === 'FAILED') {

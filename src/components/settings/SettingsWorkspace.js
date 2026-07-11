@@ -38,6 +38,7 @@ import {
   buildStripeCredentialSavePayload,
   buildStripeMaskedCredentialMap,
   resolveStripeConnectionState,
+  shouldConfirmStripeCredentialReplacement,
   shouldShowStripeCredentialInput,
 } from './stripe-credential-masking.helpers';
 import { normalizeSettingsSessionUser } from './settings-session-user.helpers';
@@ -497,6 +498,7 @@ function buildStripeRuntimeStatusFromProviderSnapshot(stripeProviderSnapshot) {
     accountId: stripeProviderSnapshot.accountId,
     chargesEnabled: stripeProviderSnapshot.chargesEnabled,
     payoutsEnabled: stripeProviderSnapshot.payoutsEnabled,
+    credentialStorageState: stripeProviderSnapshot.credentialStorageState || 'NOT_CONFIGURED',
     providerStatus: stripeProviderSnapshot,
   };
 }
@@ -521,7 +523,9 @@ function buildStripeRuntimeStatusFromPublicConfig(publicConfig) {
 
 function toProviderGatewayStatusFromStripeSnapshot(stripeProviderSnapshot) {
   if (!stripeProviderSnapshot) return null;
-  const state = stripeProviderSnapshot.verified
+  const state = stripeProviderSnapshot.credentialStorageState === 'UNREADABLE'
+    ? 'ERROR'
+    : stripeProviderSnapshot.verified
     ? 'VERIFIED'
     : stripeProviderSnapshot.lastError
       ? 'ERROR'
@@ -542,7 +546,9 @@ function toProviderGatewayStatusFromStripeSavedStatus(stripeStatus) {
   if (!stripeStatus) return null;
   const verificationStatus = String(stripeStatus.verificationStatus || '').trim().toLowerCase();
   const state =
-    verificationStatus === 'verified'
+    verificationStatus === 'credentials_unreadable'
+      ? 'ERROR'
+      : verificationStatus === 'verified'
       ? 'VERIFIED'
       : verificationStatus === 'needs_attention'
         ? 'ERROR'
@@ -634,6 +640,16 @@ function describeResendSetup(checkById) {
 function describeProviderGatewayStatus(providerStatus, fallbackStatus) {
   if (!providerStatus) return fallbackStatus;
 
+  if (providerStatus.credentialStorageState === 'UNREADABLE') {
+    return {
+      label: 'Credentials need replacement',
+      tone: 'danger',
+      detail: 'Saved credentials cannot be decrypted with the current encryption key. Restore the original key or replace the credentials.',
+      sourceLabel: PROVIDER_SOURCE_LABEL[providerStatus.source] || 'DB credentials',
+      lastVerifiedAt: providerStatus.lastVerifiedAt || null,
+    };
+  }
+
   const verificationTimeoutLike =
     providerStatus.state === 'ERROR' && isLikelyVerificationTimeout(providerStatus.lastError);
 
@@ -655,7 +671,7 @@ function describeProviderGatewayStatus(providerStatus, fallbackStatus) {
     detail = `Credentials saved. API verification has not been completed from this screen.`;
   } else if (providerStatus.state === 'ERROR') {
     detail = verificationTimeoutLike
-      ? 'Saved configuration is present, but verification is temporarily unavailable.'
+        ? 'Saved configuration is present, but verification is temporarily unavailable.'
       : providerStatus.lastError || 'Provider verification failed. Review credentials and retry.';
   }
 
@@ -675,6 +691,15 @@ function describeStripeSavedStatus(stripeStatus, fallbackProviderStatus, fallbac
 
   const sourceLabel = PROVIDER_SOURCE_LABEL[stripeStatus.source] || 'Not active';
   const verificationStatus = String(stripeStatus.verificationStatus || '').trim().toLowerCase();
+  if (verificationStatus === 'credentials_unreadable') {
+    return {
+      label: 'Credentials need replacement',
+      tone: 'danger',
+      detail: 'Saved credentials cannot be decrypted with the current encryption key. Restore the original key or replace the credentials.',
+      sourceLabel,
+      lastVerifiedAt: stripeStatus.lastVerifiedAt || null,
+    };
+  }
   const statusMap = {
     verified: {
       label: 'Verified',
@@ -687,9 +712,9 @@ function describeStripeSavedStatus(stripeStatus, fallbackProviderStatus, fallbac
       detail: 'Credentials are saved. Use "Verify now" to confirm live API connectivity.',
     },
     verification_unavailable: {
-      label: 'Verification unavailable',
+      label: 'Credentials saved',
       tone: 'warning',
-      detail: `Configuration is present. Verification metadata is unavailable right now. Source: ${sourceLabel}.`,
+      detail: `Credentials are saved. Verification metadata is unavailable right now. Source: ${sourceLabel}. Retry verification when the provider is reachable.`,
     },
     needs_attention: {
       label: 'Needs attention',
@@ -1062,6 +1087,7 @@ export default function SettingsWorkspace() {
   const [stripeRuntimeStatus, setStripeRuntimeStatus] = useState(null);
   const [stripeRuntimeLoading, setStripeRuntimeLoading] = useState(false);
   const [stripeRuntimeLoaded, setStripeRuntimeLoaded] = useState(false);
+  const [stripeStatusLoadError, setStripeStatusLoadError] = useState('');
   const [stripePermissionRestrictedByApi, setStripePermissionRestrictedByApi] = useState(false);
   const [stripePublicRuntimeStatus, setStripePublicRuntimeStatus] = useState(null);
   const [activePaymentDrawer, setActivePaymentDrawer] = useState(null);
@@ -1422,6 +1448,7 @@ export default function SettingsWorkspace() {
     async function loadStripeRuntimeStatus() {
       setStripeRuntimeLoading(true);
       setProviderStatusError('');
+      setStripeStatusLoadError('');
       if (stripeRoleRestricted) {
         await loadStripePublicRuntimeStatus();
         if (cancelled) return;
@@ -1445,7 +1472,29 @@ export default function SettingsWorkspace() {
           setStripeRuntimeStatus(null);
           await loadStripePublicRuntimeStatus();
         } else {
-          setProviderStatusError('Failed to load Stripe status.');
+          try {
+            const fallbackPayload = await fetch('/api/settings/providers/STRIPE', { cache: 'no-store' }).then(parseApiJson);
+            if (cancelled) return;
+
+            if (fallbackPayload?.status) {
+              setProviderStatusMap((current) => ({
+                ...current,
+                STRIPE: fallbackPayload.status,
+              }));
+              setStripeRuntimeStatus((current) =>
+                current || buildStripeRuntimeStatusFromProviderSnapshot(fallbackPayload?.stripeProviderStatus)
+              );
+              setStripeStatusLoadError(
+                'Saved Stripe details were loaded, but the full status check could not be refreshed. Retry to check verification details.'
+              );
+            } else {
+              setStripeStatusLoadError('Could not refresh Stripe status. Retry to check saved credentials and verification details.');
+            }
+          } catch {
+            if (!cancelled) {
+              setStripeStatusLoadError('Could not refresh Stripe status. Retry to check saved credentials and verification details.');
+            }
+          }
         }
       } finally {
         if (!cancelled) {
@@ -1689,7 +1738,7 @@ export default function SettingsWorkspace() {
   const isPaymentsSectionActive = activeSection === 'payments';
   const stripeSavedStatusPending =
     !stripeDisplayedRuntimeStatus && !stripeProviderStatus && (stripeRuntimeLoading || !stripeRuntimeLoaded);
-  const showPaymentsProviderRowsSkeleton = false;
+  const showPaymentsProviderRowsSkeleton = stripeSavedStatusPending;
   const stripeSetupStatus = useMemo(
     () => {
       if (stripePermissionRestricted) {
@@ -1720,9 +1769,9 @@ export default function SettingsWorkspace() {
 
       if (!stripeDisplayedRuntimeStatus) {
         return {
-          label: 'Verification unavailable',
+          label: stripeStatusLoadError ? 'Status unavailable' : 'Verification unavailable',
           tone: 'warning',
-          detail: 'Saved Stripe status is temporarily unavailable. Refresh and try again.',
+          detail: stripeStatusLoadError || 'Saved Stripe status is temporarily unavailable. Refresh and try again.',
           sourceLabel: 'Not active',
           lastVerifiedAt: null,
         };
@@ -1740,9 +1789,9 @@ export default function SettingsWorkspace() {
       ) {
         return {
           ...resolved,
-          label: 'Verification unavailable',
+          label: 'Credentials saved',
           tone: 'warning',
-          detail: 'Saved Stripe configuration is present, but verification is temporarily unavailable.',
+          detail: 'Saved Stripe configuration is present, but verification is temporarily unavailable. Retry verification when the provider is reachable.',
         };
       }
 
@@ -1755,6 +1804,7 @@ export default function SettingsWorkspace() {
       stripePublicRuntimeStatus,
       setupCheckById,
       stripeSavedStatusPending,
+      stripeStatusLoadError,
     ]
   );
   const stripeCheckoutSourceLabel =
@@ -1988,10 +2038,10 @@ export default function SettingsWorkspace() {
       };
     }
 
-    if (normalizedStatusLabel === 'verification unavailable') {
+    if (normalizedStatusLabel === 'verification unavailable' || normalizedStatusLabel === 'credentials saved') {
       return {
-        heading: 'Stripe is configured',
-        badgeLabel: 'Verification unavailable',
+        heading: 'Stripe credentials saved',
+        badgeLabel: statusLabel,
         badgeTone: 'warning',
         copy: stripeSetupStatus.detail,
       };
@@ -2018,6 +2068,15 @@ export default function SettingsWorkspace() {
     if (normalizedStatusLabel === 'needs attention') {
       return {
         heading: 'Stripe needs attention',
+        badgeLabel: 'Needs attention',
+        badgeTone: 'danger',
+        copy: stripeSetupStatus.detail,
+      };
+    }
+
+    if (normalizedStatusLabel === 'credentials need replacement') {
+      return {
+        heading: 'Stripe credentials need replacement',
         badgeLabel: 'Needs attention',
         badgeTone: 'danger',
         copy: stripeSetupStatus.detail,
@@ -2952,6 +3011,7 @@ export default function SettingsWorkspace() {
       setStripeRuntimeLoading(true);
     }
     setProviderStatusError('');
+    setStripeStatusLoadError('');
     const runtimeRequest = includeRuntime
       ? fetch('/api/settings/payments/stripe/status', { cache: 'no-store' })
           .then(parseApiJson)
@@ -2959,6 +3019,7 @@ export default function SettingsWorkspace() {
             setStripeRuntimeStatus(runtimePayload || null);
             setStripePublicRuntimeStatus(null);
             setStripePermissionRestrictedByApi(false);
+            setStripeStatusLoadError('');
             setStripeRuntimeLoaded(true);
           })
           .catch(async (runtimeError) => {
@@ -3003,6 +3064,12 @@ export default function SettingsWorkspace() {
     }
 
     await runtimeRequest;
+  }
+
+  function retryStripeStatus() {
+    setStripeStatusLoadError('');
+    setProviderStatusError('');
+    setStripeRuntimeLoaded(false);
   }
 
   async function refreshEmailStatus() {
@@ -3086,6 +3153,16 @@ export default function SettingsWorkspace() {
       setProviderStatusError(STRIPE_OWNER_PERMISSION_ERROR_COPY);
       return;
     }
+    if (
+      provider === 'STRIPE' &&
+      shouldConfirmStripeCredentialReplacement({
+        replacementByField: stripeCredentialReplaceByField,
+        payload,
+      }) &&
+      !window.confirm('Replace the saved Stripe credential(s)? The existing value will stop being used after you save.')
+    ) {
+      return;
+    }
     setProviderActionById((current) => ({ ...current, [provider]: 'saving' }));
     setProviderNotice('');
     setProviderStatusError('');
@@ -3161,6 +3238,9 @@ export default function SettingsWorkspace() {
   async function handleDisconnectProvider(provider) {
     if (provider === 'STRIPE' && stripeActionsRestricted) {
       setProviderStatusError(STRIPE_OWNER_PERMISSION_ERROR_COPY);
+      return;
+    }
+    if (!window.confirm(`Disconnect ${provider}? This removes its saved credentials from Doopify.`)) {
       return;
     }
     setProviderActionById((current) => ({ ...current, [provider]: 'disconnecting' }));
@@ -3873,6 +3953,15 @@ export default function SettingsWorkspace() {
                   <div className={styles.statusBlock}>
                     <p className={styles.statusTitle}>Provider action error</p>
                     <p className={styles.statusText}>{providerStatusErrorDisplay}</p>
+                  </div>
+                ) : null}
+                {stripeStatusLoadError ? (
+                  <div className={styles.statusBlock} role="status">
+                    <p className={styles.statusTitle}>Stripe status needs refresh</p>
+                    <p className={styles.statusText}>{stripeStatusLoadError}</p>
+                    <AdminButton onClick={retryStripeStatus} size="sm" variant="secondary">
+                      Retry Stripe status
+                    </AdminButton>
                   </div>
                 ) : null}
                 {emailStatusError ? (
@@ -4890,6 +4979,16 @@ export default function SettingsWorkspace() {
                 </p>
               ) : null}
             </AdminCard>
+
+            {stripeStatusLoadError ? (
+              <div className={styles.statusBlock} role="alert">
+                <p className={styles.statusTitle}>Stripe status needs refresh</p>
+                <p className={styles.statusText}>{stripeStatusLoadError}</p>
+                <AdminButton onClick={retryStripeStatus} size="sm" variant="secondary">
+                  Retry Stripe status
+                </AdminButton>
+              </div>
+            ) : null}
 
             <AdminCard as="section" className={styles.compactDrawerCard} variant="card">
               <div className={`${styles.setupCardHeader} ${styles.compactSectionHeader}`}>

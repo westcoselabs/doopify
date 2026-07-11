@@ -378,6 +378,39 @@ describe('provider connection service', () => {
     }
   })
 
+  it('reports unreadable Stripe credential storage without exposing ciphertext', async () => {
+    mocks.prisma.integration.findMany.mockResolvedValue([
+      {
+        id: 'int_stripe_unreadable_status',
+        type: 'PAYMENT_STRIPE',
+        status: 'ACTIVE',
+        createdAt: new Date('2026-05-06T00:00:00.000Z'),
+        updatedAt: new Date('2026-05-06T00:00:00.000Z'),
+        secrets: [
+          { id: 'sec_1', key: 'PUBLISHABLE_KEY', value: 'enc:pk_test_locked' },
+          { id: 'sec_2', key: 'SECRET_KEY', value: 'enc:sk_test_locked' },
+          { id: 'sec_3', key: 'MODE', value: 'enc:test' },
+        ],
+      },
+    ])
+    mocks.decrypt.mockImplementation(() => {
+      throw new Error('Unsupported state or unable to authenticate data')
+    })
+
+    try {
+      const snapshot = await getStripeProviderStatusSnapshot()
+
+      expect(snapshot).toMatchObject({
+        credentialStorageState: 'UNREADABLE',
+        configured: false,
+        source: 'db',
+      })
+      expect(JSON.stringify(snapshot)).not.toContain('sk_test_locked')
+    } finally {
+      mocks.decrypt.mockImplementation((value: string) => value.replace(/^enc:/, ''))
+    }
+  })
+
   it('persists Stripe verification metadata for post-reload status/runtime reads', async () => {
     mocks.prisma.integration.findMany.mockResolvedValue([{
       id: 'int_stripe_verify_meta',
@@ -617,7 +650,7 @@ describe('provider connection service', () => {
     expect(serialized).not.toContain('whsec_snapshot_9012')
   })
 
-  it('allows Stripe mode-only updates without resubmitting secret values', async () => {
+  it('rejects a Stripe mode-only update that disagrees with saved API keys', async () => {
     const existingIntegration = {
       id: 'int_stripe_mode_only',
       type: 'PAYMENT_STRIPE',
@@ -635,31 +668,37 @@ describe('provider connection service', () => {
 
     mocks.prisma.integration.findMany.mockResolvedValue([existingIntegration])
 
-    await saveProviderCredentials('STRIPE', {
-      mode: 'test',
-    })
+    await expect(saveProviderCredentials('STRIPE', { mode: 'test' })).rejects.toThrow(
+      /mode must match the supplied publishable and secret keys/i
+    )
+    expect(mocks.prisma.integrationSecret.upsert).not.toHaveBeenCalled()
+  })
 
-    const modeUpsert = (mocks.prisma.integrationSecret.upsert.mock.calls as Array<[any]>).find(
-      ([arg]) => arg?.create?.key === 'MODE'
-    )
-    expect(modeUpsert?.[0]?.create?.value).toBe('enc:test')
-    expect(mocks.prisma.integration.updateMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({
-          type: 'PAYMENT_STRIPE',
-        }),
-        data: {
-          status: 'INACTIVE',
-        },
+  it('rejects Stripe API keys from different modes before persisting them', async () => {
+    mocks.prisma.integration.findMany.mockResolvedValue([])
+
+    await expect(
+      saveProviderCredentials('STRIPE', {
+        publishableKey: 'pk_test_mismatched_1234',
+        secretKey: 'sk_live_mismatched_5678',
       })
-    )
-    const metaDeleteCalls = (mocks.prisma.integrationSecret.deleteMany.mock.calls as Array<[any]>).filter(
-      ([arg]) => Array.isArray(arg?.where?.key?.in)
-    )
-    expect(metaDeleteCalls.length).toBeGreaterThan(0)
-    expect(metaDeleteCalls[0][0].where.key.in).toEqual(
-      expect.arrayContaining(['META_VERIFIED_AT', 'META_LAST_VERIFIED_AT', 'META_LAST_ERROR', 'META_VERIFICATION_DATA'])
-    )
+    ).rejects.toThrow(/must use the same test or live mode/i)
+
+    expect(mocks.prisma.integration.create).not.toHaveBeenCalled()
+  })
+
+  it('rejects a malformed Stripe webhook secret before persisting it', async () => {
+    mocks.prisma.integration.findMany.mockResolvedValue([])
+
+    await expect(
+      saveProviderCredentials('STRIPE', {
+        publishableKey: 'pk_test_valid_1234',
+        secretKey: 'sk_test_valid_5678',
+        webhookSecret: 'not-a-stripe-webhook-secret',
+      })
+    ).rejects.toThrow(/webhookSecret must start with whsec_/i)
+
+    expect(mocks.prisma.integration.create).not.toHaveBeenCalled()
   })
 
   it('clears Stripe verification metadata when publishableKey changes', async () => {

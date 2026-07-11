@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import {
   buildSettingsPatchPayload,
+  requireSettingsApiData,
   SETTINGS_DEFAULTS,
   transformStore,
 } from './settings-context.helpers'
@@ -19,9 +20,7 @@ export function SettingsProvider({ children }) {
       try {
         const res = await fetch('/api/settings');
         const json = await res.json();
-        if (json.success && json.data) {
-          setSettings(transformStore(json.data));
-        }
+        setSettings(transformStore(requireSettingsApiData(res.ok, json)));
       } catch (e) {
         console.error('[SettingsContext]', e);
         setError('Failed to load settings');
@@ -34,16 +33,22 @@ export function SettingsProvider({ children }) {
   }, []);
 
   const updateSettings = useCallback(async patch => {
-    setSettings(current => ({ ...current, ...patch }));
-
     try {
-      await fetch('/api/settings', {
+      const response = await fetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(buildSettingsPatchPayload(patch)),
       });
+      const payload = await response.json();
+      const updatedStore = requireSettingsApiData(response.ok, payload);
+
+      setSettings(transformStore(updatedStore));
+      setError(null);
+      return transformStore(updatedStore);
     } catch (e) {
       console.error('[SettingsContext] save failed', e);
+      setError(e instanceof Error ? e.message : 'Failed to save settings');
+      throw e;
     }
   }, []);
 

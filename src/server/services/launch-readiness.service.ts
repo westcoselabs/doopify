@@ -69,6 +69,7 @@ export type LaunchReadinessFacts = {
   stripeVerificationStatus?:
     | 'verified'
     | 'configured'
+    | 'credentials_unreadable'
     | 'verification_unavailable'
     | 'needs_attention'
     | 'needs_setup'
@@ -185,7 +186,12 @@ export function buildLaunchReadinessReport(
   let stripeSummary: string
   let stripeFix: string | undefined
 
-  if (stripeRuntimeUnavailable) {
+  if (stripeVerificationStatus === 'credentials_unreadable') {
+    stripeStatus = 'needs_setup'
+    stripeSummary =
+      'Saved Stripe credentials cannot be decrypted with the current encryption key. Payments cannot be verified or used safely.'
+    stripeFix = 'Restore the original ENCRYPTION_KEY or replace Stripe credentials in Settings -> Payments.'
+  } else if (stripeRuntimeUnavailable) {
     stripeStatus = 'warning'
     stripeSummary =
       'Stripe configuration is saved, but verification is temporarily unavailable. Recheck Settings -> Payments before launch.'

@@ -148,3 +148,17 @@ export function shouldShowStripeCredentialInput(input: {
 
   return false
 }
+
+export function shouldConfirmStripeCredentialReplacement(input: {
+  replacementByField?: Record<string, boolean> | null
+  payload?: Record<string, string | undefined> | null
+}) {
+  const replacementByField = input.replacementByField || {}
+  const payload = input.payload || {}
+
+  return (
+    (Boolean(replacementByField.publishableKey) && Boolean(String(payload.publishableKey || '').trim())) ||
+    (Boolean(replacementByField.secretKey) && Boolean(String(payload.secretKey || '').trim())) ||
+    (Boolean(replacementByField.webhookSecret) && Boolean(String(payload.webhookSecret || '').trim()))
+  )
+}

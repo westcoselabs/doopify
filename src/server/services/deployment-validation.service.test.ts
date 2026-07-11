@@ -46,7 +46,7 @@ describe('buildDeploymentValidationReport', () => {
     expect(report.deploymentReady).toBe(false)
   })
 
-  it('marks encryption key as optional when missing in development', () => {
+  it('marks encryption key as needs_setup when missing in development', () => {
     const facts = baseFacts()
     facts.encryptionKeyPresent = false
     facts.isProduction = false
@@ -54,9 +54,9 @@ describe('buildDeploymentValidationReport', () => {
     const report = buildDeploymentValidationReport(facts)
 
     const check = report.checks.find((c) => c.id === 'encryption-key')
-    expect(check?.status).toBe('optional')
-    expect(check?.optional).toBe(true)
-    expect(report.deploymentReady).toBe(true)
+    expect(check?.status).toBe('needs_setup')
+    expect(check?.optional).toBe(false)
+    expect(report.deploymentReady).toBe(false)
   })
 
   it('marks object storage as ready when S3 mode and all vars present', () => {

@@ -71,6 +71,7 @@ describe('getProductSummaries — lightweight list', () => {
 
     const select = mocks.prisma.product.findMany.mock.calls[0][0].select
     expect(select).toHaveProperty('variants')
+    expect(select.variants.select).toHaveProperty('title', true)
     expect(select).toHaveProperty('media')
     expect(select.media).toMatchObject({ take: 1 })
     expect(select.media.orderBy).toEqual([
@@ -94,7 +95,7 @@ describe('getProductSummaries — lightweight list', () => {
         updatedAt: new Date('2024-01-01'),
         publishedAt: null,
         variants: [
-          { id: 'var-1', priceCents: 2999, compareAtPriceCents: null, sku: 'SKU-1', inventory: 5 },
+          { id: 'var-1', title: 'Large', priceCents: 2999, compareAtPriceCents: null, sku: 'SKU-1', inventory: 5 },
         ],
         media: [],
       },
@@ -105,6 +106,7 @@ describe('getProductSummaries — lightweight list', () => {
 
     expect(result.products).toHaveLength(1)
     expect(result.products[0].variants[0].price).toBe(29.99)
+    expect(result.products[0].variants[0].title).toBe('Large')
     expect(result.products[0].options).toEqual([])
     expect(result.products[0].media).toEqual([])
   })

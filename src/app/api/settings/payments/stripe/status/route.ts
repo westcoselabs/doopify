@@ -43,6 +43,7 @@ export async function GET(req: Request) {
       lastVerifiedAt: status.lastVerifiedAt,
       lastError: status.lastError,
       verificationStatus: status.verificationStatus,
+      credentialStorageState: status.credentialStorageState ?? 'NOT_CONFIGURED',
     })
   } catch (error) {
     console.error('[GET /api/settings/payments/stripe/status]', error)

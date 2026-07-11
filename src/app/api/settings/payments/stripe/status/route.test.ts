@@ -54,12 +54,14 @@ describe('GET /api/settings/payments/stripe/status', () => {
       lastVerifiedAt: null,
       lastError: null,
       verificationStatus: 'configured',
+      credentialStorageState: 'READY',
     })
 
     const response = await GET(new Request('http://localhost/api/settings/payments/stripe/status'))
     expect(response.status).toBe(200)
     const payload = await response.json()
     expect(payload.data.verificationStatus).toBe('configured')
+    expect(payload.data.credentialStorageState).toBe('READY')
     expect(payload.data.webhookEndpointReady).toBe(true)
   })
 

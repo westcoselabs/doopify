@@ -95,6 +95,7 @@ type PromotionApplication = {
 
 type CheckoutData = {
   clientSecret: string
+  statusAccessToken: string
   currency?: string
   subtotal: number
   shippingAmount?: number
@@ -951,11 +952,13 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
         throw new Error(submitResult.error.message || 'Please check your payment details and try again.');
       }
 
+      const successUrl = new URL('/checkout/success', window.location.origin);
+      successUrl.searchParams.set('status_token', checkout.statusAccessToken);
       const result = await stripeRef.current.confirmPayment({
         elements: elementsRef.current,
         clientSecret: checkout.clientSecret,
         confirmParams: {
-          return_url: `${window.location.origin}/checkout/success`,
+          return_url: successUrl.toString(),
         },
         redirect: 'if_required',
       });
@@ -965,9 +968,10 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
       }
 
       if (result.paymentIntent?.id) {
-        router.push(`/checkout/success?payment_intent=${encodeURIComponent(result.paymentIntent.id)}`);
+        successUrl.searchParams.set('payment_intent', result.paymentIntent.id);
+        router.push(`/checkout/success?${successUrl.searchParams.toString()}`);
       } else {
-        router.push('/checkout/success');
+        router.push(`/checkout/success?${successUrl.searchParams.toString()}`);
       }
     } catch (paymentError) {
       setError(paymentError instanceof Error ? paymentError.message : 'Payment confirmation failed');

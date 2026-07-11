@@ -38,7 +38,7 @@ describe('GET /api/checkout/status', () => {
     })
 
     const response = await GET(
-      new Request('http://localhost/api/checkout/status?payment_intent=pi_status_check')
+      new Request('http://localhost/api/checkout/status?payment_intent=pi_status_check&status_token=status-token-123456789012345678901234567890')
     )
     const payload = await response.json()
 
@@ -54,14 +54,26 @@ describe('GET /api/checkout/status', () => {
         checkoutStatus: 'COMPLETED',
       },
     })
-    expect(mocks.getCheckoutStatus).toHaveBeenCalledWith('pi_status_check')
+    expect(mocks.getCheckoutStatus).toHaveBeenCalledWith(
+      'pi_status_check',
+      'status-token-123456789012345678901234567890'
+    )
+  })
+
+  it('returns 400 when status_token is missing', async () => {
+    const response = await GET(new Request('http://localhost/api/checkout/status?payment_intent=pi_status_check'))
+    const payload = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(payload).toEqual({ success: false, error: 'status_token is required' })
+    expect(mocks.getCheckoutStatus).not.toHaveBeenCalled()
   })
 
   it('returns 500 when checkout status lookup fails', async () => {
     mocks.getCheckoutStatus.mockRejectedValue(new Error('status unavailable'))
 
     const response = await GET(
-      new Request('http://localhost/api/checkout/status?payment_intent=pi_status_error')
+      new Request('http://localhost/api/checkout/status?payment_intent=pi_status_error&status_token=status-token-123456789012345678901234567890')
     )
     const payload = await response.json()
 
@@ -94,7 +106,7 @@ describe('GET /api/checkout/status', () => {
     })
 
     const response = await GET(
-      new Request('http://localhost/api/checkout/status?payment_intent=pi_digital_status')
+      new Request('http://localhost/api/checkout/status?payment_intent=pi_digital_status&status_token=status-token-123456789012345678901234567890')
     )
     const payload = await response.json()
 

@@ -36,6 +36,7 @@ export type StripeRuntimeStatusBundle = {
 export type StripeVerificationStatus =
   | 'verified'
   | 'configured'
+  | 'credentials_unreadable'
   | 'verification_unavailable'
   | 'needs_attention'
   | 'needs_setup'
@@ -54,6 +55,7 @@ export type StripeSavedStatusSnapshot = {
   lastVerifiedAt: string | null
   lastError: string | null
   verificationStatus: StripeVerificationStatus
+  credentialStorageState?: StripeProviderStatusSnapshot['credentialStorageState']
 }
 
 function normalizeString(value: unknown) {
@@ -125,6 +127,7 @@ function fallbackStripeProviderStatus(input: {
     lastError: input.reason || null,
     source: input.source,
     runtimeSource: input.source,
+    credentialStorageState: 'NOT_CONFIGURED',
   }
 }
 
@@ -135,7 +138,12 @@ function deriveStripeVerificationStatus(input: {
   hasWebhookSecret: boolean
   lastVerifiedAt: string | null
   lastError: string | null
+  credentialStorageState?: StripeProviderStatusSnapshot['credentialStorageState']
 }): StripeVerificationStatus {
+  if (input.credentialStorageState === 'UNREADABLE') {
+    return 'credentials_unreadable'
+  }
+
   if (!input.hasPublishableKey || !input.hasSecretKey || !input.hasWebhookSecret) {
     return 'needs_setup'
   }
@@ -203,7 +211,9 @@ export async function getStripeSavedStatusSnapshot(): Promise<StripeSavedStatusS
       hasWebhookSecret,
       lastVerifiedAt,
       lastError,
+      credentialStorageState: snapshot.credentialStorageState,
     }),
+    credentialStorageState: snapshot.credentialStorageState,
   }
 }
 

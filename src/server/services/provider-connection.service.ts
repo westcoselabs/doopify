@@ -13,6 +13,7 @@ export type SupportedProvider = 'SHIPPO' | 'EASYPOST' | 'RESEND' | 'SMTP' | 'STR
 export type ProviderCategory = 'SHIPPING' | 'EMAIL' | 'PAYMENT'
 export type ProviderConnectionState = 'NOT_CONFIGURED' | 'CREDENTIALS_SAVED' | 'VERIFIED' | 'ERROR'
 export type ProviderSource = 'db' | 'env' | 'none'
+export type CredentialStorageState = 'NOT_CONFIGURED' | 'READY' | 'UNREADABLE'
 
 type ProviderConfig = {
   category: ProviderCategory
@@ -448,6 +449,42 @@ function normalizeStripeMode(value: unknown) {
   throw new Error('Stripe mode must be "test" or "live"')
 }
 
+function getStripeKeyMode(value: string, prefix: 'pk' | 'sk') {
+  if (value.startsWith(`${prefix}_test_`)) return 'test' as const
+  if (value.startsWith(`${prefix}_live_`)) return 'live' as const
+  return null
+}
+
+function validateAndNormalizeStripeCredentials(credentials: Record<string, string>) {
+  const publishableKey = credentials.PUBLISHABLE_KEY
+  const secretKey = credentials.SECRET_KEY
+  const publishableMode = getStripeKeyMode(publishableKey, 'pk')
+  const secretMode = getStripeKeyMode(secretKey, 'sk')
+
+  if (!publishableMode) {
+    throw new Error('Stripe publishableKey must start with pk_test_ or pk_live_')
+  }
+
+  if (!secretMode) {
+    throw new Error('Stripe secretKey must start with sk_test_ or sk_live_')
+  }
+
+  if (publishableMode !== secretMode) {
+    throw new Error('Stripe publishableKey and secretKey must use the same test or live mode')
+  }
+
+  const submittedMode = credentials.MODE ? normalizeStripeMode(credentials.MODE) : null
+  if (submittedMode && submittedMode !== secretMode) {
+    throw new Error('Stripe mode must match the supplied publishable and secret keys')
+  }
+
+  if (credentials.WEBHOOK_SECRET && !credentials.WEBHOOK_SECRET.startsWith('whsec_')) {
+    throw new Error('Stripe webhookSecret must start with whsec_')
+  }
+
+  credentials.MODE = secretMode
+}
+
 function normalizeCredentialInput(provider: SupportedProvider, input: Record<string, unknown>) {
   if (isShippingProvider(provider)) {
     const apiKey = trimToNull(input.apiKey)
@@ -777,6 +814,7 @@ export type ProviderStatus = {
   state: ProviderConnectionState
   source: ProviderSource
   hasCredentials: boolean
+  credentialStorageState: CredentialStorageState
   verifiedAt: string | null
   lastVerifiedAt: string | null
   lastError: string | null
@@ -807,6 +845,7 @@ export type StripeProviderStatusSnapshot = {
   lastError: string | null
   source: ProviderSource
   runtimeSource: ProviderSource
+  credentialStorageState?: CredentialStorageState
 }
 
 function normalizeStringValue(value: unknown) {
@@ -861,7 +900,9 @@ export async function getStripeProviderStatusSnapshot(): Promise<StripeProviderS
     inferStripeModeFromSecret(normalizeStringValue(runtimeCredentials.SECRET_KEY))
 
   const verificationData = status.verificationData || {}
-  const source: ProviderSource = configured ? 'db' : runtime.source
+  const credentialStorageState = status.credentialStorageState ?? 'NOT_CONFIGURED'
+  const source: ProviderSource =
+    credentialStorageState === 'UNREADABLE' || configured ? 'db' : runtime.source
 
   return {
     configured,
@@ -881,6 +922,7 @@ export async function getStripeProviderStatusSnapshot(): Promise<StripeProviderS
     lastError: status.lastError,
     source,
     runtimeSource: runtime.source,
+    credentialStorageState,
   }
 }
 
@@ -904,6 +946,11 @@ export async function getProviderStatus(provider: SupportedProvider): Promise<Pr
       }),
       source: runtime.source,
       hasCredentials: shippingStatus.hasCredentials,
+      credentialStorageState: integration
+        ? hasUndecryptableRequiredSecret(provider, secretMap)
+          ? 'UNREADABLE'
+          : 'READY'
+        : 'NOT_CONFIGURED',
       verifiedAt: verification.verifiedAt,
       lastVerifiedAt: verification.lastVerifiedAt,
       lastError: verification.lastError,
@@ -925,6 +972,7 @@ export async function getProviderStatus(provider: SupportedProvider): Promise<Pr
       state: runtime.source === 'env' ? 'CREDENTIALS_SAVED' : 'NOT_CONFIGURED',
       source: runtime.source,
       hasCredentials: runtime.source !== 'none',
+      credentialStorageState: 'NOT_CONFIGURED',
       verifiedAt: null,
       lastVerifiedAt: null,
       lastError: null,
@@ -936,6 +984,9 @@ export async function getProviderStatus(provider: SupportedProvider): Promise<Pr
 
   const secretMap = buildSecretMap(integration.secrets)
   const hasCredentials = hasRequiredSecrets(provider, secretMap)
+  const credentialStorageState: CredentialStorageState = hasUndecryptableRequiredSecret(provider, secretMap)
+    ? 'UNREADABLE'
+    : 'READY'
   const verification = extractVerificationMeta(secretMap)
   const runtime = await getRuntimeProviderConnectionInternal(provider)
   const effectiveSource: ProviderSource = hasCredentials ? 'db' : runtime.source
@@ -952,6 +1003,7 @@ export async function getProviderStatus(provider: SupportedProvider): Promise<Pr
     }),
     source: effectiveSource,
     hasCredentials,
+    credentialStorageState,
     verifiedAt: verification.verifiedAt,
     lastVerifiedAt: verification.lastVerifiedAt,
     lastError: verification.lastError,
@@ -1015,14 +1067,11 @@ export async function saveProviderCredentials(provider: SupportedProvider, crede
     if (!hasRealCredential(mergedCredentials.PUBLISHABLE_KEY)) throw new Error('publishableKey is required')
     if (!hasRealCredential(mergedCredentials.SECRET_KEY)) throw new Error('secretKey is required')
 
-    if (!hasRealCredential(mergedCredentials.MODE)) {
-      const inferredMode = mergedCredentials.SECRET_KEY.startsWith('sk_live_') ? 'live' : 'test'
-      mergedCredentials.MODE = normalizeStripeMode(inferredMode)
-    }
-
     if (mergedCredentials.WEBHOOK_SECRET && !hasRealCredential(mergedCredentials.WEBHOOK_SECRET)) {
       delete mergedCredentials.WEBHOOK_SECRET
     }
+
+    validateAndNormalizeStripeCredentials(mergedCredentials)
 
     await upsertProviderIntegrationCredentials({
       provider,

@@ -51,6 +51,7 @@ const productSummarySelect = {
   variants: {
     select: {
       id: true,
+      title: true,
       priceCents: true,
       compareAtPriceCents: true,
       sku: true,
@@ -425,6 +426,7 @@ function toProductSummaryResponse(product: any) {
     publishedAt: product.publishedAt ?? null,
     variants: (product.variants || []).map((v: any) => ({
       id: v.id,
+      title: v.title,
       price: centsToDollars(v.priceCents),
       compareAtPrice: v.compareAtPriceCents == null ? null : centsToDollars(v.compareAtPriceCents),
       sku: v.sku ?? null,

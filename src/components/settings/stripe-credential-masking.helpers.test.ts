@@ -6,6 +6,7 @@ import {
   buildStripeMaskedCredentialMap,
   resolveStripeConnectionState,
   resolveMaskedInputPlaceholder,
+  shouldConfirmStripeCredentialReplacement,
   shouldShowStripeCredentialInput,
 } from './stripe-credential-masking.helpers'
 
@@ -205,6 +206,22 @@ describe('stripe credential masking helpers', () => {
     })
 
     expect(showInput).toBe(true)
+  })
+
+  it('requires confirmation only when a replacement submits a new saved credential', () => {
+    expect(
+      shouldConfirmStripeCredentialReplacement({
+        replacementByField: { secretKey: true },
+        payload: { secretKey: 'sk_test_replacement' },
+      })
+    ).toBe(true)
+
+    expect(
+      shouldConfirmStripeCredentialReplacement({
+        replacementByField: { secretKey: true },
+        payload: { secretKey: '' },
+      })
+    ).toBe(false)
   })
 
   it('cancel replacement returns to saved credential display state', () => {

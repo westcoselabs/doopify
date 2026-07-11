@@ -34,7 +34,7 @@ The repo currently includes:
 - Prisma/Postgres commerce schema for products, variants, media, customers, orders, discounts, settings, sessions, payments, fulfillments, refunds, returns, integrations, inbound webhook deliveries, outbound webhook deliveries, and email deliveries
 - persisted commerce money fields now use integer minor units (cents) at rest with server-side conversion boundaries
 - Next.js App Router admin, storefront, and API surface
-- protected admin auth with session-backed JWT validation
+- protected admin auth with session-backed JWT validation and hashed persisted bearer-token records
 - owner MFA foundation with TOTP enrollment, recovery codes, and login challenge verification
 - private route protection through `src/proxy.ts`
 - production security-header foundation with shared header builder, proxy-applied baseline headers, HSTS in production, Referrer-Policy, X-Content-Type-Options, and CSP frame-ancestors coverage with report-only mode defaults
@@ -42,7 +42,7 @@ The repo currently includes:
 - public storefront routes for homepage, shop, product detail, collections, and collection detail
 - legal storefront pages at `/privacy` and `/terms` with configurable store contact fields
 - `/.well-known/security.txt` vulnerability disclosure endpoint
-- Stripe checkout creation, Stripe webhook processing, checkout status polling, checkout session persistence, and idempotent paid-order finalization
+- Stripe checkout creation, Stripe webhook processing, capability-token-protected checkout status polling, checkout session persistence, and idempotent paid-order finalization
 - inventory decrement only after verified Stripe payment success
 - centralized checkout pricing in `src/server/checkout/pricing.ts`
 - checkout-native discount-code validation and paid-order discount usage persistence
@@ -58,10 +58,12 @@ The repo currently includes:
 - shipping and delivery functional expansion with persisted shipping mode, explicit active-rate-provider vs label-provider settings, fallback behavior modes, package/location/manual-rate/fallback-rate APIs, compact provider-first Settings -> Shipping & delivery drawers (including manual fulfillment/local delivery/pickup/packing slip settings), checkout mode-aware live/manual/hybrid rate resolution, and order-level selected shipping method snapshots (`shippingMethodName`, `shippingRateType`, `shippingAmount`, `shippingProvider`, `shippingProviderRateId`, `estimatedDeliveryText`)
 - order detail lifecycle Phase 8 expansion with admin notes API (`PATCH /api/orders/[orderNumber]/notes`), customer-visible note timeline entries, optional tracked customer-note email sends, discount snapshot visibility, and guarded payment/fulfillment status quick actions
 - owner-only provider connection gateway APIs for settings (`GET /api/settings/providers`, `GET /api/settings/providers/[provider]`, `POST /api/settings/providers/[provider]/credentials`, `POST /api/settings/providers/[provider]/verify`, `DELETE /api/settings/providers/[provider]`) with encrypted credential storage and masked status payloads
+- Stripe credential status now distinguishes saved, unreadable, verification-unavailable, and verified states after reload; invalid key formats and test/live mode mismatches are rejected before persistence
 - provider connection audit logging for owner credential saves, verification attempts, and disconnects, with actor capture and credential-value redaction
 - Stripe runtime now resolves verified DB credentials first with env fallback for checkout payment-intent creation; webhook signature verification now prefers verified DB webhook secret and falls back to env when DB webhook secret is unavailable
 - Stripe runtime visibility endpoints now exist at owner-only `GET /api/settings/payments/stripe/runtime-status` and public `GET /api/checkout/stripe-config` (publishable key only, source/mode labeled)
 - Settings -> Payments now uses compact provider rows plus per-provider slide-over drawers so credential fields are not always visible on the main settings page
+- Smart Promotion catalog pickers now use product-list variant summaries directly, avoiding per-product detail requests when opening create or edit drawers
 - Settings -> Webhooks now uses a compact outbound endpoint manager with drawer-based create/manage flow, friendly event groups mapped to real typed events, and encrypted secret handling without raw secret rendering
 - Settings -> Email now emphasizes customer-message workflow sections (providers, sender identity, branding, templates, activity) with provider credentials kept behind Manage drawers
 - Settings default tab now opens on **General**; Brand Kit is no longer the first settings experience

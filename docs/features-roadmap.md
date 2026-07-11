@@ -29,14 +29,14 @@ Historical planning docs are intentionally omitted from this active handoff pack
 
 - Prisma/Postgres-backed commerce schema with admin auth, sessions, catalog, customers, orders, discounts, media, settings, payments, fulfillments, refunds, returns, integrations, inbound webhook deliveries, and outbound webhook deliveries
 - Next.js App Router API surface with protected admin routes and public storefront routes
-- Hardened auth flow with session-backed JWT validation, safe cookie parsing, env validation, and login rate limiting
+- Hardened auth flow with session-backed JWT validation, hashed persisted session-token records, safe cookie parsing, env validation, and login rate limiting
 - Owner MFA baseline with TOTP enrollment, recovery codes, owner login challenges, and owner grace-period tracking
 - Storefront catalog pages at `/`, `/shop`, `/shop/[handle]`, `/collections`, and `/collections/[handle]`
 - Storefront legal baseline pages at `/privacy` and `/terms`, plus `/.well-known/security.txt`
 - Cart-to-checkout flow at `/checkout`
 - `POST /api/checkout/create` for live-priced checkout session creation
 - `POST /api/webhooks/stripe` for verified webhook processing
-- `GET /api/checkout/status` for success-page reconciliation
+- capability-token-protected `GET /api/checkout/status` for success-page reconciliation
 - Idempotent order creation from verified Stripe payment success
 - Checkout session persistence plus paid and failed status tracking
 - persisted commerce money fields now use integer minor units (cents) at rest
@@ -55,7 +55,8 @@ Historical planning docs are intentionally omitted from this active handoff pack
 - Order detail lifecycle Phase 8 expansion: admin notes route (`PATCH /api/orders/[orderNumber]/notes`) with customer-visible note timeline entries and optional tracked note emails, discount snapshot visibility in order detail, and guarded payment/fulfillment status quick actions wired to existing status invariants
 - owner-only provider setup gateways for Payments/Shipping/Email with encrypted credential persistence and explicit verify/disconnect actions (`/api/settings/providers/*`)
 - verified DB-backed Stripe runtime selection for checkout/webhook paths with env fallback, plus owner-safe runtime status (`/api/settings/payments/stripe/runtime-status`) and public publishable-key config (`/api/checkout/stripe-config`)
-- Payments settings UX rebuilt to compact provider rows with provider-specific drawers (Stripe/PayPal/Manual) so secrets remain hidden from the main page while setup actions stay in Settings -> Payments
+- Payments settings UX rebuilt to compact provider rows with provider-specific drawers (Stripe/PayPal/Manual) so secrets remain hidden from the main page while setup actions stay in Settings -> Payments; Stripe reload states distinguish saved, unreadable, verification-unavailable, and verified credentials
+- Smart Promotion catalog pickers hydrate variant choices from the product-list response, avoiding per-product follow-up requests in create and edit flows
 - Settings -> Webhooks UX rebuilt to a compact outbound endpoint manager with drawer-based create/manage flows, friendly event groups, and encrypted signing-secret handling
 - Settings -> Email UX shifted to customer-message-first sections with provider credentials hidden behind Manage drawers
 - Settings now defaults to a General tab; Brand Kit is no longer the first/default settings tab

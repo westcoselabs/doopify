@@ -1,9 +1,11 @@
 import bcrypt from 'bcryptjs'
+import { randomBytes } from 'node:crypto'
 import type { UserRole } from '@prisma/client'
 
 import { signToken, AUTH_COOKIE } from '@/lib/auth'
 import { getCookieValue } from '@/lib/cookies'
 import { prisma } from '@/lib/prisma'
+import { hashSessionToken } from '@/lib/session-token'
 
 export type SessionContext = {
   ip?: string | null
@@ -75,18 +77,9 @@ export async function createSessionForUser(
 ) {
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
 
-  const tempToken = signToken({
-    userId: user.id,
-    email: user.email,
-    firstName: user.firstName,
-    lastName: user.lastName,
-    role: user.role,
-    sessionId: 'pending',
-  })
-
   const session = await prisma.session.create({
     data: {
-      token: tempToken,
+      tokenHash: hashSessionToken(randomBytes(32).toString('base64url')),
       userId: user.id,
       expiresAt,
       ip: context?.ip ?? undefined,
@@ -105,7 +98,7 @@ export async function createSessionForUser(
 
   await prisma.session.update({
     where: { id: session.id },
-    data: { token },
+    data: { tokenHash: hashSessionToken(token) },
   })
 
   await prisma.user.update({
@@ -131,7 +124,7 @@ export async function loginUser(email: string, password: string, context?: Sessi
 }
 
 export async function logoutUser(token: string) {
-  await prisma.session.deleteMany({ where: { token } })
+  await prisma.session.deleteMany({ where: { tokenHash: hashSessionToken(token) } })
 }
 
 export async function createUser(data: {
@@ -176,7 +169,7 @@ export async function changePassword(
   await prisma.$transaction(async (tx) => {
     await tx.user.update({ where: { id: userId }, data: { passwordHash } })
     if (currentSessionToken) {
-      await tx.session.deleteMany({ where: { userId, NOT: { token: currentSessionToken } } })
+      await tx.session.deleteMany({ where: { userId, NOT: { tokenHash: hashSessionToken(currentSessionToken) } } })
     } else {
       await tx.session.deleteMany({ where: { userId } })
     }
@@ -185,7 +178,7 @@ export async function changePassword(
 
 export async function revokeOtherSessions(userId: string, currentSessionToken: string): Promise<number> {
   const { count } = await prisma.session.deleteMany({
-    where: { userId, NOT: { token: currentSessionToken } },
+    where: { userId, NOT: { tokenHash: hashSessionToken(currentSessionToken) } },
   })
   return count
 }

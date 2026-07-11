@@ -4,6 +4,7 @@ import type { NextResponse } from 'next/server'
 
 import { getCookieValue } from '@/lib/cookies'
 import { env } from '@/lib/env'
+import { hashSessionToken } from '@/lib/session-token'
 import { prisma } from './prisma'
 
 const JWT_SECRET = env.JWT_SECRET
@@ -36,7 +37,7 @@ export async function verifyToken(token: string): Promise<JWTPayload | null> {
   let session:
     | {
         id: string
-        token: string
+        tokenHash: string
         expiresAt: Date
         user: {
           id: string
@@ -51,7 +52,7 @@ export async function verifyToken(token: string): Promise<JWTPayload | null> {
       where: { id: payload.sessionId },
       select: {
         id: true,
-        token: true,
+        tokenHash: true,
         expiresAt: true,
         user: {
           select: {
@@ -67,7 +68,7 @@ export async function verifyToken(token: string): Promise<JWTPayload | null> {
     return null
   }
 
-  if (!session || session.token !== token) {
+  if (!session || session.tokenHash !== hashSessionToken(token)) {
     return null
   }
 

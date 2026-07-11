@@ -4,6 +4,7 @@ const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  ENCRYPTION_KEY: z.string().trim().min(32, 'ENCRYPTION_KEY must be at least 32 characters').optional(),
   STRIPE_SECRET_KEY: z.string().min(1).optional(),
   STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: z.string().min(1).optional(),
@@ -25,6 +26,14 @@ const envSchema = z.object({
   ABANDONED_CHECKOUT_SECRET: z.string().min(16).optional(),
   SETUP_TOKEN: z.string().min(8).optional(),
   OWNER_MFA_GRACE_PERIOD_DAYS: z.string().min(1).optional(),
+}).superRefine((value, context) => {
+  if (value.NODE_ENV === 'production' && !value.ENCRYPTION_KEY) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['ENCRYPTION_KEY'],
+      message: 'ENCRYPTION_KEY is required in production',
+    })
+  }
 })
 
 export const env = envSchema.parse({

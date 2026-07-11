@@ -154,6 +154,7 @@ function formatPaymentReference(paymentIntentId: string | null) {
 export default function CheckoutSuccessClientPage() {
   const searchParams = useSearchParams();
   const paymentIntentId = searchParams.get('payment_intent');
+  const statusAccessToken = searchParams.get('status_token');
   const { clearCart } = useCart() as CartContextValue;
 
   const [status, setStatus] = useState<CheckoutStatus>('processing');
@@ -197,15 +198,19 @@ export default function CheckoutSuccessClientPage() {
     const startedAt = Date.now();
 
     async function pollStatus() {
-      if (!paymentIntentId) {
-        setStatus('processing');
+      if (!paymentIntentId || !statusAccessToken) {
+        setStatus('failed');
+        setFailureReason('We could not securely locate this checkout. Return to the store if you need help.');
         return;
       }
 
       try {
-        const response = await fetch(`/api/checkout/status?payment_intent=${encodeURIComponent(paymentIntentId)}`, {
+        const response = await fetch(
+          `/api/checkout/status?payment_intent=${encodeURIComponent(paymentIntentId)}&status_token=${encodeURIComponent(statusAccessToken)}`,
+          {
           cache: 'no-store',
-        });
+          }
+        );
         const payload = (await response.json().catch(() => null)) as ApiResponse<CheckoutStatusResponseData> | null;
 
         if (!response.ok || !payload?.success) {
@@ -282,7 +287,7 @@ export default function CheckoutSuccessClientPage() {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [clearCart, paymentIntentId, pollCycle]);
+  }, [clearCart, paymentIntentId, pollCycle, statusAccessToken]);
 
   const support = useMemo(() => resolveSupportSummary(store), [store]);
   const paymentReference = useMemo(() => formatPaymentReference(paymentIntentId), [paymentIntentId])

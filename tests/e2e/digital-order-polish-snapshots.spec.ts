@@ -7,6 +7,8 @@ import { PrismaClient, UserRole } from '@prisma/client'
 import jwt from 'jsonwebtoken'
 import { expect, test } from '@playwright/test'
 
+import { hashSessionToken } from '@/lib/session-token'
+
 type AuthSession = {
   email: string
   token: string
@@ -75,7 +77,7 @@ async function createAdminSession(): Promise<AuthSession> {
   await prisma.session.create({
     data: {
       id: sessionId,
-      token,
+      tokenHash: hashSessionToken(token),
       userId: user.id,
       expiresAt: new Date(Date.now() + 6 * 24 * 60 * 60 * 1000),
       ip: '127.0.0.1',

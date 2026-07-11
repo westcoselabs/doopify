@@ -3,21 +3,22 @@ import crypto from 'crypto';
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 16;
 const SALT_LENGTH = 64;
-const TAG_LENGTH = 16;
 
-/**
- * Ensures ENCRYPTION_KEY exists and derives a proper 32-byte key
- */
-function getKey() {
-  const secret = process.env.ENCRYPTION_KEY || 'default-insecure-development-key-please-change-immediately';
-  return crypto.scryptSync(secret, 'salt', 32);
+function getEncryptionSecret() {
+  const secret = process.env.ENCRYPTION_KEY?.trim();
+
+  if (!secret || secret.length < 32) {
+    throw new Error('ENCRYPTION_KEY must be set to a value of at least 32 characters before encrypted data can be used.');
+  }
+
+  return secret;
 }
 
 export function encrypt(text: string): string {
   if (!text) return text;
   const iv = crypto.randomBytes(IV_LENGTH);
   const salt = crypto.randomBytes(SALT_LENGTH);
-  const key = crypto.scryptSync(process.env.ENCRYPTION_KEY || 'default-insecure-development-key-please-change-immediately', salt, 32);
+  const key = crypto.scryptSync(getEncryptionSecret(), salt, 32);
 
   const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
   
@@ -31,6 +32,8 @@ export function encrypt(text: string): string {
 }
 
 export function decrypt(encryptedData: string): string {
+  const secret = getEncryptionSecret();
+
   if (!encryptedData || !encryptedData.includes(':')) return encryptedData;
 
   const parts = encryptedData.split(':');
@@ -41,7 +44,7 @@ export function decrypt(encryptedData: string): string {
   const tag = Buffer.from(parts[2], 'hex');
   const text = parts[3];
 
-  const key = crypto.scryptSync(process.env.ENCRYPTION_KEY || 'default-insecure-development-key-please-change-immediately', salt, 32);
+  const key = crypto.scryptSync(secret, salt, 32);
 
   const decipher = crypto.createDecipheriv(ALGORITHM, key, iv);
   decipher.setAuthTag(tag);

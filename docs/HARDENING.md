@@ -43,6 +43,7 @@ Phase 4 adds merchant lifecycle and integration risks: refunds, returns, outboun
 
 - `src/lib/env.ts` validates critical environment variables up front
 - JWT validation checks the backing `Session` record, so logout and session revocation are real
+- Session records store a SHA-256 hash of the bearer JWT, never the raw JWT; the hashing rollout revokes legacy sessions rather than retaining plaintext tokens
 - login is rate-limited by IP plus email
 - shared cookie parsing lives in `src/lib/cookies.ts` instead of ad hoc regexes
 
@@ -77,6 +78,7 @@ Phase 4 adds merchant lifecycle and integration risks: refunds, returns, outboun
 - orders are created only from verified Stripe webhook success
 - duplicate webhook deliveries are handled idempotently through the payment-intent path
 - checkout failure state is persisted and surfaced on the success-page polling flow
+- buyer-facing checkout status polling requires an unguessable capability token; only its hash is persisted with the checkout session, so a payment-intent ID alone cannot expose order or digital-download details
 - checkout-native code discounts are calculated through the server pricing authority
 - checkout pricing applies persisted shipping-zone/rate and jurisdiction tax-rule configuration from admin-managed settings
 - checkout shipping options now load through `POST /api/checkout/shipping-rates`, and selected shipping quotes are revalidated server-side before payment-intent amounts are created

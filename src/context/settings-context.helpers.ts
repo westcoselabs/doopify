@@ -39,6 +39,18 @@ export function parseNumberField(value: unknown): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+export function requireSettingsApiData(responseOk: boolean, payload: unknown) {
+  const response = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : null
+  const data = response?.data
+
+  if (!responseOk || response?.success !== true || !data || typeof data !== 'object') {
+    const message = typeof response?.error === 'string' ? response.error : 'Failed to save settings'
+    throw new Error(message)
+  }
+
+  return data as Record<string, unknown>
+}
+
 export function transformStore(
   store: Record<string, unknown>,
   defaults: typeof SETTINGS_DEFAULTS = SETTINGS_DEFAULTS

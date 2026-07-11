@@ -761,6 +761,9 @@ describe('promotions UI helpers', () => {
     expect(shouldLoadPromotionCatalogOnOpen(loadedQualifiers, 'qualifiers')).toBe(false)
     expect(shouldLoadPromotionCatalogOnOpen(loadedQualifiers, 'rewards')).toBe(true)
     expect(loadedQualifiers.sections.qualifiers.rows).toHaveLength(1)
+    expect(loadedQualifiers.sections.qualifiers.productDetailsById.prod_1?.variants).toEqual([
+      { id: 'var_1', title: 'Large', sku: 'HD-L' },
+    ])
     expect(loadedQualifiers.sections.rewards.rows).toHaveLength(0)
     expect(loadedQualifiers.sections.qualifiers.totalResultCount).toBe(1)
     expect(loadedQualifiers.sections.qualifiers.eligibleResultCount).toBe(1)

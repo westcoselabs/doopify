@@ -508,6 +508,13 @@ export function resolvePromotionCatalogSearchSuccess(
       [section]: {
         ...sectionState,
         rows,
+        // The product summary endpoint includes the variant fields this picker
+        // needs. Hydrate the detail map from the same response so both create
+        // and edit drawers avoid issuing one follow-up request per product.
+        productDetailsById: {
+          ...sectionState.productDetailsById,
+          ...Object.fromEntries(rows.filter((row) => Boolean(row.id)).map((row) => [row.id, row])),
+        },
         loading: false,
         error: '',
         hasLoaded: true,

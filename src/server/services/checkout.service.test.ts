@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
     checkoutSession: {
       create: vi.fn(),
       updateMany: vi.fn(),
+      findFirst: vi.fn(),
       findUnique: vi.fn(),
       findUniqueOrThrow: vi.fn(),
       update: vi.fn(),
@@ -2433,6 +2434,10 @@ describe('checkout service', () => {
   })
 
   it('returns confirmed status with order summary fields when a paid order exists', async () => {
+    mocks.prisma.checkoutSession.findFirst.mockResolvedValueOnce({
+      status: 'COMPLETED',
+      failureReason: null,
+    })
     mocks.getOrderByPaymentIntentId.mockResolvedValueOnce({
       id: 'order_1',
       orderNumber: 1001,
@@ -2441,7 +2446,7 @@ describe('checkout service', () => {
       estimatedDeliveryText: '3-5 business days',
     })
 
-    const status = await getCheckoutStatus('pi_paid_status')
+    const status = await getCheckoutStatus('pi_paid_status', 'a'.repeat(43))
 
     expect(status).toEqual({
       status: 'paid',
@@ -2459,6 +2464,10 @@ describe('checkout service', () => {
   })
 
   it('includes buyer-safe digital download links for paid digital orders', async () => {
+    mocks.prisma.checkoutSession.findFirst.mockResolvedValueOnce({
+      status: 'COMPLETED',
+      failureReason: null,
+    })
     mocks.getOrderByPaymentIntentId.mockResolvedValueOnce({
       id: 'order_digital_1',
       orderNumber: 2002,
@@ -2481,7 +2490,7 @@ describe('checkout service', () => {
       ],
     })
 
-    const status = await getCheckoutStatus('pi_paid_digital')
+    const status = await getCheckoutStatus('pi_paid_digital', 'b'.repeat(43))
 
     expect(status).toEqual({
       status: 'paid',
@@ -2508,12 +2517,12 @@ describe('checkout service', () => {
 
   it('returns processing status from checkout session and does not create orders', async () => {
     mocks.getOrderByPaymentIntentId.mockResolvedValueOnce(null)
-    mocks.prisma.checkoutSession.findUnique.mockResolvedValueOnce({
+    mocks.prisma.checkoutSession.findFirst.mockResolvedValueOnce({
       status: 'PENDING',
       failureReason: null,
     })
 
-    const status = await getCheckoutStatus('pi_processing_status')
+    const status = await getCheckoutStatus('pi_processing_status', 'c'.repeat(43))
 
     expect(status).toEqual({
       status: 'processing',
@@ -2524,12 +2533,12 @@ describe('checkout service', () => {
 
   it('returns failed status with sanitized customer-safe reason path and no order creation', async () => {
     mocks.getOrderByPaymentIntentId.mockResolvedValueOnce(null)
-    mocks.prisma.checkoutSession.findUnique.mockResolvedValueOnce({
+    mocks.prisma.checkoutSession.findFirst.mockResolvedValueOnce({
       status: 'FAILED',
       failureReason: 'Card declined',
     })
 
-    const status = await getCheckoutStatus('pi_failed_status')
+    const status = await getCheckoutStatus('pi_failed_status', 'd'.repeat(43))
 
     expect(status).toEqual({
       status: 'failed',
@@ -2537,5 +2546,12 @@ describe('checkout service', () => {
       checkoutStatus: 'FAILED',
     })
     expect(mocks.createOrder).not.toHaveBeenCalled()
+  })
+
+  it('does not expose checkout status when the access token does not match the session', async () => {
+    mocks.prisma.checkoutSession.findFirst.mockResolvedValueOnce(null)
+
+    await expect(getCheckoutStatus('pi_other_customer', 'e'.repeat(43))).resolves.toBeNull()
+    expect(mocks.getOrderByPaymentIntentId).not.toHaveBeenCalled()
   })
 })

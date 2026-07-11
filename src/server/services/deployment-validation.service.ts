@@ -65,10 +65,10 @@ function evaluateEncryptionKey(facts: DeploymentValidationFacts): DeploymentChec
   return {
     id: 'encryption-key',
     title: 'Encryption key',
-    optional: true,
-    status: 'optional',
-    summary: 'ENCRYPTION_KEY is not set. Integration secrets will not be encrypted. Set before moving to production.',
-    fix: 'Set ENCRYPTION_KEY to a high-entropy random value.',
+    optional: false,
+    status: 'needs_setup',
+    summary: 'ENCRYPTION_KEY is not set. Provider credentials and other encrypted data cannot be used safely.',
+    fix: 'Set ENCRYPTION_KEY to a high-entropy random value before saving credentials or enabling encrypted features.',
   }
 }
 

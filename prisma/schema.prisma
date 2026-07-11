@@ -524,7 +524,7 @@ model PasswordReset {
 
 model Session {
   id        String   @id @default(cuid())
-  token     String   @unique
+  tokenHash String   @unique @map("token")
   userId    String
   expiresAt DateTime
   ip        String?
@@ -532,7 +532,7 @@ model Session {
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([token])
+  @@index([tokenHash])
   @@index([userId])
   @@map("sessions")
 }
@@ -992,6 +992,7 @@ model Payment {
 model CheckoutSession {
   id              String                @id @default(cuid())
   paymentIntentId String                @unique
+  statusTokenHash String?               @unique
   customerId      String?
   email           String?
   status          CheckoutSessionStatus @default(PENDING)
