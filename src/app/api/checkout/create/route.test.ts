@@ -13,6 +13,8 @@ import { POST } from './route'
 const originalEnv = { ...process.env }
 
 const validPayload = {
+  checkoutAttemptId: '94b33282-42cf-4a5e-8dbe-c88e7839fcb5',
+  statusAccessToken: 'a'.repeat(64),
   email: 'ada@example.com',
   items: [{ variantId: 'variant_1', quantity: 1 }],
   shippingAddress: {

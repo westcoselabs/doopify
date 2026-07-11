@@ -575,6 +575,8 @@ export async function createCheckoutPaymentIntent(input: {
   billingAddress?: CheckoutAddress
   discountCode?: string
   selectedShippingQuoteId?: string
+  checkoutAttemptId?: string
+  statusAccessToken?: string
 }) {
   const store = await getStoreSettings()
   const normalizedEmail = normalizeEmail(input.email)
@@ -755,6 +757,7 @@ export async function createCheckoutPaymentIntent(input: {
         checkoutEmail: normalizedEmail,
       },
       secretKey: stripeRuntime.secretKey,
+      ...(input.checkoutAttemptId ? { idempotencyKey: `checkout:${input.checkoutAttemptId}` } : {}),
     })
   } catch (stripeError) {
     const msg = stripeError instanceof Error ? stripeError.message : String(stripeError)
@@ -809,10 +812,14 @@ export async function createCheckoutPaymentIntent(input: {
     ...(promotionApplications.length ? { promotionApplications } : {}),
   }
 
-  const statusAccessToken = createCheckoutStatusAccessToken()
-  const checkoutSession = await prisma.checkoutSession.create({
-    data: {
+  const statusAccessToken = input.statusAccessToken || createCheckoutStatusAccessToken()
+  let checkoutSession
+  let reusedAttempt = false
+  try {
+    checkoutSession = await prisma.checkoutSession.create({
+      data: {
       paymentIntentId: paymentIntent.id,
+      checkoutAttemptId: input.checkoutAttemptId,
       statusTokenHash: hashCheckoutStatusAccessToken(statusAccessToken),
       customerId: customer?.id,
       email: normalizedEmail,
@@ -823,16 +830,33 @@ export async function createCheckoutPaymentIntent(input: {
       discountAmountCents,
       totalCents,
       payload: payload as Prisma.InputJsonValue,
-    },
-  })
+      },
+    })
+  } catch (error) {
+    const isDuplicateAttempt = Boolean(
+      error && typeof error === 'object' && 'code' in error && (error as { code?: string }).code === 'P2002'
+    )
+    if (!isDuplicateAttempt || !input.checkoutAttemptId) throw error
 
-  await emitInternalEvent('checkout.created', {
-    checkoutSessionId: checkoutSession.id,
-    paymentIntentId: paymentIntent.id,
-    email: normalizedEmail,
-    total: centsToDollars(totalCents),
-    currency,
-  })
+    const existing = await prisma.checkoutSession.findUnique({
+      where: { checkoutAttemptId: input.checkoutAttemptId },
+    })
+    if (!existing || existing.paymentIntentId !== paymentIntent.id || existing.statusTokenHash !== hashCheckoutStatusAccessToken(statusAccessToken)) {
+      throw new Error('Checkout attempt could not be safely reconciled')
+    }
+    checkoutSession = existing
+    reusedAttempt = true
+  }
+
+  if (!reusedAttempt) {
+    await emitInternalEvent('checkout.created', {
+      checkoutSessionId: checkoutSession.id,
+      paymentIntentId: paymentIntent.id,
+      email: normalizedEmail,
+      total: centsToDollars(totalCents),
+      currency,
+    })
+  }
 
   return {
     checkoutSessionId: checkoutSession.id,

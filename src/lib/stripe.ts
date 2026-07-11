@@ -38,6 +38,7 @@ export async function createStripePaymentIntent(input: {
   email?: string
   metadata?: Record<string, string | undefined>
   secretKey?: string | null
+  idempotencyKey?: string
 }) {
   const stripeClient = getStripeSdkClient(input.secretKey)
   const metadata = Object.fromEntries(
@@ -45,7 +46,7 @@ export async function createStripePaymentIntent(input: {
   ) as Record<string, string>
 
   try {
-    const paymentIntent = await stripeClient.paymentIntents.create({
+    const createPayload: Stripe.PaymentIntentCreateParams = {
       amount: input.amount,
       currency: input.currency.toLowerCase(),
       automatic_payment_methods: {
@@ -54,7 +55,10 @@ export async function createStripePaymentIntent(input: {
       },
       ...(input.email ? { receipt_email: input.email } : {}),
       ...(Object.keys(metadata).length ? { metadata } : {}),
-    })
+    }
+    const paymentIntent = input.idempotencyKey
+      ? await stripeClient.paymentIntents.create(createPayload, { idempotencyKey: input.idempotencyKey })
+      : await stripeClient.paymentIntents.create(createPayload)
 
     return normalizeStripePaymentIntent(paymentIntent)
   } catch (error) {

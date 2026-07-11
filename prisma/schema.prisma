@@ -993,6 +993,7 @@ model Payment {
 model CheckoutSession {
   id              String                @id @default(cuid())
   paymentIntentId String                @unique
+  checkoutAttemptId String?             @unique
   statusTokenHash String?               @unique
   customerId      String?
   email           String?

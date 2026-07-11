@@ -1,6 +1,8 @@
 import { z } from 'zod'
 
 import { err, ok, parseBody, unprocessable } from '@/lib/api'
+import { consumeRateLimit } from '@/lib/rate-limit'
+import { createHash } from 'node:crypto'
 import { withRouteTiming } from '@/server/observability/timing'
 import { runCreateCheckoutWorkflow } from '@/workflows/checkout/create-checkout.workflow'
 
@@ -23,6 +25,8 @@ const addressSchema = z.object({
 })
 
 const schema = z.object({
+  checkoutAttemptId: z.string().uuid(),
+  statusAccessToken: z.string().min(32).max(256),
   email: z.string().email(),
   items: z.array(itemSchema).min(1),
   shippingAddress: addressSchema.optional(),
@@ -43,6 +47,20 @@ export async function POST(req: Request) {
     step('validate')
     if (!parsed.success) {
       return unprocessable('Checkout payload is invalid', parsed.error.flatten())
+    }
+
+    const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || req.headers.get('x-real-ip') || 'unknown'
+    const emailKey = createHash('sha256').update(parsed.data.email.trim().toLowerCase()).digest('hex')
+    const [ipLimit, emailLimit] = await Promise.all([
+      consumeRateLimit(`checkout-create:ip:${ip}`, { limit: Number(process.env.CHECKOUT_CREATE_IP_RATE_LIMIT ?? 30), windowMs: 10 * 60 * 1000 }),
+      consumeRateLimit(`checkout-create:email:${emailKey}`, { limit: Number(process.env.CHECKOUT_CREATE_EMAIL_RATE_LIMIT ?? 10), windowMs: 10 * 60 * 1000 }),
+    ])
+    const blocked = !ipLimit.allowed ? ipLimit : !emailLimit.allowed ? emailLimit : null
+    if (blocked) {
+      return new Response(JSON.stringify({ success: false, error: 'Too many checkout attempts' }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json', 'Retry-After': String(Math.max(1, Math.ceil(blocked.retryAfterMs / 1000))) },
+      })
     }
 
     try {

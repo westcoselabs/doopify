@@ -114,6 +114,10 @@ type CheckoutData = {
   availableShippingRates?: ShippingQuote[]
 }
 
+function createBrowserCheckoutToken() {
+  return window.crypto.getRandomValues(new Uint8Array(32)).reduce((value, byte) => value + byte.toString(16).padStart(2, '0'), '')
+}
+
 type RecoverCheckoutData = {
   email?: string
   shippingAddress?: Partial<AddressForm>
@@ -389,6 +393,7 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
   const stripeConfigFetchedRef = useRef(false);
   const stripeRef = useRef<StripeClient | null>(null);
   const elementsRef = useRef<StripeElements | null>(null);
+  const checkoutAttemptRef = useRef<{ id: string; statusToken: string } | null>(null);
   const paymentElementRef = useRef<StripePaymentElement | null>(null);
   const mountedClientSecretRef = useRef<string | null>(null);
   const lastRecoveredTokenRef = useRef<string | null>(null);
@@ -860,6 +865,8 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
 
     try {
       const checkoutPayload: {
+        checkoutAttemptId: string
+        statusAccessToken: string
         email: string
         items: Array<{ variantId: string; quantity: number }>
         shippingAddress?: AddressPayload
@@ -867,6 +874,11 @@ export default function CheckoutClientPage({ publishableKey, store, recoveryToke
         discountCode?: string
         selectedShippingQuoteId?: string
       } = {
+        checkoutAttemptId: (checkoutAttemptRef.current ||= {
+          id: window.crypto.randomUUID(),
+          statusToken: createBrowserCheckoutToken(),
+        }).id,
+        statusAccessToken: checkoutAttemptRef.current.statusToken,
         email: resolvedEmail,
         items: buildCheckoutItemsPayload(items),
         ...(showDiscount && discountCode.trim() ? { discountCode: discountCode.trim() } : {}),

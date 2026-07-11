@@ -73,6 +73,19 @@ describe('createStripePaymentIntent', () => {
     })
   })
 
+  it('passes a deterministic idempotency key when checkout supplies one', async () => {
+    mocks.createPaymentIntent.mockResolvedValue({
+      id: 'pi_idempotent', client_secret: 'secret', amount: 100, currency: 'usd', status: 'requires_payment_method', metadata: {}, latest_charge: null, last_payment_error: null,
+    })
+
+    await createStripePaymentIntent({ amount: 100, currency: 'USD', idempotencyKey: 'checkout:attempt_1' })
+
+    expect(mocks.createPaymentIntent).toHaveBeenCalledWith(
+      expect.objectContaining({ amount: 100, currency: 'usd' }),
+      { idempotencyKey: 'checkout:attempt_1' }
+    )
+  })
+
   it('surfaces Stripe SDK errors with the same message', async () => {
     mocks.createPaymentIntent.mockRejectedValue(new Error('Stripe API unavailable'))
 
