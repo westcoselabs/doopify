@@ -79,6 +79,12 @@ export default function PromotionVariantCommandPicker({
     return () => window.clearTimeout(timeoutId)
   }, [open])
 
+  useEffect(() => {
+    if (!open) return
+    const timeoutId = window.setTimeout(() => onSearch(), 300)
+    return () => window.clearTimeout(timeoutId)
+  }, [catalogQuery, onSearch, open])
+
   const hasSearchQuery = useMemo(() => Boolean(String(catalogQuery || '').trim()), [catalogQuery])
   const emptyMessage = useMemo(() => {
     if (catalogTotalCount > 0 && catalogEligibleCount === 0) {
@@ -125,19 +131,12 @@ export default function PromotionVariantCommandPicker({
           </button>
         </div>
 
-        <div className="promotion-command-picker__input-wrap">
-          <span className="material-symbols-outlined" aria-hidden="true">
-            search
-          </span>
+        <div className="promotion-command-picker__search">
           <input
             aria-label={`${pickerTitle} product search`}
-            className="promotion-command-picker__input"
+            className="admin-input"
             onChange={(event) => setCatalogQuery(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault()
-                onSearch()
-              }
               if (event.key === 'Escape') {
                 event.preventDefault()
                 onOpenChange(false)
@@ -148,10 +147,6 @@ export default function PromotionVariantCommandPicker({
             type="search"
             value={catalogQuery}
           />
-          <kbd className="promotion-command-picker__kbd">Esc</kbd>
-          <AdminButton onClick={onSearch} size="sm" variant="secondary">
-            Search
-          </AdminButton>
         </div>
 
         <div className="promotion-command-picker__results custom-scrollbar">
@@ -174,56 +169,69 @@ export default function PromotionVariantCommandPicker({
           {catalogRows.map((product) => {
             const productDetail = catalogProductDetailsById[product.id] || null
             const variants = productDetail?.variants || []
+            const productMeta = `/${product.handle}${product.status ? ` · ${product.status}` : ''}`
+
+            if (!productDetail) {
+              return (
+                <div className="promotion-command-picker__row" key={product.id}>
+                  <span className="promotion-command-picker__row-copy">
+                    <strong>{product.title}</strong>
+                    <small>{productMeta}</small>
+                  </span>
+                  <span className="promotion-command-picker__row-status">Loading variants...</span>
+                </div>
+              )
+            }
+
+            if (!variants.length) {
+              return (
+                <div className="promotion-command-picker__row" key={product.id}>
+                  <span className="promotion-command-picker__row-copy">
+                    <strong>{product.title}</strong>
+                    <small>{productMeta}</small>
+                  </span>
+                  <span className="promotion-command-picker__row-status">No variants available for this product.</span>
+                </div>
+              )
+            }
+
+            const toggleableVariants = variants.filter(
+              (variant) => !selectedRows.some((row) => row.variantId === variant.id)
+            )
+            const allAlreadySelected = toggleableVariants.length === 0
+            const allSelected = variants.every(
+              (variant) =>
+                selectedRows.some((row) => row.variantId === variant.id) ||
+                hasPendingSelection(pendingSelections, variant.id)
+            )
+            const isPending = allSelected && !allAlreadySelected
+
+            const toggleProduct = () => {
+              if (allAlreadySelected) return
+              const shouldSelect = !allSelected
+              toggleableVariants.forEach((variant) => {
+                const variantIsPending = hasPendingSelection(pendingSelections, variant.id)
+                if (shouldSelect !== variantIsPending) {
+                  onTogglePendingVariant(section, product, variant)
+                }
+              })
+            }
 
             return (
-                <section className="promotion-command-picker__group" key={product.id}>
-                  <div className="promotion-command-picker__group-header">
-                    <div>
-                      <strong>{product.title}</strong>
-                      <span>
-                        /{product.handle}
-                        {product.status ? ` · ${product.status}` : ''}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="promotion-command-picker__variant-list" role="group" aria-label={`${product.title} variants`}>
-                    {!productDetail ? (
-                      <p className="promotion-command-picker__loading-note">Loading variants...</p>
-                    ) : variants.length ? variants.map((variant) => {
-                      const alreadySelected = selectedRows.some((row) => row.variantId === variant.id)
-                      const checked = hasPendingSelection(pendingSelections, variant.id)
-
-                      return (
-                        <label
-                          aria-disabled={alreadySelected ? 'true' : undefined}
-                          className={`promotion-command-picker__variant-row ${checked ? 'is-active' : ''} ${alreadySelected ? 'is-disabled' : ''}`}
-                          data-selected={checked ? 'true' : 'false'}
-                          key={variant.id}
-                        >
-                          <span className="promotion-command-picker__variant-main">
-                            <input
-                              aria-label={`${product.title} ${variant.title || 'Default'}`}
-                              checked={alreadySelected || checked}
-                              disabled={alreadySelected}
-                              onChange={() => onTogglePendingVariant(section, product, variant)}
-                              type="checkbox"
-                            />
-                            <span className="promotion-command-picker__variant-copy">
-                              <strong>{variant.title || 'Default'}</strong>
-                              <small>{variant.sku ? `SKU ${variant.sku}` : 'No SKU'}</small>
-                            </span>
-                          </span>
-                          <span className="promotion-command-picker__variant-status">
-                            {alreadySelected ? 'Already selected' : checked ? 'Ready to add' : 'Select'}
-                          </span>
-                        </label>
-                      )
-                    }) : (
-                      <p className="promotion-command-picker__empty">No variants available for this product.</p>
-                    )}
-                  </div>
-                </section>
+              <div className="promotion-command-picker__row" key={product.id}>
+                <span className="promotion-command-picker__row-copy">
+                  <strong>{product.title}</strong>
+                  <small>{productMeta}</small>
+                </span>
+                <AdminButton
+                  disabled={allAlreadySelected}
+                  onClick={toggleProduct}
+                  size="sm"
+                  variant={allAlreadySelected || isPending ? 'secondary' : 'primary'}
+                >
+                  {allAlreadySelected ? 'Added' : isPending ? 'Selected' : 'Add'}
+                </AdminButton>
+              </div>
             )
           })}
         </div>

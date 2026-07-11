@@ -1017,8 +1017,10 @@ export default function DiscountsWorkspace() {
             { label: 'Create promotion' },
             { current: true, label: createStep === 'method' ? 'Method' : createStep === 'type' ? 'Type' : 'Details' },
           ]}
+          contextPlacement="header"
           onClose={resetCreateFlow}
           open={createDrawerOpen}
+          showTitle={false}
           subtitle={
             createStep === 'method'
               ? 'Choose whether customers enter a code or Doopify applies the offer automatically.'

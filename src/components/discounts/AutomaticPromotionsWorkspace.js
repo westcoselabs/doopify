@@ -234,26 +234,32 @@ export function SmartPromotionFormSections({
     <>
       {visible.has('offer-details') ? (
         <AdminFormSection
-          description="Set the offer name and promotion status."
-          eyebrow="Offer details"
+          className={styles.offerDetailsCard}
+          headerAction={(
+            <AdminSelect
+              ariaLabel="Status"
+              className={styles.statusPill}
+              onChange={(value) => onUpdateDraft('status', value)}
+              options={STATUS_OPTIONS}
+              value={draft.status}
+            />
+          )}
           title="Offer details"
+          titleTooltip="Set the offer name and promotion status."
         >
-          <div className={styles.formGrid}>
+          <div className={styles.nameFieldWrap}>
             <AdminField label="Name">
               <AdminInput
                 onChange={(event) => onUpdateDraft('name', event.target.value)}
                 placeholder="Hoodie + Hat bundle savings"
                 value={draft.name}
               />
-              {validationByPath.name?.length ? (
-                <small className={styles.fieldError}>{validationByPath.name[0]}</small>
-              ) : missingNameMessage ? (
-                <small className={styles.inlineValidationHint}>{missingNameMessage}</small>
-              ) : null}
             </AdminField>
-            <AdminField label="Status">
-              <AdminSelect onChange={(value) => onUpdateDraft('status', value)} options={STATUS_OPTIONS} value={draft.status} />
-            </AdminField>
+            {validationByPath.name?.length ? (
+              <small className={styles.fieldError}>{validationByPath.name[0]}</small>
+            ) : missingNameMessage ? (
+              <small className={styles.inlineValidationHint}>{missingNameMessage}</small>
+            ) : null}
           </div>
           {showTypeCards && onTypeChange ? <PromotionTypeCards draft={draft} onTypeChange={onTypeChange} /> : null}
         </AdminFormSection>
@@ -261,126 +267,114 @@ export function SmartPromotionFormSections({
 
       {visible.has('qualifiers') ? (
         <AdminFormSection
-          description="Choose the products customers must have in their cart for this promotion to apply."
-          eyebrow="Required cart items"
           title="Required cart items"
+          titleTooltip="Choose the products customers must have in their cart for this promotion to apply."
         >
           <PromotionVariantSelectionList
-            addAnotherButtonLabel="Add another"
-            browseButtonLabel="Browse products"
-            changeButtonLabel="Change"
+            browseAction={(
+              <PromotionVariantPicker
+                addButtonLabel="Add selected"
+                browseButtonLabel="Browse products"
+                catalogError={qualifierCatalogState.error}
+                catalogEligibleCount={qualifierCatalogState.eligibleResultCount}
+                catalogLoading={qualifierCatalogState.loading}
+                catalogProductDetailsById={qualifierCatalogState.productDetailsById}
+                catalogQuery={qualifierCatalogState.query}
+                catalogRows={qualifierCatalogState.rows}
+                catalogTotalCount={qualifierCatalogState.totalResultCount}
+                emptyText="Search to find physical products and choose variants."
+                onAddSelected={() => onAddPendingSelections('qualifiers')}
+                onBrowse={() => onOpenPicker('qualifiers')}
+                onCancel={onCancelPicker}
+                onOpenChange={(nextOpen) => {
+                  if (!nextOpen) onCancelPicker();
+                }}
+                onSearch={() => onSearchCatalog('qualifiers')}
+                onTogglePendingVariant={onTogglePendingVariant}
+                open={catalogState.openSection === 'qualifiers'}
+                pendingSelections={qualifierCatalogState.pendingSelections}
+                pickerTitle="Browse products"
+                searchPlaceholder="Search products..."
+                section="qualifiers"
+                selectedRows={draft.qualifiers}
+                setCatalogQuery={(value) => onCatalogQueryChange('qualifiers', value)}
+              />
+            )}
             emptyHelper="Choose the products customers must have in cart."
             emptyTitle="No required items selected."
             onChangeQuantity={(variantId, quantity) => onUpdateSelectionQuantity('qualifiers', variantId, quantity)}
-            onBrowse={() => onOpenPicker('qualifiers')}
             onRemove={(variantId) => onRemoveSelection('qualifiers', variantId)}
             quantityLabel="Required quantity"
             rows={draft.qualifiers}
             title="Selected required items"
             validationMessage={qualifierMessage}
           />
-          <PromotionVariantPicker
-            addButtonLabel="Add selected"
-            browseButtonLabel="Browse products"
-            catalogError={qualifierCatalogState.error}
-            catalogEligibleCount={qualifierCatalogState.eligibleResultCount}
-            catalogLoading={qualifierCatalogState.loading}
-            catalogProductDetailsById={qualifierCatalogState.productDetailsById}
-            catalogQuery={qualifierCatalogState.query}
-            catalogRows={qualifierCatalogState.rows}
-            catalogTotalCount={qualifierCatalogState.totalResultCount}
-            emptyText="Search to find physical products and choose variants."
-            onAddSelected={() => onAddPendingSelections('qualifiers')}
-            onBrowse={() => onOpenPicker('qualifiers')}
-            onCancel={onCancelPicker}
-            onOpenChange={(nextOpen) => {
-              if (!nextOpen) onCancelPicker();
-            }}
-            onSearch={() => onSearchCatalog('qualifiers')}
-            onTogglePendingVariant={onTogglePendingVariant}
-            open={catalogState.openSection === 'qualifiers'}
-            pendingSelections={qualifierCatalogState.pendingSelections}
-            pickerTitle="Browse products"
-            searchPlaceholder="Search products..."
-            section="qualifiers"
-            selectedRows={draft.qualifiers}
-            setCatalogQuery={(value) => onCatalogQueryChange('qualifiers', value)}
-          />
         </AdminFormSection>
       ) : null}
 
       {visible.has('reward-settings') ? (
         <AdminFormSection
-          description={
+          title={
+            draft.type === 'PRODUCT_GROUP_DISCOUNT'
+              ? 'Discount settings'
+              : draft.type === 'FREE_GIFT'
+                ? 'Free item'
+                : 'Reward items'
+          }
+          titleTooltip={
             draft.type === 'PRODUCT_GROUP_DISCOUNT'
               ? 'This discount applies to the required cart items selected above.'
               : draft.type === 'FREE_GIFT'
                 ? 'Choose the product that becomes free when the required cart items are present.'
                 : 'Choose the products that receive the discount when the required cart items are present.'
           }
-          eyebrow={draft.type === 'PRODUCT_GROUP_DISCOUNT' ? 'Discount settings' : 'Reward items'}
-          title={draft.type === 'PRODUCT_GROUP_DISCOUNT' ? 'Discount settings' : 'Reward items'}
         >
           {!showRewards ? (
             <p className={styles.inlineHint}>
               This discount applies to the required cart items selected above.
             </p>
           ) : (
-            <>
-              <PromotionVariantSelectionList
-                addAnotherButtonLabel="Add another"
-                browseButtonLabel="Browse rewards"
-                changeButtonLabel="Change"
-                emptyHelper="Choose what receives the discount."
-                emptyTitle="No reward items selected."
-                onChangeQuantity={(variantId, quantity) => onUpdateSelectionQuantity('rewards', variantId, quantity)}
-                onBrowse={() => onOpenPicker('rewards')}
-                onRemove={(variantId) => onRemoveSelection('rewards', variantId)}
-                quantityLabel="Reward quantity"
-                rows={draft.rewards}
-                title="Selected reward items"
-                validationMessage={rewardMessage}
-              />
-              <PromotionVariantPicker
-                addButtonLabel="Add selected"
-                browseButtonLabel="Browse rewards"
-                catalogError={rewardCatalogState.error}
-                catalogEligibleCount={rewardCatalogState.eligibleResultCount}
-                catalogLoading={rewardCatalogState.loading}
-                catalogProductDetailsById={rewardCatalogState.productDetailsById}
-                catalogQuery={rewardCatalogState.query}
-                catalogRows={rewardCatalogState.rows}
-                catalogTotalCount={rewardCatalogState.totalResultCount}
-                emptyText="Search to find physical reward products and choose variants."
-                onAddSelected={() => onAddPendingSelections('rewards')}
-                onBrowse={() => onOpenPicker('rewards')}
-                onCancel={onCancelPicker}
-                onOpenChange={(nextOpen) => {
-                  if (!nextOpen) onCancelPicker();
-                }}
-                onSearch={() => onSearchCatalog('rewards')}
-                onTogglePendingVariant={onTogglePendingVariant}
-                open={catalogState.openSection === 'rewards'}
-                pendingSelections={rewardCatalogState.pendingSelections}
-                pickerTitle="Browse rewards"
-                searchPlaceholder="Search rewards..."
-                section="rewards"
-                selectedRows={draft.rewards}
-                setCatalogQuery={(value) => onCatalogQueryChange('rewards', value)}
-              />
-              <p className={styles.inlineHint}>
-                {draft.type === 'FREE_GIFT'
-                  ? "Gift items must already be in the customer's cart. Auto-add is not enabled in V1."
-                  : "Reward items must already be in the customer's cart. Auto-add is not enabled in V1."}
-              </p>
-            </>
+            <PromotionVariantSelectionList
+              browseAction={(
+                <PromotionVariantPicker
+                  addButtonLabel="Add selected"
+                  browseButtonLabel="Browse rewards"
+                  catalogError={rewardCatalogState.error}
+                  catalogEligibleCount={rewardCatalogState.eligibleResultCount}
+                  catalogLoading={rewardCatalogState.loading}
+                  catalogProductDetailsById={rewardCatalogState.productDetailsById}
+                  catalogQuery={rewardCatalogState.query}
+                  catalogRows={rewardCatalogState.rows}
+                  catalogTotalCount={rewardCatalogState.totalResultCount}
+                  emptyText="Search to find physical reward products and choose variants."
+                  onAddSelected={() => onAddPendingSelections('rewards')}
+                  onBrowse={() => onOpenPicker('rewards')}
+                  onCancel={onCancelPicker}
+                  onOpenChange={(nextOpen) => {
+                    if (!nextOpen) onCancelPicker();
+                  }}
+                  onSearch={() => onSearchCatalog('rewards')}
+                  onTogglePendingVariant={onTogglePendingVariant}
+                  open={catalogState.openSection === 'rewards'}
+                  pendingSelections={rewardCatalogState.pendingSelections}
+                  pickerTitle="Browse rewards"
+                  searchPlaceholder="Search rewards..."
+                  section="rewards"
+                  selectedRows={draft.rewards}
+                  setCatalogQuery={(value) => onCatalogQueryChange('rewards', value)}
+                />
+              )}
+              emptyHelper="Choose what receives the discount."
+              emptyTitle="No reward items selected."
+              onChangeQuantity={(variantId, quantity) => onUpdateSelectionQuantity('rewards', variantId, quantity)}
+              onRemove={(variantId) => onRemoveSelection('rewards', variantId)}
+              quantityLabel="Reward quantity"
+              rows={draft.rewards}
+              title="Selected reward items"
+              validationMessage={rewardMessage}
+            />
           )}
-          {draft.type === 'FREE_GIFT' ? (
-            <div className={styles.lockedRewardSummary} aria-label="Reward discount">
-              <span>Reward discount</span>
-              <strong>Free</strong>
-            </div>
-          ) : (
+          {draft.type === 'FREE_GIFT' ? null : (
             <div className={styles.formGrid}>
               <AdminField label={draft.type === 'PRODUCT_GROUP_DISCOUNT' ? 'Discount type' : 'Reward type'}>
                 <AdminSelect
@@ -407,11 +401,10 @@ export function SmartPromotionFormSections({
 
       {visible.has('schedule') ? (
         <AdminFormSection
-          description="Set activation windows, usage cap, and tie-break priority."
-          eyebrow="Schedule & publish"
           title="Schedule & publish"
+          titleTooltip="Set activation windows and usage cap."
         >
-          <div className={styles.formGrid}>
+          <div className={styles.scheduleGrid}>
             <AdminField label="Starts at">
               <AdminSchedulePopover
                 applyLabel="Set start date"
@@ -452,16 +445,6 @@ export function SmartPromotionFormSections({
                 <small className={styles.fieldError}>{validationByPath.usageLimit[0]}</small>
               ) : null}
             </AdminField>
-            <AdminField
-              hint="Lower numbers run first when promotions tie. The best discount usually wins automatically."
-              label="Priority"
-            >
-              <AdminInput
-                onChange={(event) => onUpdateDraft('priority', event.target.value)}
-                type="number"
-                value={draft.priority}
-              />
-            </AdminField>
           </div>
           {validationByPath.qualifiers?.length ? (
             <div className={styles.inlineErrorList}>
@@ -475,9 +458,8 @@ export function SmartPromotionFormSections({
 
       {visible.has('preview') ? (
         <AdminFormSection
-          description="Review Smart Promotion behavior before saving."
-          eyebrow="Preview"
           title="Preview"
+          titleTooltip="Review Smart Promotion behavior before saving."
         >
           <p className={styles.previewText}>{buildPromotionPreview(draft)}</p>
           <div className={styles.previewGrid}>
@@ -501,9 +483,6 @@ export function SmartPromotionFormSections({
                 : rowsToNameSummary(draft.rewards)}
             </p>
           </div>
-          <p className={styles.inlineHint}>
-            Smart Promotions do not combine with discount codes in V1.
-          </p>
           {topValidationMessages.length ? (
             <div className={styles.inlineErrorList}>
               {topValidationMessages.map((message, index) => (

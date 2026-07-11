@@ -27,14 +27,18 @@ type AdminDrawerProps = {
   children?: ReactNode;
   className?: string;
   contextItems?: AdminDrawerContextItem[];
+  contextPlacement?: "body" | "header";
   footer?: ReactNode;
   headerActions?: ReactNode;
+  hideTabNav?: boolean;
   onActiveTabChange?: ((tabId: string | null) => void) | null;
   onClose?: () => void;
   open?: boolean;
+  showTitle?: boolean;
   subtitle?: ReactNode;
   tabs?: AdminDrawerTab[];
   title?: string;
+  titleAdornment?: ReactNode;
 };
 
 export default function AdminDrawer({
@@ -43,14 +47,18 @@ export default function AdminDrawer({
   children = null,
   className = "",
   contextItems = [],
+  contextPlacement = "body",
   footer = null,
   headerActions = null,
+  hideTabNav = false,
   onActiveTabChange = null,
   onClose,
   open = false,
+  showTitle = true,
   subtitle = "",
   tabs = [],
   title = "Details",
+  titleAdornment = null,
 }: AdminDrawerProps) {
   const isTabControlled = activeTabId != null;
   const [activeTab, setActiveTab] = useState<string | null>(null);
@@ -152,6 +160,23 @@ export default function AdminDrawer({
     }
   };
 
+  const contextItemNodes = contextItems.length
+    ? contextItems.map((item, index) => {
+        const label = typeof item === "string" ? item : item.label;
+        const isCurrent = typeof item === "string" ? index === contextItems.length - 1 : item.current;
+
+        return (
+          <span
+            className={buildClassName(["admin-drawer__context-item", isCurrent ? "is-current" : ""])}
+            key={`${String(label)}-${index}`}
+          >
+            {index > 0 ? <span className="admin-drawer__context-divider">/</span> : null}
+            <span>{label}</span>
+          </span>
+        );
+      })
+    : null;
+
   const drawerUi = (
     <div className="admin-drawer-root" role="presentation">
       <div aria-hidden="true" className="admin-drawer-overlay" onClick={handleOverlayClick} />
@@ -163,8 +188,18 @@ export default function AdminDrawer({
       >
         <header className="admin-drawer__header">
           <div>
-            <h2 className="admin-drawer__title">{title}</h2>
-            {subtitle ? <p className="admin-drawer__subtitle">{subtitle}</p> : null}
+            {contextPlacement === "header" && contextItemNodes ? (
+              <div className="admin-drawer__context admin-drawer__context--header" aria-label="Context">
+                {contextItemNodes}
+              </div>
+            ) : null}
+            {showTitle ? (
+              <div className="admin-drawer__title-row">
+                <h2 className="admin-drawer__title">{title}</h2>
+                {titleAdornment}
+              </div>
+            ) : null}
+            {showTitle && subtitle ? <p className="admin-drawer__subtitle">{subtitle}</p> : null}
           </div>
           <div className="admin-drawer__header-actions">
             {headerActions}
@@ -176,29 +211,13 @@ export default function AdminDrawer({
           </div>
         </header>
 
-        {contextItems.length ? (
+        {contextPlacement === "body" && contextItemNodes ? (
           <div className="admin-drawer__context" aria-label="Context">
-            {contextItems.map((item, index) => {
-              const label = typeof item === "string" ? item : item.label;
-              const isCurrent = typeof item === "string" ? index === contextItems.length - 1 : item.current;
-
-              return (
-              <span
-                className={buildClassName([
-                  "admin-drawer__context-item",
-                  isCurrent ? "is-current" : "",
-                ])}
-                key={`${String(label)}-${index}`}
-              >
-                {index > 0 ? <span className="admin-drawer__context-divider">/</span> : null}
-                <span>{label}</span>
-              </span>
-              );
-            })}
+            {contextItemNodes}
           </div>
         ) : null}
 
-        {hasTabs ? (
+        {hasTabs && !hideTabNav ? (
           <nav className="admin-drawer__tabs" aria-label="Drawer tabs">
             {tabs.map((tab) => (
               <button

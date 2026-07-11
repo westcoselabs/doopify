@@ -54,14 +54,16 @@ function renderPicker(overrides: Record<string, unknown> = {}) {
 }
 
 describe('PromotionVariantCommandPicker', () => {
-  it('renders product results and variant checkbox rows', () => {
+  it('renders one product-level Add button row without variant SKU sub-rows', () => {
     const html = renderPicker()
 
     expect(html).toContain('Never Nothing')
     expect(html).toContain('/never-nothing')
-    expect(html).toContain('Black / Large')
-    expect(html).toContain('SKU NN-BLK')
-    expect(html).toContain('type="checkbox"')
+    expect(html).toContain('ACTIVE')
+    expect(html).toContain('>Add<')
+    expect(html).not.toContain('type="checkbox"')
+    expect(html).not.toContain('Black / Large')
+    expect(html).not.toContain('SKU NN-BLK')
   })
 
   it('shows the loading state without clearing existing rows', () => {
@@ -136,7 +138,7 @@ describe('PromotionVariantCommandPicker', () => {
     expect(html).toContain('Failed to load products. Try again.')
   })
 
-  it('marks already selected variants and keeps add disabled without pending selections', () => {
+  it('marks already selected products with a disabled Added button', () => {
     const html = renderPicker({
       selectedRows: [
         {
@@ -150,11 +152,11 @@ describe('PromotionVariantCommandPicker', () => {
       ],
     })
 
-    expect(html).toContain('Already selected')
+    expect(html).toContain('>Added<')
     expect(html).toContain('disabled=""')
   })
 
-  it('marks pending rows as active so the whole row has a visible selected state', () => {
+  it('marks pending rows with a Selected button', () => {
     const html = renderPicker({
       pendingSelections: [
         {
@@ -168,28 +170,25 @@ describe('PromotionVariantCommandPicker', () => {
       ],
     })
 
-    expect(html).toContain('promotion-command-picker__variant-row is-active')
-    expect(html).toContain('data-selected="true"')
-    expect(html).toContain('Ready to add')
+    expect(html).toContain('>Selected<')
     expect(html).toContain('Add selected (1)')
   })
 
-  it('keeps the entire variant row wrapped in a label so clicks are not limited to the checkbox', () => {
+  it('renders products as flat rows matching the collections library row style, with an Add button that toggles selection', () => {
     const html = renderPicker()
 
-    expect(html).toContain('<label')
-    expect(html).toContain('promotion-command-picker__variant-row')
-    expect(html).toContain('type="checkbox"')
+    expect(html).toContain('promotion-command-picker__row')
+    expect(html).toContain('promotion-command-picker__row-copy')
+    expect(html).toContain('>Add<')
   })
 })
 
 function renderSelectionList(overrides: Record<string, unknown> = {}) {
   return renderToStaticMarkup(
     <PromotionVariantSelectionList
-      browseButtonLabel="Browse products"
+      browseAction={<button type="button">Browse products</button>}
       emptyHelper="Choose the products customers must have in cart."
       emptyTitle="No required items selected."
-      onBrowse={vi.fn()}
       onChangeQuantity={vi.fn()}
       onRemove={vi.fn()}
       quantityLabel="Required quantity"
@@ -201,7 +200,7 @@ function renderSelectionList(overrides: Record<string, unknown> = {}) {
 }
 
 describe('PromotionVariantSelectionList', () => {
-  it('renders the required-items empty state copy', () => {
+  it('renders the required-items empty state copy with the browse action in the header', () => {
     const html = renderSelectionList()
 
     expect(html).toContain('Selected required items')
@@ -210,7 +209,7 @@ describe('PromotionVariantSelectionList', () => {
     expect(html).toContain('Browse products')
   })
 
-  it('renders a selected required item immediately after add selected', () => {
+  it('renders a selected required item immediately after add selected, with a red remove button and no Change button', () => {
     const html = renderSelectionList({
       rows: [
         {
@@ -229,12 +228,13 @@ describe('PromotionVariantSelectionList', () => {
     expect(html).toContain('Black / Large')
     expect(html).toContain('SKU NN-BLK')
     expect(html).toContain('value="1"')
-    expect(html).toContain('Change')
+    expect(html).toContain('admin-btn--danger')
+    expect(html).not.toContain('>Change<')
   })
 
   it('renders a selected reward item immediately after add selected', () => {
     const html = renderSelectionList({
-      browseButtonLabel: 'Browse rewards',
+      browseAction: <button type="button">Browse rewards</button>,
       emptyHelper: 'Choose what receives the discount.',
       emptyTitle: 'No reward items selected.',
       quantityLabel: 'Reward quantity',
@@ -255,7 +255,7 @@ describe('PromotionVariantSelectionList', () => {
     expect(html).toContain('Selected reward items')
     expect(html).toContain('Sticker Pack')
     expect(html).toContain('Reward quantity')
-    expect(html).toContain('Change')
+    expect(html).not.toContain('>Change<')
   })
 
   it('renders inline validation copy for required rows when save is still blocked', () => {

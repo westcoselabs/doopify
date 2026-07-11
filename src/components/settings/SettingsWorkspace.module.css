@@ -1330,6 +1330,11 @@
   word-break: break-word;
 }
 
+.providerHelperNoteSuccess {
+  border-color: color-mix(in srgb, var(--emerald-500) 32%, transparent);
+  background: color-mix(in srgb, var(--emerald-500) 12%, transparent);
+}
+
 .checkoutMethodGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1353,7 +1358,7 @@
 
 .drawerStack {
   display: grid;
-  gap: 0.58rem;
+  gap: 0.95rem;
 }
 
 .drawerStatusGrid {
@@ -1380,6 +1385,100 @@
 .compactSectionHeader {
   display: grid;
   gap: 0.24rem;
+}
+
+.fieldLabelRow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.fieldFullWidth {
+  grid-column: 1 / -1;
+}
+
+.credentialsTitleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.credentialsTitleGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.credentialsTitleRow h4 {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 800;
+  color: var(--on-surface);
+  line-height: 1.35;
+}
+
+.stripeModeToggleGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
+}
+
+.stripeModeToggleLabel {
+  font-size: 0.72rem;
+  font-weight: 650;
+  color: var(--on-surface-variant);
+}
+
+.stripeModeToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.2rem;
+  border-radius: 999px;
+  border: 1px solid var(--glass-border);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.03)),
+    color-mix(in srgb, var(--surface-container-low) 84%, transparent);
+}
+
+.stripeModeToggleOption {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.22rem 0.6rem;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--on-surface-variant);
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-transform: capitalize;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.stripeModeToggleOption:hover {
+  color: var(--on-surface);
+}
+
+.stripeModeToggleOption:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.stripeModeToggleOption:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.stripeModeToggleOptionActive {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04)),
+    color-mix(in srgb, var(--surface-container-lowest) 70%, transparent);
+  color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--glass-border-strong);
 }
 
 .compactSectionHeader h3,
@@ -1479,12 +1578,40 @@
 }
 
 .endpointInlineRow {
+  position: relative;
   border: 1px solid var(--glass-border);
   border-radius: 0.72rem;
-  padding: 0.52rem 0.56rem;
+  padding: 0.52rem 2rem 0.52rem 0.56rem;
   background: color-mix(in srgb, var(--surface-container-lowest) 78%, transparent);
   display: grid;
   gap: 0.22rem;
+}
+
+.endpointCopyIcon {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.4rem;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--on-surface-variant);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.endpointCopyIcon:hover:not(:disabled) {
+  color: var(--on-surface);
+}
+
+.endpointCopyIcon:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.endpointCopyIcon .material-symbols-outlined {
+  font-size: 0.85rem;
 }
 
 .endpointMonospace {
@@ -1496,32 +1623,14 @@
   scrollbar-width: thin;
 }
 
-.drawerDetails {
-  border: 1px solid color-mix(in srgb, var(--glass-border) 80%, transparent);
-  border-radius: 0.72rem;
-  background: color-mix(in srgb, var(--surface-container-lowest) 78%, transparent);
-  padding: 0.44rem 0.54rem;
-}
-
-.drawerDetailsSummary {
-  cursor: pointer;
-  font-size: 0.74rem;
-  color: var(--on-surface-variant);
-  user-select: none;
-}
-
-.drawerDetailsBody {
-  margin-top: 0.4rem;
-  display: grid;
-  gap: 0.26rem;
-}
-
 .compactChipRow {
   gap: 0.32rem;
 }
 
 .compactDrawerCard {
-  padding: 0.78rem;
+  padding: 1.05rem;
+  display: grid;
+  gap: 0.72rem;
 }
 
 .compactDrawerGrid {
@@ -1531,6 +1640,10 @@
 
 .compactFormGrid {
   gap: 0.52rem;
+}
+
+.stripeCredentialsFormGrid {
+  grid-template-columns: 1fr;
 }
 
 .compactActionRow {

@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import Image from 'next/image';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
 import AppShell from '../AppShell';
@@ -7,15 +8,24 @@ import AdminButton from '../admin/ui/AdminButton';
 import AdminCard from '../admin/ui/AdminCard';
 import AdminDrawer from '../admin/ui/AdminDrawer';
 import AdminEmptyState from '../admin/ui/AdminEmptyState';
+import AdminField from '../admin/ui/AdminField';
 import AdminFormSection from '../admin/ui/AdminFormSection';
 import AdminInput from '../admin/ui/AdminInput';
 import AdminPage from '../admin/ui/AdminPage';
 import AdminPageHeader from '../admin/ui/AdminPageHeader';
 import AdminSelect from '../admin/ui/AdminSelect';
+import AdminSelectableTile from '../admin/ui/AdminSelectableTile';
 import AdminStatusChip from '../admin/ui/AdminStatusChip';
 import AdminTable from '../admin/ui/AdminTable';
 import AdminTextarea from '../admin/ui/AdminTextarea';
 import AdminToolbar from '../admin/ui/AdminToolbar';
+import AdminUploadDropzone from '../admin/ui/AdminUploadDropzone';
+import {
+  getOversizedMediaFiles,
+  MAX_MEDIA_UPLOAD_VERCEL_FORMAT_HINT,
+  parseMediaUploadResponse,
+  resolveMediaUploadFailureMessage,
+} from '../../context/product-media-upload.helpers';
 import styles from './CollectionsWorkspace.module.css';
 
 const EMPTY_DRAFT = { id: null, title: '', handle: '', description: '', imageUrl: '', sortOrder: 'MANUAL', isPublished: true, productIds: [] };
@@ -29,6 +39,11 @@ const SORT_OPTIONS = [
 ];
 const SORT_SELECT_OPTIONS = SORT_OPTIONS.map((option) => ({ value: option.value, label: option.label }));
 
+const DRAWER_TAB_OPTIONS = [
+  { id: 'summary', label: 'Summary' },
+  { id: 'products', label: 'Products' },
+];
+
 function slugify(text) { return String(text || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''); }
 function toDraft(collection) { return { id: collection.id, title: collection.title || '', handle: collection.handle || '', description: collection.description || '', imageUrl: collection.imageUrl || '', sortOrder: collection.sortOrder || 'MANUAL', isPublished: collection.isPublished !== false, productIds: collection.productIds || [] }; }
 function toCollectionSummary(collection) { return { id: collection.id, title: collection.title || '', handle: collection.handle || '', description: collection.description || '', sortOrder: collection.sortOrder || 'MANUAL', isPublished: collection.isPublished !== false, productCount: collection.productCount || 0, updatedAt: collection.updatedAt || null }; }
@@ -40,6 +55,7 @@ export default function CollectionsWorkspace() {
   const [products, setProducts] = useState([]);
   const [selectedCollectionId, setSelectedCollectionId] = useState('new');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [activeDrawerTab, setActiveDrawerTab] = useState('summary');
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [loading, setLoading] = useState(true);
   const [loadingCollection, setLoadingCollection] = useState(false);
@@ -47,6 +63,7 @@ export default function CollectionsWorkspace() {
   const [notice, setNotice] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [productSearch, setProductSearch] = useState('');
+  const [imageUploading, setImageUploading] = useState(false);
   const detailRequestRef = useRef(0);
   const initialWorkspaceLoadRef = useRef(false);
 
@@ -124,6 +141,38 @@ export default function CollectionsWorkspace() {
   function resetToNewCollection() { detailRequestRef.current += 1; setLoadingCollection(false); setSelectedCollectionId('new'); setDraft(EMPTY_DRAFT); setNotice(''); setIsDrawerOpen(true); }
   function updateDraft(field, value) { setDraft((current) => ({ ...current, [field]: value })); }
   function toggleAssignedProduct(productId) { setDraft((current) => ({ ...current, productIds: current.productIds.includes(productId) ? current.productIds.filter((id) => id !== productId) : [...current.productIds, productId] })); }
+
+  async function handleCollectionImageUpload(files) {
+    const fileArray = Array.from(files || []);
+    if (!fileArray.length) return;
+    const oversizedFiles = getOversizedMediaFiles(fileArray);
+    if (oversizedFiles.length) { setNotice(MAX_MEDIA_UPLOAD_VERCEL_FORMAT_HINT); return; }
+
+    const file = fileArray[0];
+    setImageUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('altText', file.name);
+      const res = await fetch('/api/media/upload', { method: 'POST', body: form });
+      const { json, isJson } = await parseMediaUploadResponse(res);
+      if (!res.ok || !json?.success) {
+        throw new Error(
+          resolveMediaUploadFailureMessage({
+            status: res.status,
+            jsonError: json && 'error' in json ? json.error || null : null,
+            isJson,
+          })
+        );
+      }
+      updateDraft('imageUrl', json.data.url);
+    } catch (error) {
+      console.error('[CollectionsWorkspace] image upload failed', error);
+      setNotice(error instanceof Error ? error.message : 'Image upload failed.');
+    } finally {
+      setImageUploading(false);
+    }
+  }
 
   async function handleSave() {
     if (!draft.title.trim()) { setNotice('A collection title is required before saving.'); return; }
@@ -209,7 +258,25 @@ export default function CollectionsWorkspace() {
               <AdminButton disabled={saving || loadingCollection} onClick={handleSave} size="sm" variant="primary">{saving ? 'Saving...' : isNewCollection ? 'Create collection' : 'Save changes'}</AdminButton>
             </>
           )}
-          contextItems={[{ label: 'Collections' }, { label: draft.title || 'Untitled collection', current: true }, { label: draft.isPublished ? 'Published' : 'New' }]}
+          activeTabId={activeDrawerTab}
+          headerActions={(
+            <div className={styles.drawerTabToggle} role="radiogroup" aria-label="Drawer section">
+              {DRAWER_TAB_OPTIONS.map((tab) => (
+                <button
+                  aria-checked={activeDrawerTab === tab.id}
+                  className={`${styles.drawerTabToggleOption} ${activeDrawerTab === tab.id ? styles.drawerTabToggleOptionActive : ''}`}
+                  key={tab.id}
+                  onClick={() => setActiveDrawerTab(tab.id)}
+                  role="radio"
+                  type="button"
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          )}
+          hideTabNav
+          onActiveTabChange={setActiveDrawerTab}
           onClose={() => setIsDrawerOpen(false)}
           open={isDrawerOpen}
           tabs={[
@@ -218,15 +285,56 @@ export default function CollectionsWorkspace() {
                 <div className={styles.drawerBody}>
                   {notice ? <p className={styles.notice}>{notice}</p> : null}
                   {loadingCollection ? <p className={styles.notice}>Loading collection details...</p> : null}
-                  <AdminFormSection eyebrow="Identity" title="Collection details" description={`Storefront path: /collections/${handlePreview || 'collection-handle'}`}>
+                  <AdminFormSection
+                    description={`Storefront path: /collections/${handlePreview || 'collection-handle'}`}
+                    eyebrow="Identity"
+                    headerAction={(
+                      <AdminSelect
+                        ariaLabel="Product order"
+                        className={styles.sortOrderPill}
+                        onChange={(value) => updateDraft('sortOrder', value)}
+                        options={SORT_SELECT_OPTIONS}
+                        value={draft.sortOrder}
+                      />
+                    )}
+                    title="Collection details"
+                  >
                     <div className={styles.formGrid}>
-                      <AdminInput onChange={(event) => updateDraft('title', event.target.value)} placeholder="Summer Essentials" value={draft.title} />
-                      <AdminInput onChange={(event) => updateDraft('handle', event.target.value)} placeholder={slugify(draft.title) || 'summer-essentials'} value={draft.handle} />
-                      <AdminInput onChange={(event) => updateDraft('imageUrl', event.target.value)} placeholder="https://..." value={draft.imageUrl} />
-                      <AdminSelect onChange={(value) => updateDraft('sortOrder', value)} options={SORT_SELECT_OPTIONS} value={draft.sortOrder} />
+                      <AdminField label="Title">
+                        <AdminInput onChange={(event) => updateDraft('title', event.target.value)} placeholder="Summer Essentials" value={draft.title} />
+                      </AdminField>
+                      <AdminField label="Handle">
+                        <AdminInput onChange={(event) => updateDraft('handle', event.target.value)} placeholder={slugify(draft.title) || 'summer-essentials'} value={draft.handle} />
+                      </AdminField>
                     </div>
                     <label className={styles.publishRow}><input checked={draft.isPublished} onChange={(event) => updateDraft('isPublished', event.target.checked)} type="checkbox" />Published</label>
-                    <AdminTextarea onChange={(event) => updateDraft('description', event.target.value)} placeholder="Explain what this collection is for and how it should feel on the storefront." rows={4} value={draft.description} />
+                    <AdminField className={styles.descriptionField} label="Description">
+                      <AdminTextarea onChange={(event) => updateDraft('description', event.target.value)} placeholder="Explain what this collection is for and how it should feel on the storefront." rows={4} value={draft.description} />
+                    </AdminField>
+                    <div className={styles.imageFieldGroup}>
+                      <span className="admin-field__label">Collection image</span>
+                      <AdminUploadDropzone
+                        className={styles.uploadZone}
+                        description="Drop a JPG, PNG, WebP, or GIF file up to 4.5 MB to use as this collection's image."
+                        disabled={imageUploading}
+                        multiple={false}
+                        onFilesSelected={handleCollectionImageUpload}
+                        title={imageUploading ? 'Uploading...' : 'Drag and drop collection image'}
+                      />
+                      {draft.imageUrl ? (
+                        <div className={styles.imagePreviewRow}>
+                          <AdminSelectableTile
+                            className={styles.imagePreviewTile}
+                            media={(
+                              <div className={styles.imagePreviewImageWrap}>
+                                <Image alt={draft.title || 'Collection image'} className={styles.imagePreviewImage} fill src={draft.imageUrl} unoptimized />
+                              </div>
+                            )}
+                          />
+                          <AdminButton onClick={() => updateDraft('imageUrl', '')} size="sm" variant="danger">Remove</AdminButton>
+                        </div>
+                      ) : null}
+                    </div>
                   </AdminFormSection>
                 </div>
               ),
@@ -239,7 +347,7 @@ export default function CollectionsWorkspace() {
                       {assignedProducts.map((product) => (
                         <div className={styles.productRow} key={product.id}>
                           <span>{product.title}</span>
-                          <AdminButton onClick={() => toggleAssignedProduct(product.id)} size="sm" variant="ghost">Remove</AdminButton>
+                          <AdminButton onClick={() => toggleAssignedProduct(product.id)} size="sm" variant="danger">Remove</AdminButton>
                         </div>
                       ))}
                     </div>

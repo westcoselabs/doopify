@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import AdminDropdown from './AdminDropdown';
+import { useEffect, useState } from 'react';
 import { useAdminTheme } from './AdminThemeProvider';
 
 function buildClassName(parts: Array<string | false | null | undefined>) {
@@ -23,55 +22,37 @@ export default function AdminThemeToggle({ className = '' }: { className?: strin
     setMounted(true);
   }, []);
 
-  const currentLabel = useMemo(() => {
-    if (themePreference === 'system') {
-      if (!mounted) return 'System';
-      return `System (${resolvedTheme === 'dark' ? 'Dark' : 'Light'})`;
-    }
-    return themePreference === 'dark' ? 'Dark' : 'Light';
-  }, [mounted, resolvedTheme, themePreference]);
-
   return (
-    <AdminDropdown
-      align="end"
-      className={buildClassName(['admin-theme-dropdown', className])}
-      trigger={(
-        <button className="admin-theme-toggle-dropdown" type="button">
-          <span className="material-symbols-outlined" aria-hidden="true">
-            {themePreference === 'system'
-              ? 'computer'
-              : themePreference === 'dark'
-                ? 'dark_mode'
-                : 'light_mode'}
-          </span>
-          <span className="admin-theme-toggle-dropdown__label">{currentLabel}</span>
-          <span className="material-symbols-outlined admin-theme-toggle-dropdown__chevron" aria-hidden="true">
-            keyboard_arrow_down
-          </span>
-        </button>
-      )}
+    <div
+      aria-label="Theme"
+      className={buildClassName(['admin-theme-toggle', className])}
+      role="radiogroup"
     >
-      {THEME_OPTIONS.map((option) => (
-        <button
-          aria-checked={themePreference === option.value}
-          className={buildClassName([
-            'admin-theme-dropdown__option',
-            themePreference === option.value ? 'is-active' : '',
-          ])}
-          key={option.value}
-          onClick={() => setThemePreference(option.value)}
-          role="menuitemradio"
-          type="button"
-        >
-          <span className="material-symbols-outlined" aria-hidden="true">{option.icon}</span>
-          <span>{option.label}</span>
-          {themePreference === option.value ? (
-            <span className="material-symbols-outlined admin-theme-dropdown__check" aria-hidden="true">
-              check
-            </span>
-          ) : null}
-        </button>
-      ))}
-    </AdminDropdown>
+      {THEME_OPTIONS.map((option) => {
+        const isActive = themePreference === option.value;
+        const optionLabel =
+          option.value === 'system' && mounted
+            ? `System (${resolvedTheme === 'dark' ? 'Dark' : 'Light'})`
+            : option.label;
+
+        return (
+          <button
+            aria-checked={isActive}
+            aria-label={optionLabel}
+            className={buildClassName([
+              'admin-theme-toggle__option',
+              isActive ? 'is-active' : '',
+            ])}
+            key={option.value}
+            onClick={() => setThemePreference(option.value)}
+            role="radio"
+            title={optionLabel}
+            type="button"
+          >
+            <span className="material-symbols-outlined" aria-hidden="true">{option.icon}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }

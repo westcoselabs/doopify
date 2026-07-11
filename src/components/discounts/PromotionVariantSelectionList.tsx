@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import AdminButton from "@/components/admin/ui/AdminButton";
 import AdminInput from "@/components/admin/ui/AdminInput";
 import type { PromotionVariantSelection } from "@/components/discounts/promotions-ui.helpers";
@@ -7,12 +9,9 @@ import type { PromotionVariantSelection } from "@/components/discounts/promotion
 import styles from "./PromotionVariantSelectionList.module.css";
 
 type PromotionVariantSelectionListProps = {
-  addAnotherButtonLabel?: string;
-  browseButtonLabel: string;
-  changeButtonLabel?: string;
+  browseAction: ReactNode;
   emptyHelper: string;
   emptyTitle: string;
-  onBrowse: () => void;
   onChangeQuantity: (variantId: string, quantity: number) => void;
   onRemove: (variantId: string) => void;
   quantityLabel: string;
@@ -31,12 +30,9 @@ function formatFulfillmentTypeLabel(fulfillmentType: string | null | undefined) 
 }
 
 export default function PromotionVariantSelectionList({
-  addAnotherButtonLabel = "Add another",
-  browseButtonLabel,
-  changeButtonLabel = "Change",
+  browseAction,
   emptyHelper,
   emptyTitle,
-  onBrowse,
   onChangeQuantity,
   onRemove,
   quantityLabel,
@@ -45,8 +41,6 @@ export default function PromotionVariantSelectionList({
   validationMessage = "",
 }: PromotionVariantSelectionListProps) {
   const hasRows = rows.length > 0;
-  const browseActionLabel =
-    rows.length > 1 ? addAnotherButtonLabel : hasRows ? changeButtonLabel : browseButtonLabel;
 
   return (
     <div className={styles.list}>
@@ -55,15 +49,11 @@ export default function PromotionVariantSelectionList({
           <p className={styles.label}>{title}</p>
           {validationMessage ? <p className={styles.validation}>{validationMessage}</p> : null}
         </div>
-        {hasRows ? (
-          <AdminButton onClick={onBrowse} size="sm" variant="ghost">
-            {browseActionLabel}
-          </AdminButton>
-        ) : null}
+        <div className={styles.headerAction}>{browseAction}</div>
       </div>
 
       {hasRows ? (
-        <div className={styles.rows}>
+        <div className={styles.rowsCard}>
           {rows.map((row) => {
             const fulfillmentTypeLabel = formatFulfillmentTypeLabel(row.fulfillmentType);
 
@@ -93,7 +83,12 @@ export default function PromotionVariantSelectionList({
                       value={String(row.quantity)}
                     />
                   </label>
-                  <AdminButton onClick={() => onRemove(row.variantId)} size="sm" variant="ghost">
+                  <AdminButton
+                    className={styles.removeButton}
+                    onClick={() => onRemove(row.variantId)}
+                    size="sm"
+                    variant="danger"
+                  >
                     Remove
                   </AdminButton>
                 </div>
@@ -107,9 +102,6 @@ export default function PromotionVariantSelectionList({
             <p>{emptyTitle}</p>
             <small>{emptyHelper}</small>
           </div>
-          <AdminButton onClick={onBrowse} size="sm" variant="secondary">
-            {browseButtonLabel}
-          </AdminButton>
         </div>
       )}
     </div>

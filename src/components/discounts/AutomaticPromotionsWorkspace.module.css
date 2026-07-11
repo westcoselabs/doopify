@@ -295,29 +295,15 @@
   background: color-mix(in srgb, var(--surface-soft) 84%, transparent);
 }
 
-.lockedRewardSummary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.7rem;
-  border: 1px solid color-mix(in srgb, var(--brand-primary) 18%, var(--line-subtle));
-  border-radius: 0.75rem;
-  padding: 0.65rem 0.75rem;
-  background: color-mix(in srgb, var(--surface-soft) 88%, transparent);
-}
-
-.lockedRewardSummary span {
-  font-size: 0.78rem;
-  opacity: 0.76;
-}
-
-.lockedRewardSummary strong {
-  font-size: 0.88rem;
-}
-
 .formGrid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.scheduleGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.55rem;
 }
 
@@ -341,6 +327,50 @@
   margin: 0;
   font-size: 0.76rem;
   opacity: 0.78;
+}
+
+:global(.admin-form-section).offerDetailsCard {
+  padding-bottom: 2.1rem;
+}
+
+.statusPill {
+  flex-shrink: 0;
+}
+
+.statusPill :global(.admin-select__trigger) {
+  width: auto;
+  min-height: 1.7rem;
+  padding: 0.22rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 650;
+  gap: 0.3rem;
+  color: var(--on-primary);
+  border-color: rgba(255, 255, 255, 0.32);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0.06)),
+    linear-gradient(135deg, var(--accent-ocean), var(--accent-ocean-2));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    0 6px 18px rgba(var(--accent-rgb), 0.3);
+}
+
+.statusPill :global(.admin-select__chevron) {
+  font-size: 0.9rem;
+  color: var(--on-primary);
+}
+
+.nameFieldWrap {
+  position: relative;
+}
+
+.nameFieldWrap .inlineValidationHint,
+.nameFieldWrap .fieldError {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 0.25rem;
 }
 
 .inlineValidationHint {
@@ -391,7 +421,8 @@
   }
 
   .previewGrid,
-  .formGrid {
+  .formGrid,
+  .scheduleGrid {
     grid-template-columns: 1fr;
   }
 

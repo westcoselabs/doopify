@@ -413,49 +413,54 @@ body.dashboard-body {
   justify-content: center;
 }
 
-.admin-theme-toggle-dropdown {
-  min-height: 2rem;
+.admin-theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.15rem;
+  padding: 0.2rem;
   border-radius: 999px;
   border: 1px solid var(--glass-border);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.11), rgba(255, 255, 255, 0.03)),
     color-mix(in srgb, var(--surface-container-low) 84%, transparent);
-  color: var(--on-surface);
+}
+
+.admin-theme-toggle__option {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.2rem 0.5rem;
-  font-size: 0.74rem;
-  font-weight: 650;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-width: 1.85rem;
+  height: 1.85rem;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--on-surface-variant);
   cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
 }
 
-.admin-theme-dropdown {
-  position: relative;
-  z-index: calc(var(--z-topbar) + 1);
+.admin-theme-toggle__option .material-symbols-outlined {
+  font-size: 1.15rem;
 }
 
-.admin-theme-toggle-dropdown__label {
-  color: var(--on-surface-variant);
+.admin-theme-toggle__option:hover {
+  color: var(--on-surface);
 }
 
-.admin-theme-toggle-dropdown__chevron {
-  font-size: 1rem;
-  color: var(--on-surface-variant);
+.admin-theme-toggle__option:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
-.admin-theme-dropdown__option {
-  justify-content: space-between !important;
-  gap: 0.42rem;
-}
-
-.admin-theme-dropdown__option.is-active {
-  background: rgba(var(--accent-rgb), 0.14) !important;
-}
-
-.admin-theme-dropdown__check {
-  font-size: 0.95rem;
+.admin-theme-toggle__option.is-active {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04)),
+    color-mix(in srgb, var(--surface-container-lowest) 70%, transparent);
   color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--glass-border-strong);
 }
 
 .admin-drawer-root {
@@ -508,6 +513,12 @@ body.dashboard-body {
   gap: 0.42rem;
 }
 
+.admin-drawer__title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
 .admin-drawer__title {
   margin: 0;
   font-size: 1rem;
@@ -530,6 +541,13 @@ body.dashboard-body {
   gap: 0.35rem;
   font-size: 0.75rem;
   color: var(--on-surface-variant);
+}
+
+.admin-drawer__context--header {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .admin-drawer__context-item.is-current {
@@ -1125,6 +1143,20 @@ body.dashboard-body {
 }
 
 .admin-page-header__title,
+.admin-form-section__title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.admin-form-section__title-group {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
 .admin-form-section__title {
   margin: 0.18rem 0 0;
   font-size: 1.1rem;
@@ -1777,41 +1809,15 @@ body.dashboard-body .summaryRows > div {
   color: var(--on-surface);
 }
 
-.promotion-command-picker__input-wrap {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
+.promotion-command-picker__search {
   padding: 0.72rem 0.8rem;
   border-top: 1px solid var(--glass-border);
   border-bottom: 1px solid var(--glass-border);
 }
 
-.promotion-command-picker__input {
-  border: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-  min-height: 0 !important;
-  padding: 0 !important;
-  color: var(--on-surface);
-  width: 100%;
-  font-size: 0.88rem;
-}
-
-.promotion-command-picker__input:focus {
-  outline: none;
-}
-
-.promotion-command-picker__kbd {
-  border: 1px solid var(--glass-border);
-  border-radius: 0.45rem;
-  color: var(--on-surface-variant);
-  padding: 0.13rem 0.34rem;
-  font-size: 0.68rem;
-}
-
 .promotion-command-picker__results {
   display: grid;
-  gap: 0.5rem;
+  gap: 0.45rem;
   max-height: min(460px, 58vh);
   overflow: auto;
   padding: 0.5rem;
@@ -1829,78 +1835,34 @@ body.dashboard-body .summaryRows > div {
   padding-bottom: 0;
 }
 
-.promotion-command-picker__group {
-  display: grid;
-  gap: 0.35rem;
-}
-
-.promotion-command-picker__group-header {
-  padding: 0.2rem 0.5rem;
-}
-
-.promotion-command-picker__group-header strong,
-.promotion-command-picker__group-header span {
-  display: block;
-}
-
-.promotion-command-picker__group-header span {
-  color: var(--on-surface-variant);
-  font-size: 0.74rem;
-}
-
-.promotion-command-picker__variant-list {
-  display: grid;
-  gap: 0.18rem;
-}
-
-.promotion-command-picker__variant-row {
+.promotion-command-picker__row {
+  border: 1px solid var(--glass-border);
+  border-radius: 0.7rem;
+  padding: 0.48rem 0.58rem;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 0.8rem;
-  border: 1px solid transparent;
-  border-radius: 0.8rem;
-  padding: 0.62rem 0.7rem;
-  background: color-mix(in srgb, var(--surface-container-low) 78%, transparent);
-  cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease, box-shadow 120ms ease;
+  gap: 0.5rem;
 }
 
-.promotion-command-picker__variant-row:hover {
-  background: color-mix(in srgb, var(--surface-container) 84%, transparent);
-}
-
-.promotion-command-picker__variant-row.is-active {
-  border-color: color-mix(in srgb, var(--primary) 36%, transparent);
-  background: color-mix(in srgb, var(--primary) 10%, var(--surface-container));
-  box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--primary) 16%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--primary) 10%, transparent);
-}
-
-.promotion-command-picker__variant-row.is-disabled {
-  opacity: 0.72;
-  cursor: not-allowed;
-}
-
-.promotion-command-picker__variant-main {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
-}
-
-.promotion-command-picker__variant-copy {
+.promotion-command-picker__row-copy {
   display: grid;
   gap: 0.14rem;
+  min-width: 0;
 }
 
-.promotion-command-picker__variant-copy small,
-.promotion-command-picker__variant-status {
+.promotion-command-picker__row-copy strong {
+  font-size: 0.86rem;
+}
+
+.promotion-command-picker__row-copy small {
   color: var(--on-surface-variant);
   font-size: 0.72rem;
 }
 
-.promotion-command-picker__variant-status {
+.promotion-command-picker__row-status {
+  color: var(--on-surface-variant);
+  font-size: 0.76rem;
   white-space: nowrap;
 }
 

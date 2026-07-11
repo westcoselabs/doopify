@@ -487,7 +487,6 @@ test.describe('Smart Promotions visibility smoke screenshots', () => {
 
       await page.getByRole('button', { name: 'All', exact: true }).click()
       await page.getByRole('banner').getByRole('button', { name: 'Create promotion' }).click()
-      await expect(page.getByRole('heading', { name: 'Create promotion' })).toBeVisible()
       const createDrawer = page.getByRole('dialog', { name: 'Create promotion' })
       await expect(createDrawer.getByRole('heading', { name: 'How should this promotion work?' })).toBeVisible()
       await expect(createDrawer.getByRole('radio', { name: /Discount code/i })).toBeVisible()
@@ -567,9 +566,6 @@ test.describe('Smart Promotions visibility smoke screenshots', () => {
       await expect(createDrawer.getByRole('heading', { name: 'Choose automatic offer type' })).toBeVisible()
       await page.getByRole('radio', { name: /Buy X Get Y/i }).click()
       await page.getByRole('button', { name: 'Continue to details' }).click()
-      await expect(
-        page.getByText("Reward items must already be in the customer's cart. Auto-add gifts are not enabled in V1.")
-      ).toBeVisible()
 
       await page.screenshot({
         path: screenshotPath('phase-9-4-buy-x-get-y-details.png'),
@@ -579,9 +575,6 @@ test.describe('Smart Promotions visibility smoke screenshots', () => {
       await page.getByRole('button', { name: 'Back' }).click()
       await page.getByRole('radio', { name: /Free gift/i }).click()
       await page.getByRole('button', { name: 'Continue to details' }).click()
-      await expect(
-        page.getByText("Gift items must already be in the customer's cart. Auto-add gifts are not enabled in V1.")
-      ).toBeVisible()
 
       await page.screenshot({
         path: screenshotPath('phase-9-2-free-gift-details.png'),

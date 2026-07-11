@@ -12,6 +12,7 @@ import AdminInput from "../admin/ui/AdminInput";
 import AdminSelect from "../admin/ui/AdminSelect";
 import AdminStatusChip from "../admin/ui/AdminStatusChip";
 import AdminTextarea from "../admin/ui/AdminTextarea";
+import AdminTooltip from "../admin/ui/AdminTooltip";
 import {
   buildCheckoutMethodDraft,
   buildCheckoutMethodPatch,
@@ -275,6 +276,7 @@ export default function ShippingSettingsWorkspace({
   const [providerForm, setProviderForm] = useState(DEFAULT_PROVIDER_FORM);
   const [providerTestMessage, setProviderTestMessage] = useState("");
   const [providerVerifyLoading, setProviderVerifyLoading] = useState(false);
+  const [showProviderAdvanced, setShowProviderAdvanced] = useState(false);
 
   const [packageDrawerOpen, setPackageDrawerOpen] = useState(false);
   const [locationDrawerOpen, setLocationDrawerOpen] = useState(false);
@@ -1810,32 +1812,52 @@ export default function ShippingSettingsWorkspace({
         onClose={() => setProviderDrawerOpen(false)}
         title="Manage provider"
         subtitle="Credentials, verification, usage, and disconnect."
+        headerActions={
+          <span aria-label="Connection status">
+            <AdminStatusChip tone={drawerProviderConnectionState.tone}>
+              {drawerProviderConnectionState.label}
+            </AdminStatusChip>
+          </span>
+        }
       >
         <div className={styles.drawerStack}>
           <AdminCard as="section" className={styles.compactDrawerCard} variant="card">
             <div className={`${styles.drawerFormGrid} ${styles.compactFormGrid}`}>
-              <AdminField label="Provider">
+              <AdminField
+                label={
+                  <span className={styles.fieldLabelRow}>
+                    <span>Provider</span>
+                    <AdminTooltip
+                      content={PROVIDER_USAGE_HELPER_COPY[providerForm.usage] || PROVIDER_USAGE_HELPER_COPY.LIVE_AND_LABELS}
+                      label="About provider"
+                    />
+                  </span>
+                }
+              >
                 <AdminSelect
                   value={providerForm.provider}
                   onChange={(value) => setProviderForm((current) => ({ ...current, provider: value }))}
                   options={PROVIDER_OPTIONS}
                 />
               </AdminField>
-              <AdminField label="Provider usage">
+              <AdminField
+                label={
+                  <span className={styles.fieldLabelRow}>
+                    <span>Provider usage</span>
+                    <AdminTooltip
+                      content="Live rates and label buying: checkout live rates + label purchase. Label buying only: labels only, no checkout live rates. Live rates only: checkout live rates only, no label purchase."
+                      label="About provider usage"
+                    />
+                  </span>
+                }
+              >
                 <AdminSelect
                   value={providerForm.usage}
                   onChange={(value) => setProviderForm((current) => ({ ...current, usage: value }))}
                   options={PROVIDER_USAGE_OPTIONS}
                 />
               </AdminField>
-              <p className={styles.statusText}>
-                {PROVIDER_USAGE_HELPER_COPY[providerForm.usage] || PROVIDER_USAGE_HELPER_COPY.LIVE_AND_LABELS}
-              </p>
-              <p className={styles.compactMeta}>
-                Live rates and label buying: checkout live rates + label purchase. Label buying only: labels only, no
-                checkout live rates. Live rates only: checkout live rates only, no label purchase.
-              </p>
-              <AdminField label="API token">
+              <AdminField className={styles.fieldFullWidth} label="API token">
                 <AdminInput
                   type="password"
                   value={providerForm.token}
@@ -1843,13 +1865,6 @@ export default function ShippingSettingsWorkspace({
                   placeholder="Paste token to save or update"
                 />
               </AdminField>
-              <div className={styles.actionRow}>
-                <span className={styles.metaText}>Connection status</span>
-                <AdminStatusChip tone={drawerProviderConnectionState.tone}>
-                  {drawerProviderConnectionState.label}
-                </AdminStatusChip>
-              </div>
-              <p className={styles.compactMeta}>{drawerProviderConnectionState.detail}</p>
             </div>
             <p className={styles.compactMeta}>
               Saved keys are hidden after saving. Enter a new key only to replace the current one.
@@ -1873,11 +1888,22 @@ export default function ShippingSettingsWorkspace({
             <div className={`${styles.setupCardHeader} ${styles.compactSectionHeader}`}>
               <h4>Advanced</h4>
             </div>
-            <div className={styles.compactActionRow}>
-              <AdminButton disabled={saving} size="sm" variant="ghost" onClick={disconnectProvider}>
-                Disconnect provider
-              </AdminButton>
-            </div>
+            <p className={styles.compactMeta}>Developer tooling and destructive actions.</p>
+            <AdminButton
+              className={styles.advancedToggle}
+              onClick={() => setShowProviderAdvanced((current) => !current)}
+              size="sm"
+              variant="danger"
+            >
+              {showProviderAdvanced ? "Hide advanced options" : "Advanced Options"}
+            </AdminButton>
+            {showProviderAdvanced ? (
+              <div className={styles.compactActionRow}>
+                <AdminButton disabled={saving} size="sm" variant="danger" onClick={disconnectProvider}>
+                  Disconnect provider
+                </AdminButton>
+              </div>
+            ) : null}
             {providerTestMessage ? <p className={styles.statusText}>{providerTestMessage}</p> : null}
           </AdminCard>
         </div>
