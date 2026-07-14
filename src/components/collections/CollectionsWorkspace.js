@@ -1,6 +1,5 @@
 ﻿"use client";
 
-import Image from 'next/image';
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
 import AppShell from '../AppShell';
@@ -14,12 +13,11 @@ import AdminInput from '../admin/ui/AdminInput';
 import AdminPage from '../admin/ui/AdminPage';
 import AdminPageHeader from '../admin/ui/AdminPageHeader';
 import AdminSelect from '../admin/ui/AdminSelect';
-import AdminSelectableTile from '../admin/ui/AdminSelectableTile';
 import AdminStatusChip from '../admin/ui/AdminStatusChip';
 import AdminTable from '../admin/ui/AdminTable';
 import AdminTextarea from '../admin/ui/AdminTextarea';
 import AdminToolbar from '../admin/ui/AdminToolbar';
-import AdminUploadDropzone from '../admin/ui/AdminUploadDropzone';
+import MediaGalleryManager from '../media/MediaGalleryManager';
 import {
   getOversizedMediaFiles,
   MAX_MEDIA_UPLOAD_VERCEL_FORMAT_HINT,
@@ -63,7 +61,6 @@ export default function CollectionsWorkspace() {
   const [notice, setNotice] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [productSearch, setProductSearch] = useState('');
-  const [imageUploading, setImageUploading] = useState(false);
   const detailRequestRef = useRef(0);
   const initialWorkspaceLoadRef = useRef(false);
 
@@ -136,42 +133,51 @@ export default function CollectionsWorkspace() {
 
   const isNewCollection = draft.id == null;
   const handlePreview = draft.handle.trim() || slugify(draft.title);
+  const collectionImages = useMemo(
+    () => (draft.imageUrl ? [{ id: 'collection-image', src: draft.imageUrl, alt: draft.title || 'Collection image' }] : []),
+    [draft.imageUrl, draft.title]
+  );
 
   function selectCollection(collection) { setSelectedCollectionId(collection.id); setNotice(''); setIsDrawerOpen(true); void loadCollectionDetail(collection.id, collection); }
   function resetToNewCollection() { detailRequestRef.current += 1; setLoadingCollection(false); setSelectedCollectionId('new'); setDraft(EMPTY_DRAFT); setNotice(''); setIsDrawerOpen(true); }
   function updateDraft(field, value) { setDraft((current) => ({ ...current, [field]: value })); }
   function toggleAssignedProduct(productId) { setDraft((current) => ({ ...current, productIds: current.productIds.includes(productId) ? current.productIds.filter((id) => id !== productId) : [...current.productIds, productId] })); }
 
-  async function handleCollectionImageUpload(files) {
+  async function uploadCollectionMedia(files, { attachToImage } = {}) {
     const fileArray = Array.from(files || []);
-    if (!fileArray.length) return;
+    if (!fileArray.length) return [];
     const oversizedFiles = getOversizedMediaFiles(fileArray);
-    if (oversizedFiles.length) { setNotice(MAX_MEDIA_UPLOAD_VERCEL_FORMAT_HINT); return; }
+    if (oversizedFiles.length) { setNotice(MAX_MEDIA_UPLOAD_VERCEL_FORMAT_HINT); return []; }
 
-    const file = fileArray[0];
-    setImageUploading(true);
+    // A collection carries a single image, so only the first file is attached.
+    const filesToUpload = attachToImage ? fileArray.slice(0, 1) : fileArray;
+    const uploadedAssets = [];
     try {
-      const form = new FormData();
-      form.append('file', file);
-      form.append('altText', file.name);
-      const res = await fetch('/api/media/upload', { method: 'POST', body: form });
-      const { json, isJson } = await parseMediaUploadResponse(res);
-      if (!res.ok || !json?.success) {
-        throw new Error(
-          resolveMediaUploadFailureMessage({
-            status: res.status,
-            jsonError: json && 'error' in json ? json.error || null : null,
-            isJson,
-          })
-        );
+      for (const file of filesToUpload) {
+        const form = new FormData();
+        form.append('file', file);
+        form.append('altText', file.name);
+        const res = await fetch('/api/media/upload', { method: 'POST', body: form });
+        const { json, isJson } = await parseMediaUploadResponse(res);
+        if (!res.ok || !json?.success) {
+          throw new Error(
+            resolveMediaUploadFailureMessage({
+              status: res.status,
+              jsonError: json && 'error' in json ? json.error || null : null,
+              isJson,
+            })
+          );
+        }
+        uploadedAssets.push(json.data);
       }
-      updateDraft('imageUrl', json.data.url);
+      if (attachToImage && uploadedAssets[0]?.url) {
+        updateDraft('imageUrl', uploadedAssets[0].url);
+      }
     } catch (error) {
       console.error('[CollectionsWorkspace] image upload failed', error);
       setNotice(error instanceof Error ? error.message : 'Image upload failed.');
-    } finally {
-      setImageUploading(false);
     }
+    return uploadedAssets;
   }
 
   async function handleSave() {
@@ -313,27 +319,20 @@ export default function CollectionsWorkspace() {
                     </AdminField>
                     <div className={styles.imageFieldGroup}>
                       <span className="admin-field__label">Collection image</span>
-                      <AdminUploadDropzone
-                        className={styles.uploadZone}
-                        description="Drop a JPG, PNG, WebP, or GIF file up to 4.5 MB to use as this collection's image."
-                        disabled={imageUploading}
+                      <MediaGalleryManager
+                        allowReorder={false}
+                        dropzoneDescription="Drop a JPG, PNG, WebP, or GIF file up to 4.5 MB to use as this collection's image."
+                        dropzoneTitle="Drag and drop collection image"
+                        images={collectionImages}
+                        libraryDescription="Reuse an existing image from your media library as this collection's image, or upload a new one."
                         multiple={false}
-                        onFilesSelected={handleCollectionImageUpload}
-                        title={imageUploading ? 'Uploading...' : 'Drag and drop collection image'}
+                        onAddAssetToGallery={(asset) => updateDraft('imageUrl', asset.url)}
+                        onRemoveImage={() => updateDraft('imageUrl', '')}
+                        onUploadToGallery={(files) => uploadCollectionMedia(files, { attachToImage: true })}
+                        onUploadToLibrary={(files) => uploadCollectionMedia(files, { attachToImage: false })}
+                        selectedImageId={collectionImages[0]?.id || null}
+                        showFeatured={false}
                       />
-                      {draft.imageUrl ? (
-                        <div className={styles.imagePreviewRow}>
-                          <AdminSelectableTile
-                            className={styles.imagePreviewTile}
-                            media={(
-                              <div className={styles.imagePreviewImageWrap}>
-                                <Image alt={draft.title || 'Collection image'} className={styles.imagePreviewImage} fill src={draft.imageUrl} unoptimized />
-                              </div>
-                            )}
-                          />
-                          <AdminButton onClick={() => updateDraft('imageUrl', '')} size="sm" variant="danger">Remove</AdminButton>
-                        </div>
-                      ) : null}
                     </div>
                   </AdminFormSection>
                 </div>

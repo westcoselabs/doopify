@@ -111,34 +111,6 @@
   gap: 0.5rem;
 }
 
-.uploadZone {
-  min-height: 6.2rem;
-}
-
-.imagePreviewRow {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
-
-.imagePreviewTile {
-  width: 4.4rem;
-  height: 4.4rem;
-  flex-shrink: 0;
-  padding: 0;
-  overflow: hidden;
-}
-
-.imagePreviewImageWrap {
-  position: relative;
-  width: 100%;
-  height: 100%;
-}
-
-.imagePreviewImage {
-  object-fit: cover;
-}
-
 .productGrid {
   display: grid;
   gap: 0.45rem;
