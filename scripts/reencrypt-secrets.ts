@@ -4,7 +4,7 @@ import 'dotenv/config'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
 
-import { decrypt, encrypt, isCurrentEncryptionEnvelope } from '../src/server/utils/crypto.ts'
+import { decryptWithCurrentEncryptionKey, encrypt, getEncryptionRotationDecision, isCurrentEncryptionEnvelope } from '../src/server/utils/crypto.ts'
 
 type RotationTarget = {
   kind: 'integrationSecret' | 'integrationWebhookSecret' | 'userMfaSecret' | 'userPendingMfaSecret' | 'digitalDownloadToken'
@@ -104,14 +104,14 @@ try {
   for (const target of targets) {
     report[target.kind] ??= { current: 0, needsRotation: 0, unreadable: 0, invalid: 0, applied: 0 }
     try {
-      const plaintext = decrypt(target.value)
-      if (isCurrentEncryptionEnvelope(target.value)) {
+      const { plaintext, needsRotation } = getEncryptionRotationDecision(target.value)
+      if (!needsRotation) {
         report[target.kind].current += 1
         continue
       }
 
       const replacement = encrypt(plaintext)
-      if (decrypt(replacement) !== plaintext || !isCurrentEncryptionEnvelope(replacement)) {
+      if (decryptWithCurrentEncryptionKey(replacement) !== plaintext || !isCurrentEncryptionEnvelope(replacement)) {
         throw new Error('replacement verification failed')
       }
       report[target.kind].needsRotation += 1

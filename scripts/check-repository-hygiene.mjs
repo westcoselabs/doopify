@@ -8,7 +8,7 @@ export const forbiddenPathPatterns = [
   /^\.claude\/settings\.local\.json$/i,
   /(^|\/)(coverage|playwright-report|test-results?|\.next|cache|output)\//i,
 ]
-export const machinePathPattern = /(?:[A-Za-z]:[\\/](?:Users|home)[\\/]|\/(?:Users|home)\/)/i
+export const machinePathPattern = /(?:[A-Za-z]:[\\/](?:Users|home)[\\/]|\/(?:Users|home)\/)/
 
 export function findRepositoryHygieneViolations(trackedFiles, readFile) {
   const violations = []
@@ -42,7 +42,7 @@ const pathViolations = trackedFiles
 
 const grepResult = spawnSync(
   'git',
-  ['grep', '-I', '-l', '-E', machinePathPattern.source, 'HEAD', '--'],
+  ['grep', '-I', '-l', '-E', '[A-Za-z]:[\\\\/](Users|home)[\\\\/]|/(Users|home)/', 'HEAD', '--'],
   { encoding: 'utf8' }
 )
 if (grepResult.error || ![0, 1].includes(grepResult.status ?? 1)) {

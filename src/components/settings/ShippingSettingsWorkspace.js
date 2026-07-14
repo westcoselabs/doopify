@@ -264,10 +264,7 @@ export default function ShippingSettingsWorkspace({
   const [modeSaveError, setModeSaveError] = useState("");
   const saveCheckoutMethodRef = useRef(null);
   const loadRequestIdRef = useRef(0);
-  const providerVerificationGuardRef = useRef(null);
-  if (!providerVerificationGuardRef.current) {
-    providerVerificationGuardRef.current = createProviderVerificationGuard();
-  }
+  const providerVerificationGuardRef = useRef(createProviderVerificationGuard());
 
   const [settings, setSettings] = useState(null);
   const [setupStatus, setSetupStatus] = useState(null);

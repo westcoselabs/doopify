@@ -72,7 +72,7 @@ function buildOrderFixture() {
 describe('digital-grant-issuance.service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    process.env.ENCRYPTION_KEY = 'test-encryption-key-for-digital-delivery'
+    process.env.ENCRYPTION_KEY = 'pK6vR1xT8cM3nQ9wF2hJ7sL4aD0gB5yE1uI8oZ6rV9W'
 
     mocks.prisma.order.findUnique.mockResolvedValue(buildOrderFixture())
     mocks.prisma.digitalDownloadGrant.findMany.mockResolvedValue([])

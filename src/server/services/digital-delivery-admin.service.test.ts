@@ -65,7 +65,7 @@ import {
 describe('digital-delivery-admin.service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    process.env.ENCRYPTION_KEY = 'digital-delivery-admin-test-key-at-least-32-chars'
+    process.env.ENCRYPTION_KEY = 'hR4vQ8mT1xC6nP3wK9fJ2sL7aD5gB0yE8uI1oZ6rV9W'
 
     mocks.prisma.store.findFirst.mockResolvedValue({ id: 'store_1' })
     mocks.prisma.emailDelivery.findFirst.mockResolvedValue(null)

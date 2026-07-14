@@ -46,7 +46,7 @@ import {
 describe('digital-download-delivery.service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    process.env.ENCRYPTION_KEY = 'test-encryption-key-for-delivery-service'
+    process.env.ENCRYPTION_KEY = 'qM7vT2xP9cR4nK1wF8hJ3sL6aD0gB5yE1uI9oZ4rV8W'
     process.env.NEXT_PUBLIC_STORE_URL = 'https://store.example.com'
 
     mocks.tx.digitalDownloadDelivery.findUnique.mockResolvedValue(null)
