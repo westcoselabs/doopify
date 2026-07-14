@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     }
     return ok(status)
   } catch (error) {
-    console.error('[GET /api/checkout/status]', error)
+    console.error('[POST /api/checkout/status]', error)
     return err('Failed to fetch checkout status', 500)
   }
 }

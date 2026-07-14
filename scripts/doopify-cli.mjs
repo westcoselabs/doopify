@@ -1348,6 +1348,7 @@ async function runDeploy() {
 
   if (runDbPrecheck) {
     await runDbCheck()
+    runNpmCommand(['run', 'db:preflight-migrations'], 'npm run db:preflight-migrations')
   }
 
   if (runWebhookSetup) {

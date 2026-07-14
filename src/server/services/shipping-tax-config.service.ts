@@ -1,6 +1,7 @@
 import { type ShippingRateMethod } from '@prisma/client'
 
 import { prisma } from '@/lib/prisma'
+import { findPrimaryStore } from '@/server/services/primary-store.service'
 
 function normalizeCountryCode(value: string) {
   return value.trim().toUpperCase()
@@ -14,7 +15,7 @@ function normalizeProvinceCode(value?: string | null) {
 }
 
 async function getStoreIdOrThrow() {
-  const store = await prisma.store.findFirst({
+  const store = await findPrimaryStore({
     select: { id: true },
   })
 

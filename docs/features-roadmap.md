@@ -36,7 +36,7 @@ Historical planning docs are intentionally omitted from this active handoff pack
 - Cart-to-checkout flow at `/checkout`
 - `POST /api/checkout/create` for live-priced checkout session creation
 - `POST /api/webhooks/stripe` for verified webhook processing
-- capability-token-protected `GET /api/checkout/status` for success-page reconciliation
+- capability-token-protected `POST /api/checkout/status` for success-page reconciliation
 - Idempotent order creation from verified Stripe payment success
 - Checkout session persistence plus paid and failed status tracking
 - persisted commerce money fields now use integer minor units (cents) at rest
@@ -145,7 +145,7 @@ Status: shipped foundation, still expanding
 - `/checkout` storefront route
 - `POST /api/checkout/create`
 - `POST /api/webhooks/stripe`
-- `GET /api/checkout/status`
+- `POST /api/checkout/status`
 - live variant and inventory validation during checkout creation
 - server-side pricing recomputation before payment intent creation
 - centralized checkout pricing service in `src/server/checkout/pricing.ts`

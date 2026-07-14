@@ -1,7 +1,8 @@
 import { prisma } from '@/lib/prisma'
+import { findPrimaryStore } from '@/server/services/primary-store.service'
 
 export async function getTaxSettingsStore() {
-  return prisma.store.findFirst({
+  return findPrimaryStore({
     select: {
       id: true,
       taxEnabled: true,

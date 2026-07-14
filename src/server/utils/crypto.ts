@@ -7,7 +7,11 @@ const CURRENT_ENVELOPE_VERSION = 'v1'
 
 function isUnsafeEncryptionSecret(value: string) {
   const normalized = value.trim().toLowerCase()
-  return /default|replace|changeme|example|sample|generate-a-random|insecure/.test(normalized)
+  if (/default|replace|changeme|example|sample|generate-a-random|insecure|password|secret/.test(normalized)) return true
+  if (/^(.)\1+$/.test(normalized)) return true
+  if (new Set(normalized).size < 8) return true
+  if (/0123456789|9876543210|abcdefghijklmnopqrstuvwxyz|zyxwvutsrqponmlkjihgfedcba/.test(normalized)) return true
+  return false
 }
 
 function getEncryptionSecret(name: 'ENCRYPTION_KEY' | 'ENCRYPTION_KEY_PREVIOUS' = 'ENCRYPTION_KEY') {
@@ -25,6 +29,14 @@ function decryptWithSecret(parts: string[], secret: string) {
   const decipher = crypto.createDecipheriv(ALGORITHM, key, Buffer.from(ivHex, 'hex'))
   decipher.setAuthTag(Buffer.from(tagHex, 'hex'))
   return `${decipher.update(text, 'hex', 'utf8')}${decipher.final('utf8')}`
+}
+
+function parseEncryptedParts(encryptedData: string) {
+  const allParts = encryptedData.split(':')
+  const isCurrentEnvelope = allParts[0] === CURRENT_ENVELOPE_VERSION
+  const parts = isCurrentEnvelope ? allParts.slice(1) : allParts
+  if (parts.length !== 4) throw new Error('Invalid encrypted text format')
+  return { isCurrentEnvelope, parts }
 }
 
 function candidateSecrets() {
@@ -59,9 +71,7 @@ export function decrypt(encryptedData: string): string {
     return encryptedData
   }
 
-  const allParts = encryptedData.split(':')
-  const parts = allParts[0] === CURRENT_ENVELOPE_VERSION ? allParts.slice(1) : allParts
-  if (parts.length !== 4) throw new Error('Invalid encrypted text format')
+  const { parts } = parseEncryptedParts(encryptedData)
 
   let lastError: unknown
   for (const secret of candidateSecrets()) {
@@ -76,6 +86,34 @@ export function decrypt(encryptedData: string): string {
 
 export function isCurrentEncryptionEnvelope(value: string) {
   return value.startsWith(`${CURRENT_ENVELOPE_VERSION}:`)
+}
+
+/** Decrypts with ENCRYPTION_KEY only; it never falls back to the previous key. */
+export function decryptWithCurrentEncryptionKey(encryptedData: string): string {
+  if (!isCurrentEncryptionEnvelope(encryptedData)) {
+    throw new Error('Encrypted value does not use the current envelope version.')
+  }
+  const { parts } = parseEncryptedParts(encryptedData)
+  return decryptWithSecret(parts, getEncryptionSecret())
+}
+
+/**
+ * Produces the rotation decision used by the re-encryption CLI. A v1 envelope
+ * is current only when it decrypts with ENCRYPTION_KEY itself, not merely when
+ * it can be read through ENCRYPTION_KEY_PREVIOUS.
+ */
+export function getEncryptionRotationDecision(encryptedData: string) {
+  const plaintext = decrypt(encryptedData)
+  if (isCurrentEncryptionEnvelope(encryptedData)) {
+    try {
+      if (decryptWithCurrentEncryptionKey(encryptedData) === plaintext) {
+        return { plaintext, needsRotation: false }
+      }
+    } catch {
+      // A versioned envelope that requires ENCRYPTION_KEY_PREVIOUS must rotate.
+    }
+  }
+  return { plaintext, needsRotation: true }
 }
 
 export function reEncryptToCurrent(value: string) {

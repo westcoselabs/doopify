@@ -27,6 +27,7 @@
     "worker": "node --experimental-strip-types src/worker/index.ts --loop",
     "worker:once": "node --experimental-strip-types src/worker/index.ts --once",
     "db:generate": "prisma generate",
+    "db:preflight-migrations": "node scripts/migration-deployment-preflight.mjs",
     "db:push": "prisma db push",
     "db:test:push": "node scripts/prepare-integration-db.mjs",
     "db:test:reset": "node scripts/prepare-integration-db.mjs",

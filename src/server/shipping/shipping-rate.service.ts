@@ -1,6 +1,7 @@
 import type { ShippingLiveProvider, ShippingMode, ShippingWeightUnit } from '@prisma/client'
 
 import { prisma } from '@/lib/prisma'
+import { findPrimaryStore } from '@/server/services/primary-store.service'
 import {
   getShippingProviderApiKey,
   getShippingProviderConnectionStatus,
@@ -112,7 +113,7 @@ async function getShippingRateStore(storeId?: string) {
     })
   }
 
-  return prisma.store.findFirst(query)
+  return findPrimaryStore(query)
 }
 
 function hasAddressForLiveRateQuotes(address: ShippingRateAddress) {

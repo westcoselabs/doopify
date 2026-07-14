@@ -22,6 +22,7 @@ import {
 import ShippingSettingsWorkspaceHeader from "./ShippingSettingsWorkspaceHeader";
 import ShippingSettingsWorkspaceSkeleton from "./ShippingSettingsWorkspaceSkeleton";
 import ShippingSettingsWorkspaceStatusStack from "./ShippingSettingsWorkspaceStatusStack";
+import { createProviderVerificationGuard } from "./shipping-provider-verification-guard";
 import styles from "./SettingsWorkspace.module.css";
 
 const PROVIDER_OPTIONS = [
@@ -263,6 +264,10 @@ export default function ShippingSettingsWorkspace({
   const [modeSaveError, setModeSaveError] = useState("");
   const saveCheckoutMethodRef = useRef(null);
   const loadRequestIdRef = useRef(0);
+  const providerVerificationGuardRef = useRef(null);
+  if (!providerVerificationGuardRef.current) {
+    providerVerificationGuardRef.current = createProviderVerificationGuard();
+  }
 
   const [settings, setSettings] = useState(null);
   const [setupStatus, setSetupStatus] = useState(null);
@@ -725,6 +730,7 @@ export default function ShippingSettingsWorkspace({
       return;
     }
 
+    const verificationToken = providerVerificationGuardRef.current.begin();
     setProviderVerifyLoading(true);
     setError("");
     try {
@@ -738,11 +744,14 @@ export default function ShippingSettingsWorkspace({
         }),
       }).then(parseApiJson);
 
+      if (!providerVerificationGuardRef.current.isCurrent(verificationToken)) return;
       setProviderTestMessage(data?.result?.message || "Provider verification completed.");
       await load();
     } catch (providerError) {
+      if (!providerVerificationGuardRef.current.isCurrent(verificationToken)) return;
       setError(providerError instanceof Error ? providerError.message : "Failed to verify provider");
     } finally {
+      if (!providerVerificationGuardRef.current.isCurrent(verificationToken)) return;
       setProviderVerifyLoading(false);
     }
   }
@@ -973,6 +982,7 @@ export default function ShippingSettingsWorkspace({
   }
 
   function openProviderDrawerFor(provider) {
+    providerVerificationGuardRef.current.openDrawer();
     setProviderTestMessage("");
     setProviderForm((current) => ({
       ...current,
@@ -1817,7 +1827,10 @@ export default function ShippingSettingsWorkspace({
       <AdminDrawer
         open={providerDrawerOpen}
         isDirty={Boolean(providerForm.token.trim())}
-        onClose={() => setProviderDrawerOpen(false)}
+        onClose={() => {
+          providerVerificationGuardRef.current.closeDrawer();
+          setProviderDrawerOpen(false);
+        }}
         title="Manage provider"
         subtitle="Credentials, verification, usage, and disconnect."
         headerActions={

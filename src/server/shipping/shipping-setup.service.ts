@@ -1,6 +1,7 @@
 import { type ShippingLiveProvider, type ShippingMode, type ShippingProviderUsage } from '@prisma/client'
 
 import { prisma } from '@/lib/prisma'
+import { findPrimaryStore } from '@/server/services/primary-store.service'
 import { getShippingProviderConnectionStatus } from '@/server/shipping/shipping-provider.service'
 import {
   resolveActiveRateProvider,
@@ -215,7 +216,7 @@ function deriveProviderVerificationStatus(input: {
 }
 
 export async function getShippingSetupStore() {
-  return prisma.store.findFirst({
+  return findPrimaryStore({
     include: includeStoreRelations(),
   })
 }

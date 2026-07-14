@@ -1,6 +1,3 @@
-Exit code: 0
-Wall time: 0.2 seconds
-Output:
 # Doopify Agent Instructions
 
 > This file guides AI coding agents and future maintainers without creating a second conflicting roadmap.
@@ -40,7 +37,7 @@ Implemented:
 - Checkout flow at `/checkout` with server-owned pricing, shipping selection, and Stripe PaymentIntents
 - `POST /api/checkout/create` â€” checkout session creation and pricing
 - `POST /api/webhooks/stripe` â€” verified Stripe webhook order finalization
-- `GET /api/checkout/status` â€” order status polling
+- `POST /api/checkout/status` — capability-token-protected order status polling
 - `POST /api/checkout/shipping-rates` â€” server-side shipping rate quotes
 - Idempotent order creation from verified Stripe payment success
 - Inventory decrement only after verified payment success

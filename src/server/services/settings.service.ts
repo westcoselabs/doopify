@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { createPrimaryStore, findPrimaryStore } from '@/server/services/primary-store.service'
 import { centsToDollars } from '@/lib/money'
 import {
   DEFAULT_BRAND_FONT,
@@ -95,10 +96,10 @@ function mapStoreBrandKit(store: BrandKitRecord | null) {
 }
 
 async function ensureStoreRow() {
-  const existing = await prisma.store.findFirst()
+  const existing = await findPrimaryStore()
   if (existing) return existing
 
-  return prisma.store.create({
+  return createPrimaryStore({
     data: {
       name: 'Doopify',
       currency: 'USD',
@@ -114,11 +115,11 @@ export async function getStoreSettings() {
 }
 
 export async function getStoreSettingsLite() {
-  return prisma.store.findFirst()
+  return findPrimaryStore()
 }
 
 export async function getStoreSettingsFull() {
-  return prisma.store.findFirst({
+  return findPrimaryStore({
     include: {
       shippingPackages: {
         orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
@@ -205,7 +206,7 @@ export async function updateStoreSettings(
 }
 
 export async function getBrandKit() {
-  const store = (await prisma.store.findFirst({
+  const store = (await findPrimaryStore({
     select: {
       id: true,
       name: true,

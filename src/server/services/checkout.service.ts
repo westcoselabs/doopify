@@ -1091,6 +1091,12 @@ export async function getCheckoutStatus(paymentIntentId: string, statusAccessTok
   legacy?: boolean
 } | null> {
   const normalizedToken = statusAccessToken?.trim() || null
+  // Tokenless access exists only to bridge sessions created before capability
+  // tokens shipped. The cutoff is a wall-clock boundary, not merely a row-age
+  // filter, so stale PaymentIntent IDs cannot remain an indefinite capability.
+  if (!normalizedToken && Date.now() >= legacyCheckoutStatusCutoff().getTime()) {
+    return null
+  }
   const checkoutSession = normalizedToken
     ? await prisma.checkoutSession.findFirst({
         where: {

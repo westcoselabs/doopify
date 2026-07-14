@@ -12,6 +12,7 @@ import type {
 } from '@prisma/client'
 
 import { prisma } from '@/lib/prisma'
+import { createPrimaryStore, findPrimaryStore } from '@/server/services/primary-store.service'
 
 export class ShippingSettingsStoreNotConfiguredError extends Error {
   constructor(message = 'Store not configured') {
@@ -146,7 +147,7 @@ const SHIPPING_CONFIG_INCLUDE = {
 }
 
 async function findPrimaryStoreId() {
-  const store = await prisma.store.findFirst({
+  const store = await findPrimaryStore({
     select: { id: true },
     orderBy: [{ createdAt: 'asc' }],
   })
@@ -167,7 +168,7 @@ async function getOrCreateShippingStoreId() {
     return existingStoreId
   }
 
-  const createdStore = await prisma.store.create({
+  const createdStore = await createPrimaryStore({
     data: {
       name: 'Doopify Store',
     },
@@ -204,7 +205,7 @@ async function enforceSingleDefaultLocation(tx: Prisma.TransactionClient, storeI
 }
 
 export async function getShippingDeliveryStore(): Promise<ShippingStoreWithConfig> {
-  const store = await prisma.store.findFirst({
+  const store = await findPrimaryStore({
     include: SHIPPING_CONFIG_INCLUDE,
     orderBy: [{ createdAt: 'asc' }],
   })

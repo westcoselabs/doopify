@@ -1,5 +1,6 @@
 import { evaluatePublicStoreUrl } from '@/lib/public-store-url'
 import { prisma } from '@/lib/prisma'
+import { findPrimaryStore } from '@/server/services/primary-store.service'
 import { getEmailJobHealthSnapshot } from '@/server/jobs/email-job-health.service'
 import {
   buildLaunchReadinessReport,
@@ -194,7 +195,7 @@ export async function runLaunchReadinessCheck(): Promise<LaunchReadinessRunResul
   )
 
   const [store, productFacts, stripeWebhookCount, recentPaidOrderCount] = await Promise.all([
-    prisma.store.findFirst({
+    findPrimaryStore({
       select: {
         name: true,
         email: true,

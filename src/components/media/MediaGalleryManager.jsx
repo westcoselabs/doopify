@@ -92,7 +92,6 @@ export default function MediaGalleryManager({
 
   useEffect(() => {
     if (!showLibraryTab) {
-      setIsLibraryLoading(false);
       return undefined;
     }
 

@@ -3,6 +3,7 @@ import path from 'node:path'
 
 import { ok, err } from '@/lib/api'
 import { prisma } from '@/lib/prisma'
+import { findPrimaryStore } from '@/server/services/primary-store.service'
 import { requireOwner } from '@/server/auth/require-auth'
 import {
   buildSetupDoctorReport,
@@ -67,13 +68,12 @@ async function gatherDatabaseFacts(databaseUrl: string | undefined) {
     const [storeCount, ownerCount, firstStore] = await Promise.all([
       prisma.store.count(),
       prisma.user.count({ where: { role: 'OWNER', isActive: true } }),
-      prisma.store.findFirst({
+      findPrimaryStore({
         select: {
           id: true,
           name: true,
           email: true,
         },
-        orderBy: { createdAt: 'asc' },
       }),
     ])
 

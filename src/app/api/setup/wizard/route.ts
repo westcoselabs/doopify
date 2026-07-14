@@ -1,6 +1,7 @@
 import { err, ok } from '@/lib/api'
 import { evaluatePublicStoreUrl } from '@/lib/public-store-url'
 import { prisma } from '@/lib/prisma'
+import { findPrimaryStore } from '@/server/services/primary-store.service'
 import { requireOwner } from '@/server/auth/require-auth'
 import { getStripeProviderStatus } from '@/server/payments/stripe-runtime.service'
 import { evaluateProductLaunchReadiness } from '@/server/services/product-launch-readiness.service'
@@ -60,9 +61,8 @@ export async function GET(req: Request) {
       recentPaidOrderCount,
     ] = await Promise.all([
       prisma.user.count({ where: { role: 'OWNER', isActive: true } }),
-      prisma.store.findFirst({
+      findPrimaryStore({
         select: { name: true, email: true },
-        orderBy: { createdAt: 'asc' },
       }),
       getStripeProviderStatus(),
       getRuntimeProviderConnection('RESEND'),

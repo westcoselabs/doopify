@@ -1,10 +1,53 @@
 import { ok, err } from '@/lib/api'
 import { prisma } from '@/lib/prisma'
-import { requireAdmin } from '@/server/auth/require-auth'
+import { requireOwner } from '@/server/auth/require-auth'
 import { encrypt } from '@/server/utils/crypto'
 import { z } from 'zod'
 
 export const runtime = 'nodejs'
+const BUILT_IN_PROVIDER_TYPES = new Set([
+  'PAYMENT_STRIPE',
+  'SHIPPING_SHIPPO',
+  'SHIPPING_EASYPOST',
+  'EMAIL_RESEND',
+  'EMAIL_SMTP',
+])
+
+const safeIntegrationSelect = {
+  id: true,
+  name: true,
+  type: true,
+  webhookUrl: true,
+  status: true,
+  createdAt: true,
+  updatedAt: true,
+  events: true,
+  secrets: { select: { id: true, key: true } },
+} as const
+
+function safeIntegrationResponse(integration: {
+  id: string
+  name: string
+  type: string
+  webhookUrl: string | null
+  status: string
+  createdAt: Date
+  updatedAt: Date
+  events: unknown
+  secrets: unknown
+}) {
+  return {
+    id: integration.id,
+    name: integration.name,
+    type: integration.type,
+    webhookUrl: integration.webhookUrl,
+    status: integration.status,
+    createdAt: integration.createdAt,
+    updatedAt: integration.updatedAt,
+    events: integration.events,
+    secrets: integration.secrets,
+  }
+}
 
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
@@ -38,31 +81,33 @@ function sanitizeSecretKeys(secrets: Array<{ key: string; value?: string }> | un
 interface Params { params: Promise<{ id: string }> }
 
 export async function GET(_req: Request, { params }: Params) {
-  const auth = await requireAdmin(_req)
+  const auth = await requireOwner(_req)
   if (!auth.ok) return auth.response
 
   try {
     const { id } = await params
     const integration = await prisma.integration.findUnique({
       where: { id },
-      include: {
-        events: true,
-        secrets: { select: { id: true, key: true } }
-      }
+      select: safeIntegrationSelect,
     })
     if (!integration) return err('Not found', 404)
-    return ok(integration)
+    return ok(safeIntegrationResponse(integration))
   } catch (error: any) {
     return err(error.message, 500)
   }
 }
 
 export async function PUT(req: Request, { params }: Params) {
-  const auth = await requireAdmin(req)
+  const auth = await requireOwner(req)
   if (!auth.ok) return auth.response
 
   try {
     const { id } = await params
+    const existing = await prisma.integration.findUnique({ where: { id }, select: { type: true } })
+    if (!existing) return err('Not found', 404)
+    if (BUILT_IN_PROVIDER_TYPES.has(existing.type)) {
+      return err('Built-in provider credentials must be managed through the provider settings routes.', 403)
+    }
     const json = await req.json()
     const parsed = updateSchema.parse(json)
 
@@ -113,13 +158,10 @@ export async function PUT(req: Request, { params }: Params) {
         }
       }
 
-      return tx.integration.findUnique({
-        where: { id },
-        include: { events: true, secrets: { select: { id: true, key: true } } }
-      })
+      return tx.integration.findUnique({ where: { id }, select: safeIntegrationSelect })
     })
 
-    return ok(updated)
+    return ok(updated ? safeIntegrationResponse(updated) : null)
   } catch (error: any) {
     console.error('Failed to update integration', error)
     return err(error.message, 400)
@@ -127,11 +169,16 @@ export async function PUT(req: Request, { params }: Params) {
 }
 
 export async function DELETE(_req: Request, { params }: Params) {
-  const auth = await requireAdmin(_req)
+  const auth = await requireOwner(_req)
   if (!auth.ok) return auth.response
 
   try {
     const { id } = await params
+    const existing = await prisma.integration.findUnique({ where: { id }, select: { type: true } })
+    if (!existing) return err('Not found', 404)
+    if (BUILT_IN_PROVIDER_TYPES.has(existing.type)) {
+      return err('Built-in provider credentials must be managed through the provider settings routes.', 403)
+    }
     await prisma.integration.delete({ where: { id } })
     return ok({ success: true })
   } catch (error: any) {

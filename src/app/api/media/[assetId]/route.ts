@@ -1,5 +1,6 @@
 import { err, ok, parseBody } from '@/lib/api'
 import { prisma } from '@/lib/prisma'
+import { findPrimaryStore } from '@/server/services/primary-store.service'
 import { requireAdmin } from '@/server/auth/require-auth'
 import {
   getMediaPublicUrl,
@@ -120,7 +121,7 @@ export async function DELETE(_req: Request, { params }: Params) {
       return err('Asset not found', 404)
     }
 
-    const store = await prisma.store.findFirst({
+    const store = await findPrimaryStore({
       select: {
         id: true,
         logoUrl: true,

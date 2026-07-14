@@ -12,7 +12,7 @@ Common setup and runtime issues with resolutions.
 1. Confirm `STRIPE_SECRET_KEY` starts with `sk_test_` (test mode) or `sk_live_` (production).
 2. Confirm `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` starts with `pk_test_` or `pk_live_`.
 3. Make sure both keys come from the same Stripe account and the same mode (test vs. live).
-4. In the admin, go to **Settings → Payments**, open the Stripe drawer, re-enter your keys, and click **Verify provider**.
+4. In the admin, go to **Settings → Payments**, open the Stripe drawer, re-enter your keys, and click **Test connection**.
 5. If keys are correct but checkout still fails, check the browser console for Stripe.js errors.
 
 ---

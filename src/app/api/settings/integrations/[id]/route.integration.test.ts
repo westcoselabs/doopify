@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'
 import { decrypt, encrypt } from '@/server/utils/crypto'
 
 vi.mock('@/server/auth/require-auth', () => ({
-  requireAdmin: vi.fn().mockResolvedValue({
+  requireOwner: vi.fn().mockResolvedValue({
     ok: true,
     user: { id: 'owner-1', email: 'owner@example.com', firstName: null, lastName: null, role: 'OWNER' },
   }),

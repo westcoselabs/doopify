@@ -1,9 +1,9 @@
 import crypto from 'crypto'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { decrypt, encrypt, isCurrentEncryptionEnvelope, reEncryptToCurrent } from './crypto'
+import { decrypt, decryptWithCurrentEncryptionKey, encrypt, getEncryptionRotationDecision, isCurrentEncryptionEnvelope, reEncryptToCurrent } from './crypto'
 
-const testEncryptionKey = 'test-encryption-key-at-least-32-characters-long'
+const testEncryptionKey = 'D9g_7eQx3mF5aP1vK8rT2yW6cN4hJ0sL9bU5zX1qR7M'
 
 afterEach(() => {
   process.env.ENCRYPTION_KEY = testEncryptionKey
@@ -52,7 +52,7 @@ describe('crypto', () => {
   })
 
   it('uses ENCRYPTION_KEY_PREVIOUS only for decryption during rotation', () => {
-    const previousKey = 'previous-encryption-key-at-least-32-characters-long'
+    const previousKey = 'mK3qV8zP1xR6tN4wC9fH2jL7sA5dG0yB8uE1iO6rT9W'
     process.env.ENCRYPTION_KEY = previousKey
     const encryptedWithPrevious = encrypt('rotate-me')
 
@@ -60,8 +60,23 @@ describe('crypto', () => {
     process.env.ENCRYPTION_KEY_PREVIOUS = previousKey
 
     expect(decrypt(encryptedWithPrevious)).toBe('rotate-me')
+    expect(getEncryptionRotationDecision(encryptedWithPrevious)).toEqual({ plaintext: 'rotate-me', needsRotation: true })
     const reencrypted = reEncryptToCurrent(encryptedWithPrevious)
     expect(decrypt(reencrypted)).toBe('rotate-me')
+    expect(decryptWithCurrentEncryptionKey(reencrypted)).toBe('rotate-me')
+
+    delete process.env.ENCRYPTION_KEY_PREVIOUS
+    expect(decrypt(reencrypted)).toBe('rotate-me')
+  })
+
+  it.each([
+    ['aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'repeated characters'],
+    ['abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG', 'obvious sequence'],
+    ['replace_with_a_random_secret_at_least_32_chars', 'placeholder'],
+    ['abcabcabcabcabcabcabcabcabcabcabcabcabcabc', 'low unique characters'],
+  ])('rejects %s encryption key values', (key) => {
+    process.env.ENCRYPTION_KEY = key
+    expect(() => encrypt('merchant-secret')).toThrow(/high-entropy/i)
   })
 
   it('rejects a tampered envelope', () => {

@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import { findPrimaryStore } from '@/server/services/primary-store.service'
 import {
   getProviderStatus,
   type ProviderStatus,
@@ -66,7 +67,7 @@ function selectProviderStatus(statuses: EmailProviderStatus[]) {
 
 export async function getEmailSettingsStatusSnapshot(): Promise<EmailSettingsStatus> {
   const [store, resendStatus, smtpStatus, health] = await Promise.all([
-    prisma.store.findFirst({
+    findPrimaryStore({
       select: {
         email: true,
       },

@@ -2570,6 +2570,48 @@ describe('checkout service', () => {
     expect(mocks.getBuyerDigitalDownloadAvailabilityForPaidOrder).not.toHaveBeenCalled()
   })
 
+  it('allows redacted legacy access immediately before the configured cutoff', async () => {
+    process.env.CHECKOUT_LEGACY_STATUS_CUTOFF = '2026-08-10T00:00:00.000Z'
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-09T23:59:59.999Z'))
+    mocks.prisma.checkoutSession.findFirst.mockResolvedValueOnce({
+      status: 'COMPLETED',
+      failureReason: null,
+      createdAt: new Date('2026-07-09T00:00:00.000Z'),
+      statusTokenHash: null,
+    })
+
+    try {
+      await expect(getCheckoutStatus('pi_legacy_before_cutoff', null)).resolves.toEqual({
+        status: 'paid',
+        checkoutStatus: 'COMPLETED',
+        legacy: true,
+      })
+    } finally {
+      vi.useRealTimers()
+      delete process.env.CHECKOUT_LEGACY_STATUS_CUTOFF
+    }
+  })
+
+  it.each(['2026-08-10T00:00:00.000Z', '2026-08-10T00:00:00.001Z'])(
+    'denies tokenless legacy access at and after the cutoff (%s) without related lookups',
+    async (now) => {
+      process.env.CHECKOUT_LEGACY_STATUS_CUTOFF = '2026-08-10T00:00:00.000Z'
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date(now))
+
+      try {
+        await expect(getCheckoutStatus('pi_legacy_after_cutoff', null)).resolves.toBeNull()
+        expect(mocks.prisma.checkoutSession.findFirst).not.toHaveBeenCalled()
+        expect(mocks.getOrderByPaymentIntentId).not.toHaveBeenCalled()
+        expect(mocks.getBuyerDigitalDownloadAvailabilityForPaidOrder).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+        delete process.env.CHECKOUT_LEGACY_STATUS_CUTOFF
+      }
+    }
+  )
+
   it('does not allow a tokenless status request for a new checkout', async () => {
     mocks.prisma.checkoutSession.findFirst.mockResolvedValueOnce(null)
 

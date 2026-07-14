@@ -1,12 +1,19 @@
 import { ok, err } from '@/lib/api'
 import { prisma } from '@/lib/prisma'
-import { requireAdmin } from '@/server/auth/require-auth'
+import { requireOwner } from '@/server/auth/require-auth'
 import { encrypt } from '@/server/utils/crypto'
 import { z } from 'zod'
 
 export const runtime = 'nodejs'
 const DEFAULT_INTEGRATION_LIST_PAGE_SIZE = 25
 const MAX_INTEGRATION_LIST_PAGE_SIZE = 100
+const BUILT_IN_PROVIDER_TYPES = new Set([
+  'PAYMENT_STRIPE',
+  'SHIPPING_SHIPPO',
+  'SHIPPING_EASYPOST',
+  'EMAIL_RESEND',
+  'EMAIL_SMTP',
+])
 
 const createSchema = z.object({
   name: z.string().min(1),
@@ -48,7 +55,7 @@ function clampPageSize(value: number) {
 }
 
 export async function GET(req: Request) {
-  const auth = await requireAdmin(req)
+  const auth = await requireOwner(req)
   if (!auth.ok) return auth.response
 
   try {
@@ -106,12 +113,15 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const auth = await requireAdmin(req)
+  const auth = await requireOwner(req)
   if (!auth.ok) return auth.response
 
   try {
     const json = await req.json()
     const parsed = createSchema.parse(json)
+    if (BUILT_IN_PROVIDER_TYPES.has(parsed.type)) {
+      return err('Built-in provider credentials must be managed through the provider settings routes.', 403)
+    }
     const events = uniqueStrings(parsed.events)
     const secrets = sanitizeSecrets(parsed.secrets)
 
@@ -132,7 +142,17 @@ export async function POST(req: Request) {
           }))
         } : undefined
       },
-      include: { events: true, secrets: { select: { id: true, key: true } } }
+      select: {
+        id: true,
+        name: true,
+        type: true,
+        webhookUrl: true,
+        status: true,
+        createdAt: true,
+        updatedAt: true,
+        events: true,
+        secrets: { select: { id: true, key: true } },
+      }
     })
 
     return ok(integration)

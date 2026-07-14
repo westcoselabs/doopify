@@ -37,7 +37,7 @@ Stripe → POST /api/webhooks/stripe
     │  Queues email / analytics side effects
     │
     ▼
-Browser → GET /api/checkout/status
+Browser → POST /api/checkout/status with JSON paymentIntentId and statusToken
     │  Polls for order number after payment intent ID is known
     │  Redirects to /checkout/success once order is confirmed
 ```

@@ -50,7 +50,7 @@ Copy the **Signing secret** → `STRIPE_WEBHOOK_SECRET`.
 
 Go to **Settings → Payments** in the admin.
 
-Open the Stripe drawer, enter your keys, and click **Verify provider**. The admin stores and validates credentials against Stripe's API.
+Open the Stripe drawer, enter your keys, and click **Test connection**. The admin stores and validates credentials against Stripe's API.
 
 Credentials are stored encrypted at rest.
 

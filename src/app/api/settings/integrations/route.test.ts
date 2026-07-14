@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  requireAdmin: vi.fn(),
+  requireOwner: vi.fn(),
   prisma: {
     integration: {
       findMany: vi.fn(),
@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/server/auth/require-auth', () => ({
-  requireAdmin: mocks.requireAdmin,
+  requireOwner: mocks.requireOwner,
 }))
 
 vi.mock('@/lib/prisma', () => ({
@@ -23,12 +23,12 @@ vi.mock('@/server/utils/crypto', () => ({
   encrypt: vi.fn((value: string) => `enc:${value}`),
 }))
 
-import { GET } from './route'
+import { GET, POST } from './route'
 
 describe('GET /api/settings/integrations', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.requireAdmin.mockResolvedValue({ ok: true })
+    mocks.requireOwner.mockResolvedValue({ ok: true })
   })
 
   it('applies default pagination and returns summary rows', async () => {
@@ -97,6 +97,39 @@ describe('GET /api/settings/integrations', () => {
         take: 100,
       })
     )
+  })
+
+  it.each([
+    ['unauthenticated', 401],
+    ['admin', 403],
+    ['staff', 403],
+  ])('rejects %s integration reads', async (_role, status) => {
+    mocks.requireOwner.mockResolvedValue({ ok: false, response: new Response('denied', { status }) })
+    expect((await GET(new Request('http://localhost/api/settings/integrations'))).status).toBe(status)
+  })
+
+  it('allows an owner to create a custom integration without returning encrypted secret fields', async () => {
+    mocks.prisma.integration.create.mockResolvedValue({
+      id: 'int_1', name: 'Warehouse Sync', type: 'CUSTOM', webhookUrl: null, status: 'ACTIVE',
+      createdAt: new Date(), updatedAt: new Date(), events: [], secrets: [{ id: 'secret_1', key: 'HEADER_X-Test' }],
+    })
+    const response = await POST(new Request('http://localhost/api/settings/integrations', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Warehouse Sync', type: 'CUSTOM', webhookSecret: 'not-returned', secrets: [{ key: 'HEADER_X-Test', value: 'not-returned' }] }),
+    }))
+    const body = await response.text()
+    expect(response.status).toBe(200)
+    expect(body).not.toContain('not-returned')
+    expect(mocks.prisma.integration.create).toHaveBeenCalledWith(expect.objectContaining({ select: expect.any(Object) }))
+  })
+
+  it('blocks generic creation of built-in provider records', async () => {
+    const response = await POST(new Request('http://localhost/api/settings/integrations', {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Stripe', type: 'PAYMENT_STRIPE', webhookSecret: 'not-returned' }),
+    }))
+    expect(response.status).toBe(403)
+    expect(mocks.prisma.integration.create).not.toHaveBeenCalled()
   })
 })
 

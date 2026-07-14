@@ -6,7 +6,7 @@ history, so it must not be edited or replayed.
 
 ## Deployment decision
 
-Inspect the target database's `_prisma_migrations` history before deploying.
+Run `npm run db:preflight-migrations` against the target database before deploying. It fails closed when the destructive migration is pending against persisted sessions or when the unsafe provider singleton migration is pending against duplicate provider rows. Then inspect the target database's `_prisma_migrations` history before deploying.
 
 - If `20260710_hash_persisted_sessions` is already applied, existing sessions
   were revoked by that historical deployment. Apply

@@ -35,8 +35,18 @@ const envSchema = z.object({
       message: 'ENCRYPTION_KEY is required outside test environments',
     })
   }
-  if (value.NODE_ENV !== 'test' && value.ENCRYPTION_KEY && /default|replace|changeme|example|sample|generate-a-random|insecure/i.test(value.ENCRYPTION_KEY)) {
-    context.addIssue({ code: z.ZodIssueCode.custom, path: ['ENCRYPTION_KEY'], message: 'ENCRYPTION_KEY must not use a default or placeholder value' })
+  for (const keyName of ['ENCRYPTION_KEY', 'ENCRYPTION_KEY_PREVIOUS'] as const) {
+    const key = value[keyName]
+    if (!key) continue
+    const normalized = key.toLowerCase()
+    const unsafe =
+      /default|replace|changeme|example|sample|generate-a-random|insecure|password|secret/.test(normalized) ||
+      /^(.)\1+$/.test(normalized) ||
+      new Set(normalized).size < 8 ||
+      /0123456789|9876543210|abcdefghijklmnopqrstuvwxyz|zyxwvutsrqponmlkjihgfedcba/.test(normalized)
+    if (unsafe) {
+      context.addIssue({ code: z.ZodIssueCode.custom, path: [keyName], message: `${keyName} must be a high-entropy, non-placeholder value` })
+    }
   }
 })
 

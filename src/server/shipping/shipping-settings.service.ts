@@ -7,6 +7,7 @@ import {
 } from '@prisma/client'
 
 import { prisma } from '@/lib/prisma'
+import { findPrimaryStore } from '@/server/services/primary-store.service'
 
 type ShippingSettingsUpdate = Partial<{
   shippingMode: ShippingMode
@@ -36,8 +37,7 @@ type ShippingSettingsUpdate = Partial<{
 }>
 
 export async function getShippingSettingsStore() {
-  return prisma.store.findFirst({
-    orderBy: [{ createdAt: 'asc' }],
+  return findPrimaryStore({
     include: {
       shippingPackages: {
         orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],

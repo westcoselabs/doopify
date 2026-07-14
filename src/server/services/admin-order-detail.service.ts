@@ -2,6 +2,7 @@ import type { ShippingLiveProvider } from '@prisma/client'
 
 import { centsToDollars } from '@/lib/money'
 import { prisma } from '@/lib/prisma'
+import { findPrimaryStore } from '@/server/services/primary-store.service'
 import { getShippingProviderConnectionStatus } from '@/server/shipping/shipping-provider.service'
 import { resolveLabelProvider } from '@/server/shipping/shipping-provider-selection'
 import {
@@ -217,7 +218,7 @@ async function resolveShippingAndEmailCapabilities(input: {
   orderEmail: string | null
   customerEmail: string | null
 }) {
-  const store = await prisma.store.findFirst({
+  const store = await findPrimaryStore({
     select: {
       shippingLiveProvider: true,
       shippingProviderUsage: true,
