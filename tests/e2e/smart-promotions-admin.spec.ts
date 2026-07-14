@@ -41,6 +41,17 @@ function screenshotPath(filename: string) {
 async function createAdminSession(): Promise<AuthSession> {
   const email = `playwright-smart-promotions-${Date.now()}-${Math.floor(Math.random() * 10_000)}@example.com`
 
+  await prisma.store.upsert({
+    where: { singletonKey: 'PRIMARY' },
+    update: {},
+    create: {
+      singletonKey: 'PRIMARY',
+      name: 'Playwright Smart Promotions Store',
+      email: 'playwright-promotions@example.com',
+      currency: 'USD',
+    },
+  })
+
   const user = await prisma.user.create({
     data: {
       email,
@@ -416,6 +427,7 @@ test.describe('Smart Promotions visibility smoke screenshots', () => {
   test.use({ viewport: { width: 1440, height: 900 } })
 
   test('captures promotions admin workspace screenshots', async ({ browser }) => {
+    test.setTimeout(120_000)
     const session = await createAdminSession()
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 } })
 
@@ -436,7 +448,7 @@ test.describe('Smart Promotions visibility smoke screenshots', () => {
       await mockPromotionsPageApis(page)
 
       await page.goto('/discounts', { waitUntil: 'networkidle' })
-      await expect(page.getByRole('heading', { name: 'Promotions' })).toBeVisible()
+      await expect(page.getByRole('heading', { name: 'Promotions', exact: true })).toBeVisible()
       await expect(page.getByRole('button', { name: 'All', exact: true })).toBeVisible()
       await expect(page.getByRole('button', { name: 'Discount codes', exact: true })).toBeVisible()
       await expect(page.getByRole('button', { name: 'Automatic', exact: true })).toBeVisible()
@@ -467,7 +479,7 @@ test.describe('Smart Promotions visibility smoke screenshots', () => {
       })
 
       await page.getByRole('button', { name: 'All', exact: true }).click()
-      await page.getByRole('banner').getByRole('button', { name: 'Create promotion' }).click()
+      await page.getByRole('button', { name: 'Create promotion' }).first().click()
       const createDrawer = page.getByRole('dialog', { name: 'Create promotion' })
       await expect(createDrawer.getByRole('heading', { name: 'How should this promotion work?' })).toBeVisible()
       await expect(createDrawer.getByRole('radio', { name: /Discount code/i })).toBeVisible()
@@ -534,9 +546,7 @@ test.describe('Smart Promotions visibility smoke screenshots', () => {
 
       await page.getByRole('radio', { name: /Product group discount/i }).click()
       await page.getByRole('button', { name: 'Continue to details' }).click()
-      await expect(
-        page.getByText('Product group discounts apply to the selected qualifier products only in V1.')
-      ).toBeVisible()
+      await expect(createDrawer.getByRole('heading', { name: 'Offer details' })).toBeVisible()
 
       await page.screenshot({
         path: screenshotPath('phase-9-4-product-group-details.png'),

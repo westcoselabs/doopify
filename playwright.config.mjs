@@ -1,8 +1,10 @@
+import 'dotenv/config'
 import { defineConfig, devices } from '@playwright/test'
 
 const baseURL = process.env.E2E_BASE_URL || 'http://127.0.0.1:3000'
 const isLocalBaseURL = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/i.test(baseURL)
 const databaseUrlTest = String(process.env.DATABASE_URL_TEST || '').trim()
+const originalDatabaseUrl = String(process.env.E2E_ORIGINAL_DATABASE_URL || process.env.DATABASE_URL || '').trim()
 
 if (!isLocalBaseURL && process.env.E2E_ALLOW_REMOTE !== '1') {
   throw new Error(
@@ -14,7 +16,7 @@ if (!databaseUrlTest) {
   throw new Error('Refusing to run E2E without DATABASE_URL_TEST configured for disposable storage.')
 }
 
-if (databaseUrlTest === process.env.DATABASE_URL) {
+if (databaseUrlTest === originalDatabaseUrl) {
   throw new Error('Refusing to run E2E: DATABASE_URL_TEST must not match DATABASE_URL.')
 }
 
@@ -32,6 +34,7 @@ try {
 
 // Playwright worker code and the local Next server must share the disposable
 // database; never let either fall through to .env's normal DATABASE_URL.
+process.env.E2E_ORIGINAL_DATABASE_URL = originalDatabaseUrl
 process.env.DATABASE_URL = databaseUrlTest
 const jwtSecretForE2E = process.env.E2E_JWT_SECRET || 'e2e-local-only-jwt-secret-with-at-least-32-characters'
 process.env.JWT_SECRET = jwtSecretForE2E
@@ -70,6 +73,9 @@ const e2eWebServerEnv = {
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: false,
+  // These specs seed and clean one disposable schema. Keep workers serial so
+  // one scenario cannot remove another scenario's Store or owner mid-render.
+  workers: 1,
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   use: {
