@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { config as loadEnv } from 'dotenv'
 import pg from 'pg'
 
