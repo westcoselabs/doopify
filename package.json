@@ -37,7 +37,8 @@
     "db:seed:bootstrap": "node ./scripts/bootstrap-store.mjs",
     "db:ensure-store": "node ./scripts/ensure-store.mjs",
     "repo:check": "node scripts/check-repository-hygiene.mjs",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
@@ -70,6 +71,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "prisma": "^7.6.0",
+    "react-doctor": "^0.7.8",
     "typescript": "^5.9.3",
     "vitest": "^4.1.5"
   }
