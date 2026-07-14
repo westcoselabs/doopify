@@ -37,7 +37,7 @@
     "db:seed:bootstrap": "node ./scripts/bootstrap-store.mjs",
     "db:ensure-store": "node ./scripts/ensure-store.mjs",
     "repo:check": "node scripts/check-repository-hygiene.mjs",
-    "postinstall": "prisma generate",
+    "postinstall": "node scripts/generate-prisma-client.mjs",
     "doctor": "npx react-doctor@latest"
   },
   "dependencies": {
