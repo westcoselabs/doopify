@@ -191,4 +191,71 @@ test.describe('Shipping provider saved-key retest', () => {
       await cleanupOwnerSession(session)
     }
   })
+
+  test('owner navigation to Orders requests only the Orders and Settings route data', async ({ browser }) => {
+    test.setTimeout(30_000)
+    const session = await createOwnerSession()
+    const context = await browser.newContext()
+    const page = await context.newPage()
+    const apiRequests: string[] = []
+
+    page.on('request', (request) => {
+      const url = new URL(request.url())
+      if (url.pathname.startsWith('/api/')) {
+        apiRequests.push(`${request.method()} ${url.pathname}${url.search}`)
+      }
+    })
+
+    try {
+      await context.addCookies([
+        {
+          name: 'doopify_token',
+          value: session.token,
+          domain: '127.0.0.1',
+          path: '/',
+          httpOnly: true,
+          secure: false,
+          sameSite: 'Strict',
+        },
+      ])
+      await page.route('**/api/settings', async (route) => {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            success: true,
+            data: { name: 'Route fan-out E2E Store', email: 'route-fan-out@example.com', currency: 'USD' },
+          }),
+        })
+      })
+      await page.route('**/api/orders?*', async (route) => {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({ success: true, data: { orders: [], pagination: {} } }),
+        })
+      })
+
+      await page.goto('/settings', { waitUntil: 'domcontentloaded' })
+      await expect(page.getByRole('heading', { name: 'Store settings', exact: true })).toBeVisible()
+      await expect.poll(() => apiRequests).toContain('GET /api/settings')
+      expect(apiRequests).not.toEqual(expect.arrayContaining([
+        expect.stringMatching(/^GET \/api\/(customers|discounts|orders|products)/),
+      ]))
+
+      const beforeOrdersNavigation = apiRequests.length
+      await expect(page.locator('a[href="/orders"]')).toHaveCount(1)
+      await page.goto('/orders', { waitUntil: 'domcontentloaded' })
+      await expect(page).toHaveURL(/\/orders$/)
+      await expect(page.getByRole('heading', { name: 'Order desk', exact: true })).toBeVisible()
+
+      await expect.poll(() => apiRequests.slice(beforeOrdersNavigation)).toContain('GET /api/orders?pageSize=25')
+      const ordersRouteRequests = apiRequests.slice(beforeOrdersNavigation)
+      expect(ordersRouteRequests).toContain('GET /api/orders?pageSize=25')
+      expect(ordersRouteRequests).not.toEqual(expect.arrayContaining([
+        expect.stringMatching(/^GET \/api\/(customers|discounts|products)/),
+      ]))
+    } finally {
+      await context.close()
+      await cleanupOwnerSession(session)
+    }
+  })
 })
