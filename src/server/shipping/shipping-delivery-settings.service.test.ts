@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   prisma: {
     store: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       create: vi.fn(),
     },
     shippingPackage: {
@@ -40,6 +41,7 @@ import {
 describe('shipping-delivery-settings.service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.prisma.store.findMany.mockResolvedValue([])
     mocks.prisma.store.findFirst.mockResolvedValue({ id: 'store_1' })
     mocks.prisma.$transaction.mockImplementation(
       async (callback: (tx: typeof mocks.prisma) => Promise<unknown>) => callback(mocks.prisma)
@@ -171,6 +173,7 @@ describe('shipping-delivery-settings.service', () => {
     expect(mocks.prisma.store.create).toHaveBeenCalledWith({
       data: {
         name: 'Doopify Store',
+        singletonKey: 'PRIMARY',
       },
       select: { id: true },
     })

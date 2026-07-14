@@ -4,6 +4,7 @@ const mocks = vi.hoisted(() => ({
   prisma: {
     store: {
       findFirst: vi.fn(),
+      findMany: vi.fn(),
       create: vi.fn(),
       update: vi.fn(),
     },
@@ -72,6 +73,7 @@ function storeFixture(overrides: Record<string, unknown> = {}) {
 describe('settings.service brand kit', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.prisma.store.findMany.mockResolvedValue([])
   })
 
   it('getBrandKit returns defaults when store is missing', async () => {
@@ -244,7 +246,7 @@ describe('settings.service brand kit', () => {
 
     await getStoreSettingsLite()
 
-    expect(mocks.prisma.store.findFirst).toHaveBeenCalledWith()
+    expect(mocks.prisma.store.findFirst).toHaveBeenCalledWith({ where: { singletonKey: 'PRIMARY' } })
   })
 
   it('getStoreSettingsFull and getStoreSettings keep heavy includes for checkout/shipping consumers', async () => {
