@@ -521,6 +521,25 @@ async function resolveDiscountCode(discountCode?: string) {
 async function resolveCheckoutCustomer(payload: CheckoutPayload) {
   let customer = await getCustomerByEmail(payload.email)
   const primaryAddress = payload.shippingAddress ?? payload.billingAddress
+  const addressData =
+    primaryAddress?.address1 &&
+    primaryAddress?.city &&
+    primaryAddress?.postalCode &&
+    primaryAddress?.country
+      ? {
+          firstName: primaryAddress.firstName,
+          lastName: primaryAddress.lastName,
+          company: primaryAddress.company,
+          address1: primaryAddress.address1,
+          address2: primaryAddress.address2,
+          city: primaryAddress.city,
+          province: primaryAddress.province,
+          postalCode: primaryAddress.postalCode,
+          country: primaryAddress.country,
+          phone: primaryAddress.phone,
+          isDefault: true,
+        }
+      : null
 
   if (!customer) {
     try {
@@ -529,6 +548,7 @@ async function resolveCheckoutCustomer(payload: CheckoutPayload) {
         firstName: primaryAddress?.firstName,
         lastName: primaryAddress?.lastName,
         phone: primaryAddress?.phone,
+        ...(addressData ? { initialAddress: addressData } : {}),
       })
     } catch (error) {
       if (!isUniqueConstraintError(error)) {
@@ -545,24 +565,9 @@ async function resolveCheckoutCustomer(payload: CheckoutPayload) {
   if (
     customer &&
     customer.addresses.length === 0 &&
-    primaryAddress?.address1 &&
-    primaryAddress?.city &&
-    primaryAddress?.postalCode &&
-    primaryAddress?.country
+    addressData
   ) {
-    await addCustomerAddress(customer.id, {
-      firstName: primaryAddress.firstName,
-      lastName: primaryAddress.lastName,
-      company: primaryAddress.company,
-      address1: primaryAddress.address1,
-      address2: primaryAddress.address2,
-      city: primaryAddress.city,
-      province: primaryAddress.province,
-      postalCode: primaryAddress.postalCode,
-      country: primaryAddress.country,
-      phone: primaryAddress.phone,
-      isDefault: true,
-    })
+    await addCustomerAddress(customer.id, addressData)
   }
 
   return customer

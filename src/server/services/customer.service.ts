@@ -83,6 +83,19 @@ export async function createCustomer(data: {
   acceptsMarketing?: boolean
   tags?: string[]
   note?: string
+  initialAddress?: {
+    firstName?: string
+    lastName?: string
+    company?: string
+    address1?: string
+    address2?: string
+    city?: string
+    province?: string
+    postalCode?: string
+    country?: string
+    phone?: string
+    isDefault?: boolean
+  }
 }) {
   return prisma.customer.create({
     data: {
@@ -93,6 +106,7 @@ export async function createCustomer(data: {
       acceptsMarketing: data.acceptsMarketing ?? false,
       tags: normalizeTags(data.tags),
       note: data.note,
+      ...(data.initialAddress ? { addresses: { create: data.initialAddress } } : {}),
     },
     include: { addresses: true },
   })
