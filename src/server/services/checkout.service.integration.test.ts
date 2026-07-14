@@ -531,6 +531,21 @@ runIntegration('checkout service integration', () => {
     expect(await prisma.checkoutSession.count({ where: { paymentIntentId: first.paymentIntentId } })).toBe(1)
   })
 
+  it('leaves customer, order, payment, and checkout state consistent when initial-address persistence fails', async () => {
+    const { variant } = await seedVariant({ paymentIntentId: 'pi_address_failure', inventory: 5 })
+    const customer = await prisma.customer.create({ data: { email: 'address-failure@example.com', tags: [] } })
+    const checkout = await createCheckoutPaymentIntent({ email: customer.email, items: [{ variantId: variant.id, quantity: 1 }], shippingAddress: address })
+    const transactionSpy = vi.spyOn(prisma, '$transaction').mockRejectedValueOnce(new Error('simulated address persistence failure'))
+
+    await expect(completeCheckoutFromPaymentIntent({ id: checkout.paymentIntentId, amount: Math.round(checkout.total * 100), currency: 'usd', status: 'succeeded' })).rejects.toThrow('simulated address persistence failure')
+
+    transactionSpy.mockRestore()
+    expect(await prisma.customerAddress.count({ where: { customerId: customer.id } })).toBe(0)
+    expect(await prisma.order.count()).toBe(0)
+    expect(await prisma.payment.count()).toBe(0)
+    expect((await prisma.checkoutSession.findUniqueOrThrow({ where: { paymentIntentId: checkout.paymentIntentId } })).status).toBe('PENDING')
+  })
+
   it('creates a paid order and decrements inventory after verified payment success', async () => {
     const { variant } = await seedCheckout({
       paymentIntentId: 'pi_integration_success',
