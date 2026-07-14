@@ -43,7 +43,7 @@ Phase 4 adds merchant lifecycle and integration risks: refunds, returns, outboun
 
 - `src/lib/env.ts` validates critical environment variables up front
 - JWT validation checks the backing `Session` record, so logout and session revocation are real
-- New session records store a SHA-256 hash of the bearer JWT. During the staged additive rollout, legacy plaintext rows remain readable only through `SESSION_LEGACY_TOKEN_CUTOFF`; they are not revoked solely because the rollout starts. The historical destructive session migration is never permitted on an existing schema; use `npm run db:deploy:safe` and `docs/SESSION_TOKEN_MIGRATION_RUNBOOK.md`.
+- New session records store a SHA-256 hash of the bearer JWT. During the staged additive rollout, legacy plaintext rows remain readable only through an explicit valid `SESSION_LEGACY_TOKEN_CUTOFF`; missing or invalid configuration disables legacy compatibility rather than extending it. The historical destructive session migration is never permitted on an existing schema; use `npm run db:deploy:safe` and `docs/SESSION_TOKEN_MIGRATION_RUNBOOK.md`.
 - login is rate-limited by IP plus email
 - shared cookie parsing lives in `src/lib/cookies.ts` instead of ad hoc regexes
 

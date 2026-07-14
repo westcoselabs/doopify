@@ -1,4 +1,3 @@
-import { readdir } from 'node:fs/promises'
 import { spawnSync } from 'node:child_process'
 import { config as loadEnv } from 'dotenv'
 import pg from 'pg'
@@ -51,13 +50,6 @@ async function inspectTarget() {
   }
 }
 
-async function migrationNames() {
-  return (await readdir('prisma/migrations', { withFileTypes: true }))
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name)
-    .sort()
-}
-
 const target = await inspectTarget()
 if (!target.hasUserSchemaObjects) {
   // db push is permitted only after a catalog-level empty-schema check. The
@@ -65,7 +57,7 @@ if (!target.hasUserSchemaObjects) {
   // (including DELETE FROM sessions) can never run on this installation.
   console.log('Bootstrapping a genuinely empty schema from the canonical Prisma schema.')
   runNpm(['exec', '--', 'prisma', 'db', 'push', '--accept-data-loss'])
-  for (const migration of await migrationNames()) {
+  for (const migration of target.localMigrationNames) {
     runNpm(['exec', '--', 'prisma', 'migrate', 'resolve', '--applied', migration])
   }
   console.log('Empty schema bootstrapped and historical migrations explicitly baselined.')

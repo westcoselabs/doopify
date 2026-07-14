@@ -5,9 +5,14 @@ import { config as loadEnv } from 'dotenv'
 import pg from 'pg'
 
 import { createInertTestEnvironment } from './test-environment.mjs'
+import { targetsMatch } from './test-database-safety.mjs'
 
 const { Client } = pg
-const COMMAND_TIMEOUT_MS = 120_000
+const DEFAULT_COMMAND_TIMEOUT_MS = 600_000
+const configuredTimeout = Number(process.env.DOOPIFY_MIGRATION_VALIDATION_TIMEOUT_MS || DEFAULT_COMMAND_TIMEOUT_MS)
+const COMMAND_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeout >= 60_000
+  ? configuredTimeout
+  : DEFAULT_COMMAND_TIMEOUT_MS
 
 loadEnv({ path: '.env', quiet: true })
 loadEnv({ path: '.env.local', override: true, quiet: true })
@@ -15,8 +20,11 @@ loadEnv({ path: '.env.local', override: true, quiet: true })
 const testUrl = String(process.env.DATABASE_URL_TEST || '').trim()
 const e2eUrl = String(process.env.E2E_DATABASE_URL || '').trim()
 if (!testUrl || !e2eUrl) throw new Error('DATABASE_URL_TEST and E2E_DATABASE_URL are required for migration validation.')
-if (testUrl !== e2eUrl) throw new Error('DATABASE_URL_TEST and E2E_DATABASE_URL must identify the same disposable target.')
-if (testUrl === process.env.DATABASE_URL) throw new Error('DATABASE_URL_TEST must not match DATABASE_URL.')
+const testTarget = new URL(testUrl)
+const e2eTarget = new URL(e2eUrl)
+const normalize = (url) => ({ protocol: url.protocol, hostname: url.hostname.toLowerCase(), port: url.port || '5432', username: decodeURIComponent(url.username), database: decodeURIComponent(url.pathname.slice(1)), schema: url.searchParams.get('schema') || 'public' })
+if (!targetsMatch(normalize(testTarget), normalize(e2eTarget))) throw new Error('DATABASE_URL_TEST and E2E_DATABASE_URL must identify the same disposable target.')
+if (process.env.DATABASE_URL && targetsMatch(normalize(testTarget), normalize(new URL(process.env.DATABASE_URL)))) throw new Error('DATABASE_URL_TEST must not match DATABASE_URL.')
 
 function quoteIdentifier(value) {
   return `"${value.replaceAll('"', '""')}"`
@@ -42,7 +50,15 @@ function childEnvironment(databaseUrl) {
   })
 }
 
-function npmInvocation(args, databaseUrl, allowFailure = false) {
+function terminateProcessTree(pid) {
+  if (!pid) return
+  try {
+    if (process.platform === 'win32') spawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { stdio: 'ignore' })
+    else process.kill(-pid, 'SIGKILL')
+  } catch {}
+}
+
+function npmInvocation(args, databaseUrl, allowFailure = false, scenario = 'migration validation') {
   const npmExecPath = process.env.npm_execpath
   const command = npmExecPath ? process.execPath : process.platform === 'win32' ? 'npm.cmd' : 'npm'
   const commandArgs = npmExecPath ? [npmExecPath, ...args] : args
@@ -52,18 +68,24 @@ function npmInvocation(args, databaseUrl, allowFailure = false) {
     stdio: 'inherit',
     timeout: COMMAND_TIMEOUT_MS + 10_000,
   })
-  if (result.error) throw result.error
+  if (result.error) {
+    if (result.error.code === 'ETIMEDOUT') {
+      terminateProcessTree(result.pid)
+      throw new Error(`${scenario}: timed out after ${COMMAND_TIMEOUT_MS}ms while running npm ${args.join(' ')}`)
+    }
+    throw result.error
+  }
   if (result.signal) throw new Error(`Command terminated by ${result.signal}: npm ${args.join(' ')}`)
   if (!allowFailure && result.status !== 0) throw new Error(`Command failed: npm ${args.join(' ')}`)
   return result.status ?? 1
 }
 
-function runSafeDeploy(databaseUrl, allowFailure = false) {
-  return npmInvocation(['run', 'db:deploy:safe'], databaseUrl, allowFailure)
+function runSafeDeploy(databaseUrl, allowFailure = false, scenario) {
+  return npmInvocation(['run', 'db:deploy:safe'], databaseUrl, allowFailure, scenario)
 }
 
-function runMigrationResolve(databaseUrl, status, migration) {
-  return npmInvocation(['exec', '--', 'prisma', 'migrate', 'resolve', `--${status}`, migration], databaseUrl)
+function runMigrationResolve(databaseUrl, status, migration, scenario) {
+  return npmInvocation(['exec', '--', 'prisma', 'migrate', 'resolve', `--${status}`, migration], databaseUrl, false, scenario)
 }
 
 function runSafeDeployConcurrentWithSession(databaseUrl, insertSession) {
@@ -77,7 +99,7 @@ function runSafeDeployConcurrentWithSession(databaseUrl, insertSession) {
       stdio: 'inherit',
     })
     const timer = setTimeout(() => {
-      child.kill()
+      terminateProcessTree(child.pid)
       reject(new Error('safe migration deployment timed out during session-race regression.'))
     }, COMMAND_TIMEOUT_MS + 10_000)
     void (async () => {
@@ -87,7 +109,7 @@ function runSafeDeployConcurrentWithSession(databaseUrl, insertSession) {
         // impossible regardless of whether it lands before or after preflight.
         await insertSession()
       } catch (error) {
-        child.kill()
+        terminateProcessTree(child.pid)
         clearTimeout(timer)
         reject(error)
       }
@@ -118,6 +140,13 @@ async function withTemporarySchema(callback) {
   }
 }
 
+async function runScenario(label, callback) {
+  const startedAt = Date.now()
+  console.log(`Migration validation: starting ${label}.`)
+  await callback()
+  console.log(`Migration validation: completed ${label} in ${Date.now() - startedAt}ms.`)
+}
+
 async function withSchemaClient(databaseUrl, schema, callback) {
   const client = new Client({ connectionString: databaseUrl })
   await client.connect()
@@ -132,12 +161,48 @@ async function withSchemaClient(databaseUrl, schema, callback) {
 async function assertRefusesAndPreserves(label, setup, verify) {
   await withTemporarySchema(async ({ schema, databaseUrl }) => {
     await withSchemaClient(databaseUrl, schema, setup)
-    assert.notEqual(runSafeDeploy(databaseUrl, true), 0, `${label} must be rejected by the actual safe deploy command`)
+    assert.notEqual(runSafeDeploy(databaseUrl, true, label), 0, `${label} must be rejected by the actual safe deploy command`)
     await withSchemaClient(databaseUrl, schema, verify)
   })
 }
 
 async function validateSchemaEmptiness() {
+  await assertRefusesAndPreserves(
+    'function-only schema',
+    (client) => client.query("CREATE FUNCTION preserved_function() RETURNS integer LANGUAGE SQL IMMUTABLE AS 'SELECT 1'"),
+    async (client) => assert.equal((await client.query("SELECT to_regprocedure('preserved_function()') AS name")).rows[0].name, 'preserved_function()')
+  )
+  await assertRefusesAndPreserves(
+    'procedure-only schema',
+    (client) => client.query("CREATE PROCEDURE preserved_procedure() LANGUAGE SQL AS 'SELECT 1'"),
+    async (client) => assert.equal((await client.query("SELECT to_regprocedure('preserved_procedure()') AS name")).rows[0].name, 'preserved_procedure()')
+  )
+  await assertRefusesAndPreserves(
+    'custom operator',
+    async (client) => {
+      await client.query("CREATE FUNCTION preserved_operator_function(integer, integer) RETURNS boolean LANGUAGE SQL IMMUTABLE AS 'SELECT $1 = $2'")
+      await client.query('CREATE OPERATOR === (LEFTARG = integer, RIGHTARG = integer, PROCEDURE = preserved_operator_function)')
+    },
+    async (client) => assert.equal((await client.query("SELECT to_regoperator('===(integer,integer)') AS name")).rows[0].name, '===(integer,integer)')
+  )
+  await assertRefusesAndPreserves(
+    'custom collation',
+    (client) => client.query("CREATE COLLATION preserved_collation (provider = icu, locale = 'und')"),
+    async (client) => assert.equal((await client.query("SELECT to_regcollation('preserved_collation') AS name")).rows[0].name, 'preserved_collation')
+  )
+  await assertRefusesAndPreserves(
+    'other schema-owned object',
+    (client) => client.query('CREATE TEXT SEARCH CONFIGURATION preserved_search_configuration (COPY = pg_catalog.simple)'),
+    async (client) => assert.equal((await client.query("SELECT cfgname FROM pg_ts_config WHERE cfgnamespace = current_schema()::regnamespace AND cfgname = 'preserved_search_configuration'")).rows[0].cfgname, 'preserved_search_configuration')
+  )
+  await assertRefusesAndPreserves(
+    'extension-owned target-schema object',
+    async (client) => {
+      const schema = (await client.query('SELECT current_schema() AS schema')).rows[0].schema
+      await client.query(`CREATE EXTENSION hstore WITH SCHEMA ${quoteIdentifier(schema)}`)
+    },
+    async (client) => assert.equal((await client.query("SELECT extname FROM pg_extension WHERE extname = 'hstore' AND extnamespace = current_schema()::regnamespace")).rows[0].extname, 'hstore')
+  )
   await assertRefusesAndPreserves(
     'unrelated table',
     (client) => client.query('CREATE TABLE unrelated_preserved (id integer PRIMARY KEY)'),
@@ -161,6 +226,21 @@ async function validateSchemaEmptiness() {
     },
     async (client) => assert.equal((await client.query('SELECT count(*)::int AS count FROM "_prisma_migrations"')).rows[0].count, 1)
   )
+
+  for (const [label, finishedAt, rolledBackAt] of [
+    ['unknown applied migration', 'now()', 'NULL'],
+    ['unknown failed migration', 'NULL', 'NULL'],
+    ['unknown rolled-back migration', 'now()', 'now()'],
+  ]) {
+    await assertRefusesAndPreserves(
+      label,
+      async (client) => {
+        await client.query('CREATE TABLE "_prisma_migrations" (migration_name text PRIMARY KEY, finished_at timestamptz, rolled_back_at timestamptz)')
+        await client.query(`INSERT INTO "_prisma_migrations" (migration_name, finished_at, rolled_back_at) VALUES ('20260710_hash_persisted_sessions', now(), NULL), ('20260711_provider_and_store_singletons', now(), NULL), ('20990101_unknown_${label.replaceAll(' ', '_')}', ${finishedAt}, ${rolledBackAt})`)
+      },
+      async (client) => assert.equal((await client.query('SELECT count(*)::int AS count FROM "_prisma_migrations"')).rows[0].count, 3)
+    )
+  }
 }
 
 async function validateActualDeploymentAndHistories() {
@@ -240,7 +320,7 @@ async function validateActualDeploymentAndHistories() {
   })
 }
 
-console.log('Starting real PostgreSQL remediation migration validation (temporary schemas only).')
-await validateSchemaEmptiness()
-await validateActualDeploymentAndHistories()
-console.log('Remediation migration validation passed: empty, partial/unknown refusal, session race, singleton remediation, and corrected history.')
+console.log(`Starting real PostgreSQL remediation migration validation (temporary schemas only; timeout ${COMMAND_TIMEOUT_MS}ms).`)
+await runScenario('schema-emptiness and unknown-history refusal', validateSchemaEmptiness)
+await runScenario('empty bootstrap, session race, and singleton remediation', validateActualDeploymentAndHistories)
+console.log('Remediation migration validation passed: empty, catalog-object/unknown-history refusal, session race, singleton remediation, and corrected history.')

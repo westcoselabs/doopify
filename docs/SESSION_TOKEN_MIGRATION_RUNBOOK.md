@@ -32,7 +32,9 @@ makes the schema existing and therefore fail-closed.
 
 - New sessions write only `tokenHash`; they never recreate plaintext tokens.
 - Authentication checks `tokenHash` first and can accept `token` only before
-  `SESSION_LEGACY_TOKEN_CUTOFF`.
+  an explicit valid `SESSION_LEGACY_TOKEN_CUTOFF`. Missing or invalid values
+  fail closed by disabling legacy plaintext-token compatibility; they never
+  create a rolling compatibility window.
 - Starting the additive rollout does not immediately revoke valid legacy
   plaintext sessions. They remain valid only through that configured cutoff.
 - Set `SESSION_LEGACY_TOKEN_CUTOFF` to the production deployment time plus

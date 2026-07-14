@@ -1,76 +1,60 @@
 import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { config as loadEnv } from 'dotenv'
 import pg from 'pg'
 
 import { createInertTestEnvironment } from './test-environment.mjs'
+import { evaluateTestDatabaseResetSafety } from './test-database-safety.mjs'
 
 const { Client } = pg
 
-loadEnv({ path: '.env', quiet: true })
-loadEnv({ path: '.env.local', override: true, quiet: true })
+export async function resetIntegrationSchema({ environment, createClient }) {
+  const safety = evaluateTestDatabaseResetSafety({
+    databaseUrlTest: environment.DATABASE_URL_TEST,
+    e2eDatabaseUrl: environment.E2E_DATABASE_URL,
+    databaseUrl: environment.DOOPIFY_NORMAL_DATABASE_URL ?? environment.DATABASE_URL,
+    publicSchemaAcknowledged: environment.DOOPIFY_ALLOW_PUBLIC_TEST_SCHEMA === '1' || environment.ALLOW_PUBLIC_TEST_SCHEMA === '1',
+  })
+  if (!safety.ok) return { ok: false, reason: safety.reason, dropped: false }
 
-if (!process.env.DATABASE_URL_TEST) {
-  console.error('DATABASE_URL_TEST is required to prepare the integration test database.')
-  process.exit(1)
-}
-
-if (process.env.DATABASE_URL && process.env.DATABASE_URL === process.env.DATABASE_URL_TEST && process.env.DOOPIFY_TEST_DATABASE_URL !== '1') {
-  console.error('Refusing to prepare integration DB: DATABASE_URL_TEST must not match DATABASE_URL.')
-  process.exit(1)
-}
-
-function resolveSchemaName(databaseUrlTest) {
+  const client = createClient ? createClient(environment.DATABASE_URL_TEST) : new Client({ connectionString: environment.DATABASE_URL_TEST })
+  await client.connect()
   try {
-    const url = new URL(databaseUrlTest)
-    return url.searchParams.get('schema') || 'public'
-  } catch {
-    return 'public'
+    await client.query(`DROP SCHEMA IF EXISTS "${safety.target.schema.replaceAll('"', '""')}" CASCADE`)
+    return { ok: true, dropped: true, target: safety.target }
+  } finally {
+    await client.end()
   }
 }
 
-const schemaName = resolveSchemaName(process.env.DATABASE_URL_TEST)
-
-if (schemaName === 'public' && process.env.ALLOW_PUBLIC_TEST_SCHEMA !== '1') {
-  console.error(
-    'Refusing to reset integration DB schema "public". Set DATABASE_URL_TEST with a dedicated schema or explicitly set ALLOW_PUBLIC_TEST_SCHEMA=1.'
-  )
-  process.exit(1)
+function runPrismaPush(environment) {
+  const npmExecPath = process.env.npm_execpath
+  const result = npmExecPath
+    ? spawnSync(process.execPath, [npmExecPath, 'exec', '--', 'prisma', 'db', 'push', '--accept-data-loss'], { stdio: 'inherit', env: environment })
+    : spawnSync(process.platform === 'win32' ? 'npx.cmd' : 'npx', ['prisma', 'db', 'push', '--accept-data-loss'], { stdio: 'inherit', env: environment })
+  return result.status ?? 1
 }
 
-const client = new Client({
-  connectionString: process.env.DATABASE_URL_TEST,
-})
+async function main() {
+  loadEnv({ path: '.env', quiet: true })
+  loadEnv({ path: '.env.local', override: true, quiet: true })
+  const reset = await resetIntegrationSchema({ environment: process.env })
+  if (!reset.ok) throw new Error(`Refusing to reset integration database: ${reset.reason}`)
 
-await client.connect()
-await client.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`)
-await client.end()
-
-const runEnv = {
-  ...createInertTestEnvironment(process.env),
-  DATABASE_URL: process.env.DATABASE_URL_TEST,
-  DATABASE_URL_TEST: process.env.DATABASE_URL_TEST,
-  DIRECT_URL: process.env.DATABASE_URL_TEST,
-  NODE_ENV: 'test',
+  const { DOOPIFY_ALLOW_PUBLIC_TEST_SCHEMA: _publicAcknowledgement, DOOPIFY_NORMAL_DATABASE_URL: _normalDatabaseUrl, ALLOW_PUBLIC_TEST_SCHEMA: _internalPermission, ...parentEnvironment } = process.env
+  const runEnvironment = {
+    ...createInertTestEnvironment(parentEnvironment),
+    DATABASE_URL: process.env.DATABASE_URL_TEST,
+    DATABASE_URL_TEST: process.env.DATABASE_URL_TEST,
+    DIRECT_URL: process.env.DATABASE_URL_TEST,
+    NODE_ENV: 'test',
+  }
+  process.exitCode = runPrismaPush(runEnvironment)
 }
 
-const npmExecPath = process.env.npm_execpath
-
-const result = npmExecPath
-  ? spawnSync(
-      process.execPath,
-      [npmExecPath, 'exec', '--', 'prisma', 'db', 'push', '--accept-data-loss'],
-      {
-        stdio: 'inherit',
-        env: runEnv,
-      }
-    )
-  : spawnSync(
-      process.platform === 'win32' ? 'npx.cmd' : 'npx',
-      ['prisma', 'db', 'push', '--accept-data-loss'],
-      {
-        stdio: 'inherit',
-        env: runEnv,
-      }
-    )
-
-process.exit(result.status ?? 1)
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : 'Integration database preparation failed.')
+    process.exitCode = 1
+  })
+}

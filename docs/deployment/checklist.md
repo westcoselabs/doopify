@@ -35,6 +35,10 @@ Optional integration pass when disposable Postgres is configured:
 DATABASE_URL_TEST="postgresql://..." npm run test:integration
 ```
 
+For a disposable `public` schema, additionally provide an exactly matching
+`E2E_DATABASE_URL` and `DOOPIFY_ALLOW_PUBLIC_TEST_SCHEMA=1`; otherwise use a
+dedicated non-public schema.
+
 ---
 
 ## 2. Required Environment Variables
@@ -47,6 +51,7 @@ Confirm each variable is set in your production environment. See `docs/ENVIRONME
 - [ ] `DIRECT_URL` — Direct Prisma URL (recommended)
 - [ ] `JWT_SECRET` — At least 32 characters, high entropy, not a placeholder
 - [ ] `ENCRYPTION_KEY` — Required for encrypted integration secrets in production
+- [ ] `SESSION_LEGACY_TOKEN_CUTOFF` — During the one-time session-token rollout only: set a fixed absolute ISO-8601 value equal to deployment time plus seven days (for example, `2030-01-08T12:00:00.000Z`). Missing or invalid values disable legacy plaintext-session compatibility; do not extend the value on redeploy without security review.
 - [ ] `NEXT_PUBLIC_STORE_URL` — Public storefront base URL
 - [ ] `WEBHOOK_RETRY_SECRET` — Protects `POST /api/webhook-retries/run`
 

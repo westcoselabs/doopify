@@ -5,6 +5,7 @@ import type { NextResponse } from 'next/server'
 import { getCookieValue } from '@/lib/cookies'
 import { env } from '@/lib/env'
 import { legacySessionTokenMatches, sessionTokenMatches } from '@/lib/session-token'
+import { legacySessionCompatibilityAllowed } from '@/lib/session-compatibility'
 import { prisma } from './prisma'
 
 const JWT_SECRET = env.JWT_SECRET
@@ -70,8 +71,7 @@ export async function verifyToken(token: string): Promise<JWTPayload | null> {
     return null
   }
 
-  const legacyCutoff = new Date(process.env.SESSION_LEGACY_TOKEN_CUTOFF ?? '2026-07-17T00:00:00.000Z')
-  const legacyAllowed = Number.isFinite(legacyCutoff.getTime()) && Date.now() < legacyCutoff.getTime()
+  const legacyAllowed = legacySessionCompatibilityAllowed()
   if (!session || (!sessionTokenMatches(session.tokenHash, token) && !(legacyAllowed && legacySessionTokenMatches(session.legacyToken, token)))) {
     return null
   }

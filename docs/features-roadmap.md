@@ -434,7 +434,7 @@ npm run test
 npm run build
 ```
 
-`npm run test:integration` should be run with a disposable Postgres database/schema before making release claims about real-DB behavior.
+`npm run test:integration` should be run with a disposable Postgres database/schema before making release claims about real-DB behavior. A public-schema reset additionally requires exact normalized equality with `E2E_DATABASE_URL` and an explicit `DOOPIFY_ALLOW_PUBLIC_TEST_SCHEMA=1` acknowledgement.
 
 Next automated coverage priorities:
 

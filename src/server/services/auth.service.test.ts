@@ -30,7 +30,7 @@ vi.mock('bcryptjs', () => ({
   default: { hash: mocks.bcryptHash, compare: mocks.bcryptCompare },
 }))
 
-import { changePassword, revokeOtherSessions } from './auth.service'
+import { changePassword, createSessionForUser, revokeOtherSessions } from './auth.service'
 import { hashSessionToken } from '@/lib/session-token'
 
 describe('auth service — changePassword / revokeOtherSessions', () => {
@@ -41,6 +41,25 @@ describe('auth service — changePassword / revokeOtherSessions', () => {
     mocks.prisma.$transaction.mockImplementation(async (cb: any) => cb(mocks.prisma))
     mocks.prisma.session.deleteMany.mockResolvedValue({ count: 0 })
     mocks.prisma.user.update.mockResolvedValue({ id: 'u1' })
+    mocks.prisma.session.create.mockResolvedValue({ id: 'session_1' })
+    mocks.prisma.session.update.mockResolvedValue({ id: 'session_1' })
+    mocks.signToken.mockReturnValue('new-session-jwt')
+  })
+
+  it('creates new session rows with hashes only and never writes a plaintext legacy token', async () => {
+    await createSessionForUser({ id: 'u1', email: 'owner@example.com', firstName: null, lastName: null, role: 'OWNER' })
+
+    expect(mocks.prisma.session.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        tokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        userId: 'u1',
+      }),
+    })
+    expect(mocks.prisma.session.create.mock.calls[0][0].data).not.toHaveProperty('legacyToken')
+    expect(mocks.prisma.session.update).toHaveBeenCalledWith({
+      where: { id: 'session_1' },
+      data: { tokenHash: hashSessionToken('new-session-jwt') },
+    })
   })
 
   describe('changePassword', () => {

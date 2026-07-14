@@ -353,7 +353,7 @@ function buildSetupDoctorReportFallback(facts) {
   add('prisma-client-generated', 'Prisma client generated', true, pass(facts.prismaClientGenerated), facts.prismaClientGenerated ? 'Prisma client artifacts were found.' : 'Prisma client artifacts were not found.', 'Run npm run db:generate to generate Prisma client artifacts.')
   add('store-exists', 'Store exists', true, facts.databaseReachable ? (facts.storeCount > 0 ? 'PASS' : 'FAIL') : 'WARN', facts.databaseReachable ? (facts.storeCount > 0 ? `${facts.storeCount} store record(s) found.` : 'No store records found.') : 'Skipped because database check did not complete.', 'Run npm run db:seed:bootstrap or create a store via setup flow.')
   add('owner-user-exists', 'Owner/admin user exists', true, facts.databaseReachable ? (facts.ownerCount > 0 ? 'PASS' : 'FAIL') : 'WARN', facts.databaseReachable ? (facts.ownerCount > 0 ? `${facts.ownerCount} OWNER user(s) found.` : 'No OWNER user found.') : 'Skipped because database check did not complete.', 'Run npm run db:seed:bootstrap or create an OWNER user through setup tooling.')
-  add('user-role-admin-enum', 'UserRole enum includes ADMIN', true, facts.databaseReachable ? (facts.userRoleAdminSupported ? 'PASS' : 'FAIL') : 'WARN', facts.databaseReachable ? (facts.userRoleAdminSupported ? 'UserRole enum contains ADMIN.' : 'UserRole enum is missing ADMIN.') : 'Skipped because database check did not complete.', 'Apply latest schema changes to this database (`npm run db:push` or prisma migrate deploy) so UserRole includes ADMIN.')
+  add('user-role-admin-enum', 'UserRole enum includes ADMIN', true, facts.databaseReachable ? (facts.userRoleAdminSupported ? 'PASS' : 'FAIL') : 'WARN', facts.databaseReachable ? (facts.userRoleAdminSupported ? 'UserRole enum contains ADMIN.' : 'UserRole enum is missing ADMIN.') : 'Skipped because database check did not complete.', 'Inspect migration history and the applicable migration runbook, use reviewed prisma migrate resolve only where documented, then run npm run db:deploy:safe.')
 
   const jwtStrong = Boolean(facts.jwtSecret) && facts.jwtSecret.length >= 32
   add('jwt-secret', 'JWT_SECRET strength', true, jwtStrong ? (isWeak(facts.jwtSecret) ? 'WARN' : 'PASS') : 'FAIL', !facts.jwtSecret ? 'JWT_SECRET is missing.' : jwtStrong ? 'JWT_SECRET is present and strong enough.' : `JWT_SECRET is too short (${facts.jwtSecret.length} characters).`, 'Set JWT_SECRET in .env.local to a random secret with at least 32 characters.')
@@ -1095,17 +1095,22 @@ async function runSetup() {
   runNpmCommand(['run', 'db:generate'], 'npm run db:generate')
 
   const prompts = createPromptClient()
-  let useMigrate = false
+  let useDisposableSchemaPush = false
   try {
-    useMigrate = await prompts.confirm(
-      'Run prisma migrations (`npm run db:migrate`) instead of schema push (`npm run db:push`)?',
+    useDisposableSchemaPush = await prompts.confirm(
+      'Is this a confirmed disposable local development database? Run `npm run db:push` for local bootstrap only?',
       false
     )
   } finally {
     prompts.close()
   }
 
-  runNpmCommand(['run', useMigrate ? 'db:migrate' : 'db:push'], `npm run ${useMigrate ? 'db:migrate' : 'db:push'}`)
+  if (useDisposableSchemaPush) {
+    runNpmCommand(['run', 'db:push'], 'npm run db:push (disposable local bootstrap only)')
+  } else {
+    console.log('For an existing or production database, inspect migration history and the relevant runbook before continuing.')
+    runNpmCommand(['run', 'db:deploy:safe'], 'npm run db:deploy:safe')
+  }
   await bootstrapStoreAndOwner(values)
 
   console.log('\nRe-running setup diagnostics...')

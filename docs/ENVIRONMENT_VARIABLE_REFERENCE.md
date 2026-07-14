@@ -12,6 +12,7 @@
 | `DIRECT_URL` | Recommended | Direct Postgres URL used by Prisma tooling/migrations. |
 | `JWT_SECRET` | Yes | Auth JWT signing secret. Use high-entropy value. |
 | `ENCRYPTION_KEY` | Strongly recommended (required in production) | Secret used by integration secret encryption helpers. |
+| `SESSION_LEGACY_TOKEN_CUTOFF` | Required only during legacy-session rollout | Absolute ISO-8601 cutoff for accepting historical plaintext session rows. Set once to deployment time plus seven days; unset or invalid values safely disable legacy-token compatibility. Do not extend it without an intentional security review. |
 | `NEXT_PUBLIC_STORE_URL` | Yes | Public base URL used for setup/deployment checks and links. |
 | `WEBHOOK_RETRY_SECRET` | Yes | Auth secret for `POST /api/webhook-retries/run`. |
 | `JOB_RUNNER_SECRET` | Optional override | Auth secret for `POST /api/jobs/run` (falls back to `WEBHOOK_RETRY_SECRET` when unset). |
@@ -108,7 +109,9 @@
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `DATABASE_URL_TEST` | For integration tests | Disposable Postgres target for `npm run test:integration`. |
+| `DATABASE_URL_TEST` | For integration tests | Disposable Postgres target for `npm run test:integration`. A public schema requires the safeguards below. |
+| `E2E_DATABASE_URL` | Required for public-schema test reset | Must normalize to the exact same protocol, host, port, username, database, and schema as `DATABASE_URL_TEST`. |
+| `DOOPIFY_ALLOW_PUBLIC_TEST_SCHEMA` | Explicit test-only acknowledgement | Set to `1` only for a confirmed disposable public schema. It is converted to an internal child-process permission only after target equality succeeds. |
 
 ## Notes
 

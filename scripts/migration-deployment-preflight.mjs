@@ -1,4 +1,6 @@
 import { config as loadEnv } from 'dotenv'
+import { readdir } from 'node:fs/promises'
+import path from 'node:path'
 import pg from 'pg'
 
 loadEnv({ path: '.env', quiet: true })
@@ -19,7 +21,10 @@ export function evaluateMigrationDeploymentSafety(input) {
   const failures = []
 
   if (input.unknownMigrationHistory) {
-    failures.push('Prisma migration history has an unknown or incomplete table shape; refusing to infer deployment safety.')
+    const unknownNames = Array.isArray(input.unknownMigrationNames) && input.unknownMigrationNames.length
+      ? ` Unknown migration names: ${input.unknownMigrationNames.join(', ')}.`
+      : ''
+    failures.push(`Prisma migration history has an unknown or incomplete table shape; refusing to infer deployment safety.${unknownNames}`)
   }
 
   // A schema which contains any user-owned object is an existing database. The
@@ -70,24 +75,75 @@ function schemaFromConnectionString(connectionString) {
   }
 }
 
-export async function collectDeploymentState(client) {
-  // Do not use a shortlist of Doopify table names. PostgreSQL exposes every
-  // object that could make db push --accept-data-loss destructive here.
+export function validateLocalMigrationNames(names) {
+  if (!names.length || names.some((name) => !/^\d{8}_[a-z0-9_]+$/i.test(name))) {
+    throw new Error('Local Prisma migration directories are missing or malformed; refusing to infer deployment safety.')
+  }
+  if (new Set(names.map((name) => name.toLowerCase())).size !== names.length) {
+    throw new Error('Local Prisma migration directories contain duplicate names; refusing to infer deployment safety.')
+  }
+  return [...names].sort()
+}
+
+export async function discoverLocalMigrationNames(migrationsDirectory = path.resolve(process.cwd(), 'prisma', 'migrations')) {
+  let entries
+  try {
+    entries = await readdir(migrationsDirectory, { withFileTypes: true })
+  } catch {
+    throw new Error('Unable to discover local Prisma migration directories; refusing to infer deployment safety.')
+  }
+
+  return validateLocalMigrationNames(entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name))
+}
+
+export async function collectDeploymentState(client, { migrationsDirectory } = {}) {
+  // A fresh bootstrap is safe only when the target schema contains no
+  // user-created object. Keep extension-owned objects in scope too: they are
+  // still target-schema state that must not be silently baselined.
   const objectResult = await client.query(`
     SELECT count(*)::int AS count
     FROM (
       SELECT c.oid
       FROM pg_class c
       WHERE c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
-        AND c.relkind IN ('r', 'p', 'S', 'v', 'm', 'f')
+        AND c.relkind IN ('r', 'p', 'S', 'v', 'm', 'f', 'i', 'I')
       UNION ALL
       SELECT t.oid
       FROM pg_type t
       WHERE t.typnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
         AND t.typrelid = 0
         AND t.typtype IN ('b', 'c', 'd', 'e', 'm', 'r')
+      UNION ALL
+      SELECT p.oid
+      FROM pg_proc p
+      WHERE p.pronamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
+      UNION ALL
+      SELECT o.oid
+      FROM pg_operator o
+      WHERE o.oprnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
+      UNION ALL
+      SELECT c.oid
+      FROM pg_collation c
+      WHERE c.collnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
+      UNION ALL
+      SELECT e.oid
+      FROM pg_extension e
+      WHERE e.extnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
+      UNION ALL
+      SELECT c.oid
+      FROM pg_ts_config c
+      WHERE c.cfgnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
+      UNION ALL
+      SELECT d.oid
+      FROM pg_ts_dict d
+      WHERE d.dictnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
+      UNION ALL
+      SELECT c.oid
+      FROM pg_conversion c
+      WHERE c.connamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
     ) objects
   `)
+  const localMigrationNames = await discoverLocalMigrationNames(migrationsDirectory)
   const migrationsTableResult = await client.query("SELECT to_regclass('_prisma_migrations') AS table_name")
   const migrationsTableExists = Boolean(migrationsTableResult.rows[0]?.table_name)
   const migrationColumns = migrationsTableExists
@@ -103,10 +159,16 @@ export async function collectDeploymentState(client) {
   const failedMigrationNames = migrationRows
     .filter((row) => !row.finished_at && !row.rolled_back_at)
     .map((row) => row.migration_name)
+  const knownMigrationNames = new Set(localMigrationNames)
+  const unknownMigrationNames = migrationRows
+    .map((row) => row.migration_name)
+    .filter((migrationName) => !knownMigrationNames.has(migrationName))
 
   return {
     migrationsTableExists,
-    unknownMigrationHistory: migrationsTableExists && !hasExpectedMigrationColumns,
+    unknownMigrationHistory: (migrationsTableExists && !hasExpectedMigrationColumns) || unknownMigrationNames.length > 0,
+    unknownMigrationNames,
+    localMigrationNames,
     hasUserSchemaObjects: Number(objectResult.rows[0]?.count || 0) > 0,
     userSchemaObjectCount: Number(objectResult.rows[0]?.count || 0),
     appliedMigrationNames,

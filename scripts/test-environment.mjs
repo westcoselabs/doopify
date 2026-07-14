@@ -22,6 +22,21 @@ export const EXTERNAL_CREDENTIAL_ENV_NAMES = [
   'AWS_ACCESS_KEY_ID',
   'AWS_SECRET_ACCESS_KEY',
   'AWS_SESSION_TOKEN',
+  'BLOB_READ_WRITE_TOKEN',
+  'MEDIA_S3_ACCESS_KEY_ID',
+  'MEDIA_S3_SECRET_ACCESS_KEY',
+  'MEDIA_S3_ENDPOINT',
+  'MEDIA_S3_BUCKET',
+  'MEDIA_S3_REGION',
+  'MEDIA_S3_PUBLIC_URL',
+  'S3_ACCESS_KEY_ID',
+  'S3_SECRET_ACCESS_KEY',
+  'R2_ACCESS_KEY_ID',
+  'R2_SECRET_ACCESS_KEY',
+  'DOOPIFY_LIVE_PROVIDER_SMOKE_TEST',
+  'STRIPE_LIVE_SMOKE_TEST',
+  'SHIPPO_LIVE_SMOKE_TEST',
+  'EASYPOST_LIVE_SMOKE_TEST',
 ]
 
 export const INERT_TEST_PROVIDER_ENV = {
@@ -38,4 +53,11 @@ export function createInertTestEnvironment(parentEnvironment, overrides = {}) {
   const environment = { ...parentEnvironment }
   for (const name of EXTERNAL_CREDENTIAL_ENV_NAMES) delete environment[name]
   return { ...environment, ...INERT_TEST_PROVIDER_ENV, ...overrides }
+}
+
+export function applyInertTestEnvironment(parentEnvironment = process.env, overrides = {}) {
+  const environment = createInertTestEnvironment(parentEnvironment, overrides)
+  for (const name of EXTERNAL_CREDENTIAL_ENV_NAMES) delete process.env[name]
+  Object.assign(process.env, environment)
+  return environment
 }

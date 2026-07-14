@@ -126,7 +126,7 @@ DATABASE_URL_TEST="postgresql://..." npm run test:integration
 
 Never point `DATABASE_URL_TEST` at your development or production database.
 `npm run db:test:reset` rebuilds the integration schema and runs `prisma db push` against `DATABASE_URL_TEST`, so use a disposable test target.
-Use a dedicated test schema in `DATABASE_URL_TEST` (for example `...?schema=doopify_test`) unless you intentionally set `ALLOW_PUBLIC_TEST_SCHEMA=1`.
+Use a dedicated test schema in `DATABASE_URL_TEST` (for example `...?schema=doopify_test`). For a confirmed disposable public schema only, set `E2E_DATABASE_URL` to the exact same target and set `DOOPIFY_ALLOW_PUBLIC_TEST_SCHEMA=1`; the runner refuses any mismatch and passes its internal reset permission only to the database-preparation child.
 
 ---
 

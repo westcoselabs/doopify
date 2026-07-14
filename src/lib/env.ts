@@ -1,9 +1,10 @@
 import { z } from 'zod'
 
-const envSchema = z.object({
+export const envSchema = z.object({
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  SESSION_LEGACY_TOKEN_CUTOFF: z.string().datetime({ offset: true, message: 'SESSION_LEGACY_TOKEN_CUTOFF must be an absolute ISO-8601 timestamp' }).optional(),
   ENCRYPTION_KEY: z.string().trim().min(32, 'ENCRYPTION_KEY must be at least 32 characters').optional(),
   ENCRYPTION_KEY_PREVIOUS: z.string().trim().min(32, 'ENCRYPTION_KEY_PREVIOUS must be at least 32 characters').optional(),
   STRIPE_SECRET_KEY: z.string().min(1).optional(),
