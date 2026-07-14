@@ -44,12 +44,24 @@ export function evaluateMigrationDeploymentSafety(input) {
   }
 }
 
+function quoteIdentifier(value) {
+  return `"${value.replaceAll('"', '""')}"`
+}
+
+function schemaFromConnectionString(connectionString) {
+  try {
+    return new URL(connectionString).searchParams.get('schema') || 'public'
+  } catch {
+    return 'public'
+  }
+}
+
 async function tableExists(client, tableName) {
-  const result = await client.query('SELECT to_regclass($1) AS table_name', [`public.${tableName}`])
+  const result = await client.query('SELECT to_regclass($1) AS table_name', [tableName])
   return Boolean(result.rows[0]?.table_name)
 }
 
-async function collectDeploymentState(client) {
+export async function collectDeploymentState(client) {
   const migrationsTableExists = await tableExists(client, '_prisma_migrations')
   const sessionsTableExists = await tableExists(client, 'sessions')
   const integrationsTableExists = await tableExists(client, 'integrations')
@@ -92,6 +104,7 @@ async function main() {
   const client = new Client({ connectionString })
   try {
     await client.connect()
+    await client.query(`SET search_path TO ${quoteIdentifier(schemaFromConnectionString(connectionString))}`)
     const result = evaluateMigrationDeploymentSafety(await collectDeploymentState(client))
     if (!result.ok) {
       console.error('Migration deployment preflight failed:')

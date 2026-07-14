@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { config as loadEnv } from 'dotenv'
 import pg from 'pg'
+import { collectDeploymentState, evaluateMigrationDeploymentSafety } from './migration-deployment-preflight.mjs'
 
 const { Client } = pg
 
@@ -81,6 +82,40 @@ async function validateFreshMigration() {
   })
 }
 
+async function validateSessionMigrationHistories() {
+  await withTemporarySchema(async ({ schema, databaseUrl }) => {
+    runSafeDeploy(databaseUrl)
+    await withSchemaClient(databaseUrl, schema, async (client) => {
+      const appliedState = await collectDeploymentState(client)
+      const appliedResult = evaluateMigrationDeploymentSafety(appliedState)
+      assert.equal(appliedResult.ok, true, 'the fresh baseline records the destructive migration as applied')
+      assert.equal(appliedResult.state.destructiveSessionMigrationApplied, true)
+      assert.equal(appliedResult.state.compatibilityMigrationApplied, true)
+
+      await client.query('DELETE FROM "_prisma_migrations" WHERE migration_name = $1', ['20260710_hash_persisted_sessions'])
+      const pendingWithoutSessions = evaluateMigrationDeploymentSafety(await collectDeploymentState(client))
+      assert.equal(pendingWithoutSessions.ok, true, 'a pending destructive migration is deployable only when no sessions exist')
+      assert.equal(pendingWithoutSessions.state.destructiveSessionMigrationApplied, false)
+
+      await client.query(`
+        INSERT INTO "users" ("id", "email", "passwordHash", "role", "isActive", "updatedAt")
+        VALUES ('session-history-user', 'session-history@example.com', 'not-a-secret', 'OWNER', true, now())
+      `)
+      await client.query(`
+        INSERT INTO "sessions" ("id", "tokenHash", "token", "userId", "expiresAt")
+        VALUES ('session-history-session', repeat('a', 64), 'legacy-token-not-logged', 'session-history-user', now() + interval '1 day')
+      `)
+      const pendingWithSessions = evaluateMigrationDeploymentSafety(await collectDeploymentState(client))
+      assert.equal(pendingWithSessions.ok, false, 'preflight must fail before deleting active sessions')
+      assert.match(pendingWithSessions.failures.join('\n'), /DELETE FROM sessions/)
+
+      const hashedSession = await client.query('SELECT "tokenHash", "token" FROM "sessions" WHERE "id" = $1', ['session-history-session'])
+      assert.equal(hashedSession.rows[0].tokenHash, 'a'.repeat(64), 'new session storage uses tokenHash')
+      assert.equal(hashedSession.rows[0].token, 'legacy-token-not-logged', 'legacy token remains isolated to its compatibility column')
+    })
+  })
+}
+
 async function validateDuplicateCanonicalization() {
   await withTemporarySchema(async ({ schema, databaseUrl }) => {
     runSafeDeploy(databaseUrl)
@@ -146,5 +181,6 @@ async function validateDuplicateCanonicalization() {
 }
 
 await validateFreshMigration()
+await validateSessionMigrationHistories()
 await validateDuplicateCanonicalization()
-console.log('Remediation migration validation passed (fresh schema and duplicate provider/store scenarios).')
+console.log('Remediation migration validation passed (fresh, session-history, and duplicate provider/store scenarios).')
