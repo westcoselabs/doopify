@@ -1,5 +1,6 @@
 "use client";
 
+import { createElement } from 'react';
 import { CustomersProvider } from "@/context/CustomersContext";
 import { DiscountsProvider } from "@/context/DiscountsContext";
 import { OrdersProvider } from "@/context/OrdersContext";
@@ -21,11 +22,11 @@ export default function DashboardRouteProviders({
 }) {
   let content = children;
 
-  if (customers) content = <CustomersProvider>{content}</CustomersProvider>;
-  if (discounts) content = <DiscountsProvider>{content}</DiscountsProvider>;
-  if (orders) content = <OrdersProvider>{content}</OrdersProvider>;
-  if (products) content = <ProductsProvider>{content}</ProductsProvider>;
-  if (settings) content = <SettingsProvider>{content}</SettingsProvider>;
+  if (customers) content = createElement(CustomersProvider, null, content);
+  if (discounts) content = createElement(DiscountsProvider, null, content);
+  if (orders) content = createElement(OrdersProvider, null, content);
+  if (products) content = createElement(ProductsProvider, null, content);
+  if (settings) content = createElement(SettingsProvider, null, content);
 
   return content;
 }
