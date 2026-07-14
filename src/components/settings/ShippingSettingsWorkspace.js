@@ -753,6 +753,15 @@ export default function ShippingSettingsWorkspace({
     }
   }
 
+  function resetProviderDrawerVerificationState() {
+    providerVerificationGuard.closeDrawer();
+    // Verification ownership is drawer-local. A close must leave no stale
+    // loading/error/message state that can disable the next drawer instance.
+    setProviderVerifyLoading(false);
+    setProviderTestMessage("");
+    setError("");
+  }
+
   async function disconnectProvider() {
     const provider = providerForm.provider;
     if (provider === "NONE") {
@@ -980,7 +989,9 @@ export default function ShippingSettingsWorkspace({
 
   function openProviderDrawerFor(provider) {
     providerVerificationGuard.openDrawer();
+    setProviderVerifyLoading(false);
     setProviderTestMessage("");
+    setError("");
     setProviderForm((current) => ({
       ...current,
       provider,
@@ -988,6 +999,9 @@ export default function ShippingSettingsWorkspace({
       token: "",
     }));
     setProviderDrawerOpen(true);
+    // Canonical server status, not an old verification response, owns the
+    // reopened drawer's connection presentation.
+    void load();
   }
 
   async function savePackage() {
@@ -1825,7 +1839,7 @@ export default function ShippingSettingsWorkspace({
         open={providerDrawerOpen}
         isDirty={Boolean(providerForm.token.trim())}
         onClose={() => {
-          providerVerificationGuard.closeDrawer();
+          resetProviderDrawerVerificationState();
           setProviderDrawerOpen(false);
         }}
         title="Manage provider"

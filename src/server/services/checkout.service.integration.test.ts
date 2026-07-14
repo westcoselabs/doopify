@@ -481,6 +481,56 @@ runIntegration('checkout service integration', () => {
     await prisma.$disconnect()
   }, 60_000)
 
+  it('creates a new customer and initial checkout address atomically during webhook-only finalization', async () => {
+    const { variant } = await seedVariant({ paymentIntentId: 'pi_address_new_customer', inventory: 5 })
+
+    const checkout = await createCheckoutPaymentIntent({
+      email: 'new-address@example.com',
+      items: [{ variantId: variant.id, quantity: 1 }],
+      shippingAddress: address,
+    })
+
+    expect(await prisma.order.count()).toBe(0)
+    await completeCheckoutFromPaymentIntent({ id: checkout.paymentIntentId, amount: Math.round(checkout.total * 100), currency: 'usd', status: 'succeeded' })
+
+    const customer = await prisma.customer.findUniqueOrThrow({
+      where: { email: 'new-address@example.com' },
+      include: { addresses: true },
+    })
+    expect(customer.addresses).toHaveLength(1)
+    expect(customer.addresses[0]).toMatchObject({ address1: address.address1, postalCode: address.postalCode })
+    expect(await prisma.checkoutSession.count({ where: { paymentIntentId: checkout.paymentIntentId } })).toBe(1)
+    expect(await prisma.order.count()).toBe(1)
+  })
+
+  it('adds the checkout address for an existing customer without one and does not duplicate an existing match', async () => {
+    const { variant } = await seedVariant({ paymentIntentId: 'pi_address_existing_customer', inventory: 5 })
+    const customer = await prisma.customer.create({ data: { email: 'existing-address@example.com', tags: [] } })
+
+    const first = await createCheckoutPaymentIntent({ email: customer.email, items: [{ variantId: variant.id, quantity: 1 }], shippingAddress: address })
+    await completeCheckoutFromPaymentIntent({ id: first.paymentIntentId, amount: Math.round(first.total * 100), currency: 'usd', status: 'succeeded' })
+    const second = await createCheckoutPaymentIntent({ email: customer.email, items: [{ variantId: variant.id, quantity: 1 }], shippingAddress: address })
+    await completeCheckoutFromPaymentIntent({ id: second.paymentIntentId, amount: Math.round(second.total * 100), currency: 'usd', status: 'succeeded' })
+
+    expect(await prisma.customerAddress.count({ where: { customerId: customer.id } })).toBe(1)
+  })
+
+  it('serializes concurrent initial-address persistence and keeps order creation webhook-only', async () => {
+    const { variant } = await seedVariant({ paymentIntentId: 'pi_address_concurrent_customer', inventory: 5 })
+    const customer = await prisma.customer.create({ data: { email: 'concurrent-address@example.com', tags: [] } })
+
+    const first = await createCheckoutPaymentIntent({ email: customer.email, items: [{ variantId: variant.id, quantity: 1 }], shippingAddress: address })
+
+    expect(await prisma.order.count()).toBe(0)
+    await Promise.all([
+      completeCheckoutFromPaymentIntent({ id: first.paymentIntentId, amount: Math.round(first.total * 100), currency: 'usd', status: 'succeeded' }),
+      completeCheckoutFromPaymentIntent({ id: first.paymentIntentId, amount: Math.round(first.total * 100), currency: 'usd', status: 'succeeded' }),
+    ])
+    expect(await prisma.customerAddress.count({ where: { customerId: customer.id } })).toBe(1)
+    expect(await prisma.order.count()).toBe(1)
+    expect(await prisma.checkoutSession.count({ where: { paymentIntentId: first.paymentIntentId } })).toBe(1)
+  })
+
   it('creates a paid order and decrements inventory after verified payment success', async () => {
     const { variant } = await seedCheckout({
       paymentIntentId: 'pi_integration_success',

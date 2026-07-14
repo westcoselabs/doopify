@@ -37,4 +37,16 @@ describe('shipping provider verification guard', () => {
     guard.openDrawer()
     expect(guard.isCurrent(request)).toBe(false)
   })
+
+  it('keeps a reopened drawer owned only by its new verification request', () => {
+    const guard = createProviderVerificationGuard()
+    guard.openDrawer()
+    const oldRequest = guard.begin()
+    guard.closeDrawer()
+    guard.openDrawer()
+    const newRequest = guard.begin()
+
+    expect(guard.isCurrent(oldRequest)).toBe(false)
+    expect(guard.isCurrent(newRequest)).toBe(true)
+  })
 })

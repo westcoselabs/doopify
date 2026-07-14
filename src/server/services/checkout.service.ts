@@ -40,7 +40,7 @@ import { markCheckoutRecoveredByPaymentIntent } from '@/server/services/abandone
 import { getBuyerDigitalDownloadAvailabilityForPaidOrder } from '@/server/services/digital-download-delivery.service'
 import { issueDigitalDownloadGrantsForPaidOrder } from '@/server/services/digital-grant-issuance.service'
 import { canPurchaseVariant } from '@/server/services/product-availability.service'
-import { addCustomerAddress, createCustomer, getCustomerByEmail } from '@/server/services/customer.service'
+import { createCustomer, getCustomerByEmail } from '@/server/services/customer.service'
 import { createOrder, getOrderByPaymentIntentId } from '@/server/services/order.service'
 import { getStoreSettings } from '@/server/services/settings.service'
 
@@ -562,12 +562,27 @@ async function resolveCheckoutCustomer(payload: CheckoutPayload) {
     }
   }
 
-  if (
-    customer &&
-    customer.addresses.length === 0 &&
-    addressData
-  ) {
-    await addCustomerAddress(customer.id, addressData)
+  if (customer && customer.addresses.length === 0 && addressData) {
+    const customerId = customer.id
+    // Two checkout requests for an existing customer without addresses can
+    // arrive together. Lock that customer row and re-check inside the
+    // transaction so exactly one request creates the initial address.
+    await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "customers" WHERE "id" = ${customerId} FOR UPDATE`)
+      const existingAddress = await tx.customerAddress.findFirst({
+        where: { customerId },
+        select: { id: true },
+      })
+      if (!existingAddress) {
+        await tx.customerAddress.create({
+          data: { customerId, ...addressData },
+        })
+      }
+    })
+    customer = await getCustomerByEmail(payload.email)
+    if (!customer) {
+      throw new Error('Checkout customer disappeared while persisting the address.')
+    }
   }
 
   return customer

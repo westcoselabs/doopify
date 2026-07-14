@@ -1348,7 +1348,9 @@ async function runDeploy() {
 
   if (runDbPrecheck) {
     await runDbCheck()
-    runNpmCommand(['run', 'db:preflight-migrations'], 'npm run db:preflight-migrations')
+    // The deploy wrapper owns both catalog safety checks and the migration
+    // command. Never split preflight from deploy in the application CLI.
+    runNpmCommand(['run', 'db:deploy:safe'], 'npm run db:deploy:safe')
   }
 
   if (runWebhookSetup) {

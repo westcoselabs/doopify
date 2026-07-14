@@ -1,22 +1,22 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { spawn, spawnSync } from 'node:child_process'
 import { config as loadEnv } from 'dotenv'
 import pg from 'pg'
-import { collectDeploymentState, evaluateMigrationDeploymentSafety } from './migration-deployment-preflight.mjs'
+
+import { createInertTestEnvironment } from './test-environment.mjs'
 
 const { Client } = pg
+const COMMAND_TIMEOUT_MS = 120_000
 
-loadEnv({ path: '.env' })
-loadEnv({ path: '.env.local', override: true })
+loadEnv({ path: '.env', quiet: true })
+loadEnv({ path: '.env.local', override: true, quiet: true })
 
 const testUrl = String(process.env.DATABASE_URL_TEST || '').trim()
-if (!testUrl) throw new Error('DATABASE_URL_TEST is required for migration validation.')
+const e2eUrl = String(process.env.E2E_DATABASE_URL || '').trim()
+if (!testUrl || !e2eUrl) throw new Error('DATABASE_URL_TEST and E2E_DATABASE_URL are required for migration validation.')
+if (testUrl !== e2eUrl) throw new Error('DATABASE_URL_TEST and E2E_DATABASE_URL must identify the same disposable target.')
 if (testUrl === process.env.DATABASE_URL) throw new Error('DATABASE_URL_TEST must not match DATABASE_URL.')
-
-const configuredSchema = new URL(testUrl).searchParams.get('schema') || 'public'
-if (configuredSchema === 'public') throw new Error('Migration validation requires a dedicated non-public test schema.')
 
 function quoteIdentifier(value) {
   return `"${value.replaceAll('"', '""')}"`
@@ -32,17 +32,76 @@ function schemaUrl(schema) {
   return url.toString()
 }
 
-function runSafeDeploy(databaseUrl) {
+function childEnvironment(databaseUrl) {
+  return createInertTestEnvironment(process.env, {
+    DATABASE_URL: databaseUrl,
+    DATABASE_URL_TEST: testUrl,
+    DIRECT_URL: databaseUrl,
+    NODE_ENV: 'test',
+    DOOPIFY_MIGRATION_TIMEOUT_MS: String(COMMAND_TIMEOUT_MS),
+  })
+}
+
+function npmInvocation(args, databaseUrl, allowFailure = false) {
+  const npmExecPath = process.env.npm_execpath
+  const command = npmExecPath ? process.execPath : process.platform === 'win32' ? 'npm.cmd' : 'npm'
+  const commandArgs = npmExecPath ? [npmExecPath, ...args] : args
+  const result = spawnSync(command, commandArgs, {
+    cwd: process.cwd(),
+    env: childEnvironment(databaseUrl),
+    stdio: 'inherit',
+    timeout: COMMAND_TIMEOUT_MS + 10_000,
+  })
+  if (result.error) throw result.error
+  if (result.signal) throw new Error(`Command terminated by ${result.signal}: npm ${args.join(' ')}`)
+  if (!allowFailure && result.status !== 0) throw new Error(`Command failed: npm ${args.join(' ')}`)
+  return result.status ?? 1
+}
+
+function runSafeDeploy(databaseUrl, allowFailure = false) {
+  return npmInvocation(['run', 'db:deploy:safe'], databaseUrl, allowFailure)
+}
+
+function runMigrationResolve(databaseUrl, status, migration) {
+  return npmInvocation(['exec', '--', 'prisma', 'migrate', 'resolve', `--${status}`, migration], databaseUrl)
+}
+
+function runSafeDeployConcurrentWithSession(databaseUrl, insertSession) {
   const npmExecPath = process.env.npm_execpath
   const command = npmExecPath ? process.execPath : process.platform === 'win32' ? 'npm.cmd' : 'npm'
   const args = npmExecPath ? [npmExecPath, 'run', 'db:deploy:safe'] : ['run', 'db:deploy:safe']
-  const result = spawnSync(command, args, {
-    cwd: process.cwd(),
-    env: { ...process.env, DATABASE_URL: databaseUrl },
-    stdio: 'inherit',
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: process.cwd(),
+      env: childEnvironment(databaseUrl),
+      stdio: 'inherit',
+    })
+    const timer = setTimeout(() => {
+      child.kill()
+      reject(new Error('safe migration deployment timed out during session-race regression.'))
+    }, COMMAND_TIMEOUT_MS + 10_000)
+    void (async () => {
+      try {
+        // This insertion happens while the supported wrapper is running. The
+        // new unconditional existing-schema refusal makes the old TOCTOU path
+        // impossible regardless of whether it lands before or after preflight.
+        await insertSession()
+      } catch (error) {
+        child.kill()
+        clearTimeout(timer)
+        reject(error)
+      }
+    })()
+    child.on('error', (error) => {
+      clearTimeout(timer)
+      reject(error)
+    })
+    child.on('exit', (code, signal) => {
+      clearTimeout(timer)
+      if (signal) reject(new Error(`safe migration deployment terminated by ${signal}`))
+      else resolve(code ?? 1)
+    })
   })
-  if (result.error) throw result.error
-  if (result.status !== 0) throw new Error('safe migration deployment failed.')
 }
 
 async function withTemporarySchema(callback) {
@@ -70,117 +129,118 @@ async function withSchemaClient(databaseUrl, schema, callback) {
   }
 }
 
-async function validateFreshMigration() {
+async function assertRefusesAndPreserves(label, setup, verify) {
   await withTemporarySchema(async ({ schema, databaseUrl }) => {
-    runSafeDeploy(databaseUrl)
+    await withSchemaClient(databaseUrl, schema, setup)
+    assert.notEqual(runSafeDeploy(databaseUrl, true), 0, `${label} must be rejected by the actual safe deploy command`)
+    await withSchemaClient(databaseUrl, schema, verify)
+  })
+}
+
+async function validateSchemaEmptiness() {
+  await assertRefusesAndPreserves(
+    'unrelated table',
+    (client) => client.query('CREATE TABLE unrelated_preserved (id integer PRIMARY KEY)'),
+    async (client) => assert.equal((await client.query("SELECT to_regclass('unrelated_preserved') AS name")).rows[0].name, 'unrelated_preserved')
+  )
+  await assertRefusesAndPreserves(
+    'unrelated enum',
+    (client) => client.query("CREATE TYPE unrelated_state AS ENUM ('safe')"),
+    async (client) => assert.equal((await client.query("SELECT to_regtype('unrelated_state') AS name")).rows[0].name, 'unrelated_state')
+  )
+  await assertRefusesAndPreserves(
+    'partial Doopify schema',
+    (client) => client.query('CREATE TABLE stores (id text PRIMARY KEY, name text NOT NULL)'),
+    async (client) => assert.equal((await client.query("SELECT to_regclass('stores') AS name")).rows[0].name, 'stores')
+  )
+  await assertRefusesAndPreserves(
+    'incomplete migration history',
+    async (client) => {
+      await client.query('CREATE TABLE "_prisma_migrations" (migration_name text PRIMARY KEY, finished_at timestamptz)')
+      await client.query("INSERT INTO \"_prisma_migrations\" (migration_name, finished_at) VALUES ('unknown_history', now())")
+    },
+    async (client) => assert.equal((await client.query('SELECT count(*)::int AS count FROM "_prisma_migrations"')).rows[0].count, 1)
+  )
+}
+
+async function validateActualDeploymentAndHistories() {
+  await withTemporarySchema(async ({ schema, databaseUrl }) => {
+    // Truly empty schema: the only allowed db push/baseline path.
+    assert.equal(runSafeDeploy(databaseUrl), 0)
     await withSchemaClient(databaseUrl, schema, async (client) => {
       const migrations = await client.query('SELECT count(*)::int AS count FROM "_prisma_migrations" WHERE finished_at IS NOT NULL')
       const tables = await client.query("SELECT to_regclass('stores') AS stores, to_regclass('integrations') AS integrations, to_regclass('sessions') AS sessions")
-      assert.ok(migrations.rows[0].count > 0, 'fresh schema must record applied migrations')
+      assert.ok(migrations.rows[0].count > 0, 'fresh schema must record explicitly baselined migrations')
       assert.deepEqual(tables.rows[0], { stores: 'stores', integrations: 'integrations', sessions: 'sessions' })
     })
-  })
-}
 
-async function validateSessionMigrationHistories() {
-  await withTemporarySchema(async ({ schema, databaseUrl }) => {
-    runSafeDeploy(databaseUrl)
+    // Existing history with the destructive session migration made pending.
     await withSchemaClient(databaseUrl, schema, async (client) => {
-      const appliedState = await collectDeploymentState(client)
-      const appliedResult = evaluateMigrationDeploymentSafety(appliedState)
-      assert.equal(appliedResult.ok, true, 'the fresh baseline records the destructive migration as applied')
-      assert.equal(appliedResult.state.destructiveSessionMigrationApplied, true)
-      assert.equal(appliedResult.state.compatibilityMigrationApplied, true)
-
       await client.query('DELETE FROM "_prisma_migrations" WHERE migration_name = $1', ['20260710_hash_persisted_sessions'])
-      const pendingWithoutSessions = evaluateMigrationDeploymentSafety(await collectDeploymentState(client))
-      assert.equal(pendingWithoutSessions.ok, true, 'a pending destructive migration is deployable only when no sessions exist')
-      assert.equal(pendingWithoutSessions.state.destructiveSessionMigrationApplied, false)
-
-      await client.query(`
-        INSERT INTO "users" ("id", "email", "passwordHash", "role", "isActive", "updatedAt")
-        VALUES ('session-history-user', 'session-history@example.com', 'not-a-secret', 'OWNER', true, now())
-      `)
-      await client.query(`
-        INSERT INTO "sessions" ("id", "tokenHash", "token", "userId", "expiresAt")
-        VALUES ('session-history-session', repeat('a', 64), 'legacy-token-not-logged', 'session-history-user', now() + interval '1 day')
-      `)
-      const pendingWithSessions = evaluateMigrationDeploymentSafety(await collectDeploymentState(client))
-      assert.equal(pendingWithSessions.ok, false, 'preflight must fail before deleting active sessions')
-      assert.match(pendingWithSessions.failures.join('\n'), /DELETE FROM sessions/)
-
-      const hashedSession = await client.query('SELECT "tokenHash", "token" FROM "sessions" WHERE "id" = $1', ['session-history-session'])
-      assert.equal(hashedSession.rows[0].tokenHash, 'a'.repeat(64), 'new session storage uses tokenHash')
-      assert.equal(hashedSession.rows[0].token, 'legacy-token-not-logged', 'legacy token remains isolated to its compatibility column')
+      await client.query(`INSERT INTO "users" ("id", "email", "passwordHash", "role", "isActive", "updatedAt") VALUES ('session-race-user', 'session-race@example.com', 'not-a-secret', 'OWNER', true, now())`)
     })
-  })
-}
+    const raceStatus = await runSafeDeployConcurrentWithSession(databaseUrl, async () => {
+      await withSchemaClient(databaseUrl, schema, (client) => client.query(`INSERT INTO "sessions" ("id", "tokenHash", "token", "userId", "expiresAt") VALUES ('session-race-session', repeat('a', 64), 'legacy-test-token', 'session-race-user', now() + interval '1 day')`))
+    })
+    assert.notEqual(raceStatus, 0, 'pending destructive session history must refuse the actual wrapper')
+    await withSchemaClient(databaseUrl, schema, async (client) => {
+      assert.equal((await client.query("SELECT count(*)::int AS count FROM \"sessions\" WHERE \"id\" = 'session-race-session'")).rows[0].count, 1, 'a session created during the former race survives')
+      assert.equal((await client.query("SELECT count(*)::int AS count FROM \"_prisma_migrations\" WHERE migration_name = '20260710_hash_persisted_sessions' AND finished_at IS NOT NULL")).rows[0].count, 0)
+    })
 
-async function validateDuplicateCanonicalization() {
-  await withTemporarySchema(async ({ schema, databaseUrl }) => {
-    runSafeDeploy(databaseUrl)
-    const correctiveSql = await readFile('prisma/migrations/20260714_correct_provider_store_singletons/migration.sql', 'utf8')
+    // Operator-reviewed recovery restores only migration history, never deleted
+    // session data, then lets the safe wrapper continue.
+    runMigrationResolve(databaseUrl, 'applied', '20260710_hash_persisted_sessions')
 
+    // Pending unsafe singleton predecessor with duplicates: wrapper fails. The
+    // documented resolve path then applies the corrective migration itself.
     await withSchemaClient(databaseUrl, schema, async (client) => {
       await client.query('DROP INDEX IF EXISTS "integrations_providerKey_key"')
       await client.query('DROP INDEX IF EXISTS "stores_singletonKey_key"')
       await client.query('UPDATE "integrations" SET "providerKey" = NULL')
       await client.query('UPDATE "stores" SET "singletonKey" = NULL')
-
-      await client.query(`
-        INSERT INTO "stores" ("id", "name", "createdAt", "updatedAt") VALUES
-          ('store-old', 'Old store', now() - interval '2 days', now()),
-          ('store-new', 'New store', now() - interval '1 day', now())
-      `)
-      await client.query(`
-        INSERT INTO "integrations" ("id", "name", "type", "status", "createdAt", "updatedAt") VALUES
-          ('stripe-canonical', 'Stripe canonical', 'PAYMENT_STRIPE', 'ACTIVE', now() - interval '2 days', now() - interval '1 day'),
-          ('stripe-newer', 'Stripe incomplete', 'PAYMENT_STRIPE', 'ACTIVE', now() - interval '1 day', now()),
-          ('shippo-canonical', 'Shippo canonical', 'SHIPPING_SHIPPO', 'ACTIVE', now() - interval '2 days', now() - interval '1 day'),
-          ('shippo-legacy', 'Shippo legacy', 'SHIPPING_SHIPPO', 'INACTIVE', now() - interval '1 day', now()),
-          ('easypost-canonical', 'EasyPost canonical', 'SHIPPING_EASYPOST', 'ACTIVE', now() - interval '2 days', now() - interval '1 day'),
-          ('easypost-newer', 'EasyPost incomplete', 'SHIPPING_EASYPOST', 'ACTIVE', now() - interval '1 day', now())
-      `)
-      await client.query(`
-        INSERT INTO "integration_secrets" ("id", "integrationId", "key", "value") VALUES
-          ('stripe-pk', 'stripe-canonical', 'PUBLISHABLE_KEY', 'redacted'),
-          ('stripe-sk', 'stripe-canonical', 'SECRET_KEY', 'redacted'),
-          ('stripe-verified', 'stripe-canonical', 'META_LAST_VERIFIED_AT', 'redacted'),
-          ('shippo-key', 'shippo-canonical', 'API_KEY', 'redacted'),
-          ('easypost-key', 'easypost-canonical', 'API_KEY', 'redacted')
-      `)
-
-      await client.query(`BEGIN;\n${correctiveSql}\nCOMMIT;`)
-
-      const providers = await client.query(`
-        SELECT "type", "id", "providerKey", "status"
-        FROM "integrations"
-        WHERE "type" IN ('PAYMENT_STRIPE', 'SHIPPING_SHIPPO', 'SHIPPING_EASYPOST')
-        ORDER BY "type", "id"
-      `)
-      const canonical = new Map(providers.rows.filter((row) => row.providerKey).map((row) => [row.type, row.id]))
-      assert.deepEqual(Object.fromEntries(canonical), {
-        PAYMENT_STRIPE: 'stripe-canonical',
-        SHIPPING_SHIPPO: 'shippo-canonical',
-        SHIPPING_EASYPOST: 'easypost-canonical',
-      })
-      assert.ok(providers.rows.filter((row) => !row.providerKey).every((row) => row.status === 'INACTIVE'))
-
+      await client.query(`INSERT INTO "stores" ("id", "name", "createdAt", "updatedAt") VALUES ('store-old', 'Old store', now() - interval '2 days', now()), ('store-new', 'New store', now() - interval '1 day', now())`)
+      await client.query(`INSERT INTO "integrations" ("id", "name", "type", "status", "createdAt", "updatedAt") VALUES ('stripe-old', 'Stripe old', 'PAYMENT_STRIPE', 'ACTIVE', now() - interval '2 days', now()), ('stripe-new', 'Stripe new', 'PAYMENT_STRIPE', 'ACTIVE', now() - interval '1 day', now()), ('shippo-old', 'Shippo old', 'SHIPPING_SHIPPO', 'ACTIVE', now() - interval '2 days', now()), ('shippo-new', 'Shippo new', 'SHIPPING_SHIPPO', 'ACTIVE', now() - interval '1 day', now()), ('easypost-old', 'EasyPost old', 'SHIPPING_EASYPOST', 'ACTIVE', now() - interval '2 days', now()), ('easypost-new', 'EasyPost new', 'SHIPPING_EASYPOST', 'ACTIVE', now() - interval '1 day', now())`)
+      await client.query('DELETE FROM "_prisma_migrations" WHERE migration_name IN ($1, $2)', ['20260711_provider_and_store_singletons', '20260714_correct_provider_store_singletons'])
+    })
+    assert.notEqual(runSafeDeploy(databaseUrl, true), 0, 'pending 20260711 with duplicates must refuse the actual wrapper')
+    runMigrationResolve(databaseUrl, 'applied', '20260711_provider_and_store_singletons')
+    assert.equal(runSafeDeploy(databaseUrl), 0, 'documented operator path must apply the corrective migration through safe deploy')
+    await withSchemaClient(databaseUrl, schema, async (client) => {
+      const providers = await client.query(`SELECT "type", "id", "providerKey", "status" FROM "integrations" WHERE "type" IN ('PAYMENT_STRIPE', 'SHIPPING_SHIPPO', 'SHIPPING_EASYPOST') ORDER BY "type", "id"`)
+      assert.equal(providers.rows.filter((row) => row.providerKey).length, 3, 'one canonical row per provider must remain')
+      assert.ok(providers.rows.filter((row) => !row.providerKey).every((row) => row.status === 'INACTIVE'), 'duplicates must be preserved but inactive')
       const stores = await client.query('SELECT "id", "singletonKey" FROM "stores" ORDER BY "id"')
-      assert.equal(stores.rows.filter((row) => row.singletonKey === 'PRIMARY').length, 1)
-      assert.equal(stores.rows.find((row) => row.singletonKey === 'PRIMARY')?.id, 'store-old')
+      assert.equal(stores.rows.filter((row) => row.singletonKey === 'PRIMARY').length, 1, 'one canonical primary Store must remain')
+      const indexes = await client.query("SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() AND indexname IN ('integrations_providerKey_key', 'stores_singletonKey_key')")
+      assert.equal(indexes.rowCount, 2, 'corrective migration must create both unique indexes')
+      const histories = await client.query("SELECT migration_name FROM \"_prisma_migrations\" WHERE migration_name IN ('20260711_provider_and_store_singletons', '20260714_correct_provider_store_singletons') AND finished_at IS NOT NULL ORDER BY migration_name")
+      assert.deepEqual(histories.rows.map((row) => row.migration_name), ['20260711_provider_and_store_singletons', '20260714_correct_provider_store_singletons'])
+    })
+    assert.equal(runSafeDeploy(databaseUrl), 0, 'fully corrected history must be accepted by the actual safe deploy command')
 
-      const indexes = await client.query(`
-        SELECT indexname FROM pg_indexes
-        WHERE schemaname = current_schema()
-          AND indexname IN ('integrations_providerKey_key', 'stores_singletonKey_key')
-      `)
-      assert.equal(indexes.rowCount, 2, 'corrective migration must recreate singleton unique indexes')
+    // A failed predecessor is a distinct operational state. Recreate it with
+    // duplicate data, prove the wrapper refuses it, then exercise the exact
+    // reviewed rolled-back -> applied -> safe-deploy recovery sequence.
+    await withSchemaClient(databaseUrl, schema, async (client) => {
+      await client.query('DROP INDEX IF EXISTS "integrations_providerKey_key"')
+      await client.query('UPDATE "integrations" SET "providerKey" = NULL WHERE "type" = \'SHIPPING_SHIPPO\'')
+      await client.query(`INSERT INTO "integrations" ("id", "name", "type", "status", "createdAt", "updatedAt") VALUES ('shippo-failed-history-duplicate', 'Shippo failed-history duplicate', 'SHIPPING_SHIPPO', 'ACTIVE', now(), now())`)
+      await client.query('DELETE FROM "_prisma_migrations" WHERE migration_name = $1', ['20260714_correct_provider_store_singletons'])
+      await client.query('UPDATE "_prisma_migrations" SET finished_at = NULL, rolled_back_at = NULL WHERE migration_name = $1', ['20260711_provider_and_store_singletons'])
+    })
+    assert.notEqual(runSafeDeploy(databaseUrl, true), 0, 'failed 20260711 history must refuse the actual wrapper')
+    runMigrationResolve(databaseUrl, 'rolled-back', '20260711_provider_and_store_singletons')
+    runMigrationResolve(databaseUrl, 'applied', '20260711_provider_and_store_singletons')
+    assert.equal(runSafeDeploy(databaseUrl), 0, 'failed singleton history must recover through the documented operator path')
+    await withSchemaClient(databaseUrl, schema, async (client) => {
+      const rows = await client.query('SELECT count(*)::int AS count FROM "integrations" WHERE "type" = \'SHIPPING_SHIPPO\' AND "providerKey" = \'SHIPPO\'')
+      assert.equal(rows.rows[0].count, 1, 'failed-history remediation must leave one Shippo canonical key')
     })
   })
 }
 
-await validateFreshMigration()
-await validateSessionMigrationHistories()
-await validateDuplicateCanonicalization()
-console.log('Remediation migration validation passed (fresh, session-history, and duplicate provider/store scenarios).')
+console.log('Starting real PostgreSQL remediation migration validation (temporary schemas only).')
+await validateSchemaEmptiness()
+await validateActualDeploymentAndHistories()
+console.log('Remediation migration validation passed: empty, partial/unknown refusal, session race, singleton remediation, and corrected history.')

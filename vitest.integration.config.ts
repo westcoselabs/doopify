@@ -14,7 +14,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     setupFiles: ['./vitest.setup.ts'],
-    include: ['src/**/*.integration.test.ts'],
+    include: ['src/**/*.integration.test.ts', 'src/**/*.db.test.ts'],
     passWithNoTests: true,
     testTimeout: 60_000,
   },

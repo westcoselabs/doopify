@@ -1,34 +1,47 @@
 import { config as loadEnv } from 'dotenv'
 import pg from 'pg'
 
-loadEnv({ path: '.env' })
-loadEnv({ path: '.env.local', override: true })
+loadEnv({ path: '.env', quiet: true })
+loadEnv({ path: '.env.local', override: true, quiet: true })
 
 const { Client } = pg
-const DESTRUCTIVE_SESSION_MIGRATION = '20260710_hash_persisted_sessions'
-const UNSAFE_PROVIDER_SINGLETON_MIGRATION = '20260711_provider_and_store_singletons'
-const SESSION_COMPATIBILITY_MIGRATION = '20260713_session_hash_compatibility'
+export const DESTRUCTIVE_SESSION_MIGRATION = '20260710_hash_persisted_sessions'
+export const UNSAFE_PROVIDER_SINGLETON_MIGRATION = '20260711_provider_and_store_singletons'
+export const SESSION_COMPATIBILITY_MIGRATION = '20260713_session_hash_compatibility'
+export const CORRECTIVE_PROVIDER_SINGLETON_MIGRATION = '20260714_correct_provider_store_singletons'
 
 export function evaluateMigrationDeploymentSafety(input) {
   const applied = new Set(input.appliedMigrationNames)
+  const failed = new Set(input.failedMigrationNames || [])
   const destructiveSessionMigrationApplied = applied.has(DESTRUCTIVE_SESSION_MIGRATION)
   const unsafeProviderMigrationApplied = applied.has(UNSAFE_PROVIDER_SINGLETON_MIGRATION)
   const compatibilityMigrationApplied = applied.has(SESSION_COMPATIBILITY_MIGRATION)
   const failures = []
 
-  if (!input.migrationsTableExists && input.hasApplicationTables) {
-    failures.push('Prisma migration history is missing while application tables exist; refusing to infer deployment safety.')
+  if (input.unknownMigrationHistory) {
+    failures.push('Prisma migration history has an unknown or incomplete table shape; refusing to infer deployment safety.')
   }
 
-  if (!destructiveSessionMigrationApplied && input.sessionsTableExists && input.sessionCount > 0) {
+  // A schema which contains any user-owned object is an existing database. The
+  // historical session migration must never be allowed to run there: checking
+  // a session count first leaves a TOCTOU window before Prisma starts deploy.
+  if (input.hasUserSchemaObjects && !destructiveSessionMigrationApplied) {
     failures.push(
-      `${DESTRUCTIVE_SESSION_MIGRATION} is pending and ${input.sessionCount} persisted session(s) exist. Refusing to run its DELETE FROM sessions.`
+      `${DESTRUCTIVE_SESSION_MIGRATION} is pending on an existing schema. Refusing to run its historical DELETE FROM sessions; resolve the reviewed migration history before deployment.`
     )
   }
 
-  if (!unsafeProviderMigrationApplied && input.providerDuplicateCount > 0) {
+  if (!input.migrationsTableExists && input.hasUserSchemaObjects) {
+    failures.push('Prisma migration history is missing while user-created schema objects exist; refusing to infer deployment safety.')
+  }
+
+  if (failed.has(UNSAFE_PROVIDER_SINGLETON_MIGRATION)) {
     failures.push(
-      `${UNSAFE_PROVIDER_SINGLETON_MIGRATION} is pending and ${input.providerDuplicateCount} duplicate built-in provider group(s) exist. It cannot create its unique index safely.`
+      `${UNSAFE_PROVIDER_SINGLETON_MIGRATION} previously failed. Follow docs/PROVIDER_STORE_SINGLETON_MIGRATION_RUNBOOK.md to inspect and explicitly resolve its history before deployment.`
+    )
+  } else if (!unsafeProviderMigrationApplied && input.hasUserSchemaObjects) {
+    failures.push(
+      `${UNSAFE_PROVIDER_SINGLETON_MIGRATION} is pending on an existing schema. Do not run its historical unique-index SQL; follow docs/PROVIDER_STORE_SINGLETON_MIGRATION_RUNBOOK.md.`
     )
   }
 
@@ -39,7 +52,8 @@ export function evaluateMigrationDeploymentSafety(input) {
       destructiveSessionMigrationApplied,
       unsafeProviderMigrationApplied,
       compatibilityMigrationApplied,
-      freshDatabase: !input.migrationsTableExists && !input.hasApplicationTables,
+      correctiveProviderSingletonMigrationApplied: applied.has(CORRECTIVE_PROVIDER_SINGLETON_MIGRATION),
+      freshDatabase: !input.hasUserSchemaObjects,
     },
   }
 }
@@ -56,40 +70,47 @@ function schemaFromConnectionString(connectionString) {
   }
 }
 
-async function tableExists(client, tableName) {
-  const result = await client.query('SELECT to_regclass($1) AS table_name', [tableName])
-  return Boolean(result.rows[0]?.table_name)
-}
-
 export async function collectDeploymentState(client) {
-  const migrationsTableExists = await tableExists(client, '_prisma_migrations')
-  const sessionsTableExists = await tableExists(client, 'sessions')
-  const integrationsTableExists = await tableExists(client, 'integrations')
-  const storesTableExists = await tableExists(client, 'stores')
-  const appliedMigrationNames = migrationsTableExists
-    ? (await client.query('SELECT migration_name FROM "_prisma_migrations" WHERE finished_at IS NOT NULL AND rolled_back_at IS NULL')).rows.map((row) => row.migration_name)
+  // Do not use a shortlist of Doopify table names. PostgreSQL exposes every
+  // object that could make db push --accept-data-loss destructive here.
+  const objectResult = await client.query(`
+    SELECT count(*)::int AS count
+    FROM (
+      SELECT c.oid
+      FROM pg_class c
+      WHERE c.relnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
+        AND c.relkind IN ('r', 'p', 'S', 'v', 'm', 'f')
+      UNION ALL
+      SELECT t.oid
+      FROM pg_type t
+      WHERE t.typnamespace = (SELECT oid FROM pg_namespace WHERE nspname = current_schema())
+        AND t.typrelid = 0
+        AND t.typtype IN ('b', 'c', 'd', 'e', 'm', 'r')
+    ) objects
+  `)
+  const migrationsTableResult = await client.query("SELECT to_regclass('_prisma_migrations') AS table_name")
+  const migrationsTableExists = Boolean(migrationsTableResult.rows[0]?.table_name)
+  const migrationColumns = migrationsTableExists
+    ? (await client.query(`SELECT column_name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = '_prisma_migrations'`)).rows.map((row) => row.column_name)
     : []
-  const sessionCount = sessionsTableExists ? Number((await client.query('SELECT count(*)::int AS count FROM "sessions"')).rows[0]?.count || 0) : 0
-  const providerDuplicateCount = integrationsTableExists
-    ? Number((await client.query(`
-        SELECT count(*)::int AS count
-        FROM (
-          SELECT "type"
-          FROM "integrations"
-          WHERE "type" IN ('PAYMENT_STRIPE', 'SHIPPING_SHIPPO', 'SHIPPING_EASYPOST', 'EMAIL_RESEND', 'EMAIL_SMTP')
-          GROUP BY "type"
-          HAVING count(*) > 1
-        ) duplicates
-      `)).rows[0]?.count || 0)
-    : 0
+  const hasExpectedMigrationColumns = ['migration_name', 'finished_at', 'rolled_back_at'].every((name) => migrationColumns.includes(name))
+  const migrationRows = migrationsTableExists && hasExpectedMigrationColumns
+    ? (await client.query('SELECT migration_name, finished_at, rolled_back_at FROM "_prisma_migrations"')).rows
+    : []
+  const appliedMigrationNames = migrationRows
+    .filter((row) => row.finished_at && !row.rolled_back_at)
+    .map((row) => row.migration_name)
+  const failedMigrationNames = migrationRows
+    .filter((row) => !row.finished_at && !row.rolled_back_at)
+    .map((row) => row.migration_name)
 
   return {
     migrationsTableExists,
-    sessionsTableExists,
-    sessionCount,
-    providerDuplicateCount,
-    hasApplicationTables: sessionsTableExists || integrationsTableExists || storesTableExists,
+    unknownMigrationHistory: migrationsTableExists && !hasExpectedMigrationColumns,
+    hasUserSchemaObjects: Number(objectResult.rows[0]?.count || 0) > 0,
+    userSchemaObjectCount: Number(objectResult.rows[0]?.count || 0),
     appliedMigrationNames,
+    failedMigrationNames,
   }
 }
 
@@ -109,11 +130,11 @@ async function main() {
     if (!result.ok) {
       console.error('Migration deployment preflight failed:')
       result.failures.forEach((failure) => console.error(`- ${failure}`))
-      console.error('Follow docs/SESSION_TOKEN_MIGRATION_RUNBOOK.md before invoking prisma migrate deploy.')
+      console.error('Do not use prisma migrate deploy directly; use the applicable migration runbook and then npm run db:deploy:safe.')
       process.exitCode = 1
       return
     }
-    console.log('Migration deployment preflight passed.')
+    console.log(result.state.freshDatabase ? 'Migration deployment preflight passed for an empty schema.' : 'Migration deployment preflight passed.')
   } finally {
     await client.end().catch(() => {})
   }

@@ -8,7 +8,11 @@
 ALTER TABLE "stores" ADD COLUMN IF NOT EXISTS "singletonKey" TEXT;
 ALTER TABLE "integrations" ADD COLUMN IF NOT EXISTS "providerKey" TEXT;
 
-CREATE TEMP TABLE "_doopify_ranked_stores" ON COMMIT DROP AS
+-- Prisma may execute migration statements in separate transactions, so an
+-- ON COMMIT DROP temporary table disappears before the following UPDATE.
+-- Use short-lived schema tables and remove them at the end instead.
+DROP TABLE IF EXISTS "_doopify_ranked_stores";
+CREATE TABLE "_doopify_ranked_stores" AS
 SELECT
   store."id",
   row_number() OVER (ORDER BY store."createdAt" ASC, store."id" ASC) AS rank
@@ -24,7 +28,8 @@ FROM "_doopify_ranked_stores" ranked
 WHERE store."id" = ranked."id"
   AND ranked.rank = 1;
 
-CREATE TEMP TABLE "_doopify_ranked_provider_integrations" ON COMMIT DROP AS
+DROP TABLE IF EXISTS "_doopify_ranked_provider_integrations";
+CREATE TABLE "_doopify_ranked_provider_integrations" AS
 WITH provider_rows AS (
   SELECT
     integration."id",
@@ -86,3 +91,6 @@ WHERE integration."id" = ranked."id"
 
 CREATE UNIQUE INDEX IF NOT EXISTS "stores_singletonKey_key" ON "stores"("singletonKey");
 CREATE UNIQUE INDEX IF NOT EXISTS "integrations_providerKey_key" ON "integrations"("providerKey");
+
+DROP TABLE "_doopify_ranked_provider_integrations";
+DROP TABLE "_doopify_ranked_stores";

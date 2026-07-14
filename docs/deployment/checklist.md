@@ -89,7 +89,7 @@ Then run deployment setup actions:
 
 ```bash
 npm run doopify:db:check
-npm run db:preflight-migrations
+npm run db:deploy:safe
 npm run doopify:stripe:webhook
 npm run doopify:env:push
 ```

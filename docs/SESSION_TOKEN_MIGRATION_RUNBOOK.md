@@ -6,7 +6,9 @@ history, so it must not be edited or replayed.
 
 ## Deployment decision
 
-Run `npm run db:preflight-migrations` against the target database before deploying. It fails closed when the destructive migration is pending against persisted sessions or when the unsafe provider singleton migration is pending against duplicate provider rows. Then inspect the target database's `_prisma_migrations` history before deploying.
+`npm run db:deploy:safe` is the only supported production migration command. It inspects the complete target schema, refuses unknown histories, and owns the eventual Prisma deployment; do not run a separate preflight followed by `prisma migrate deploy`.
+
+On every existing schema, `20260710_hash_persisted_sessions` must already be recorded as applied before `npm run db:deploy:safe` can continue. This is unconditional: a zero-session snapshot is not safe because a session can be created before Prisma begins the historical `DELETE FROM "sessions"` migration.
 
 - If `20260710_hash_persisted_sessions` is already applied, existing sessions
   were revoked by that historical deployment. Apply
@@ -20,13 +22,19 @@ Run `npm run db:preflight-migrations` against the target database before deployi
   their normal expiry.
 
 Do not automate `migrate resolve`; it is a production deployment decision and
-requires an operator to verify the migration history and schema first.
+requires an operator to verify the migration history and schema first. A truly
+empty schema is the sole fresh-install exception: the safe command initializes
+the canonical schema and explicitly baselines historical migrations. Any table,
+sequence, view, materialized view, user-defined type/enum, or migration record
+makes the schema existing and therefore fail-closed.
 
 ## Compatibility window
 
 - New sessions write only `tokenHash`; they never recreate plaintext tokens.
 - Authentication checks `tokenHash` first and can accept `token` only before
   `SESSION_LEGACY_TOKEN_CUTOFF`.
+- Starting the additive rollout does not immediately revoke valid legacy
+  plaintext sessions. They remain valid only through that configured cutoff.
 - Set `SESSION_LEGACY_TOKEN_CUTOFF` to the production deployment time plus
   the maximum session lifetime (currently seven days). Keep the configured
   value fixed through the rollout; do not extend it on redeploy.

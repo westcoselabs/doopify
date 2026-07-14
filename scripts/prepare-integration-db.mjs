@@ -2,17 +2,19 @@ import { spawnSync } from 'node:child_process'
 import { config as loadEnv } from 'dotenv'
 import pg from 'pg'
 
+import { createInertTestEnvironment } from './test-environment.mjs'
+
 const { Client } = pg
 
-loadEnv({ path: '.env' })
-loadEnv({ path: '.env.local', override: true })
+loadEnv({ path: '.env', quiet: true })
+loadEnv({ path: '.env.local', override: true, quiet: true })
 
 if (!process.env.DATABASE_URL_TEST) {
   console.error('DATABASE_URL_TEST is required to prepare the integration test database.')
   process.exit(1)
 }
 
-if (process.env.DATABASE_URL && process.env.DATABASE_URL === process.env.DATABASE_URL_TEST) {
+if (process.env.DATABASE_URL && process.env.DATABASE_URL === process.env.DATABASE_URL_TEST && process.env.DOOPIFY_TEST_DATABASE_URL !== '1') {
   console.error('Refusing to prepare integration DB: DATABASE_URL_TEST must not match DATABASE_URL.')
   process.exit(1)
 }
@@ -44,8 +46,10 @@ await client.query(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE`)
 await client.end()
 
 const runEnv = {
-  ...process.env,
+  ...createInertTestEnvironment(process.env),
   DATABASE_URL: process.env.DATABASE_URL_TEST,
+  DATABASE_URL_TEST: process.env.DATABASE_URL_TEST,
+  DIRECT_URL: process.env.DATABASE_URL_TEST,
   NODE_ENV: 'test',
 }
 
