@@ -1,12 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import Link from "next/link";
 import AdminButton from "../admin/ui/AdminButton";
-import AdminCard from "../admin/ui/AdminCard";
 import AdminDrawer from "../admin/ui/AdminDrawer";
-import AdminEmptyState from "../admin/ui/AdminEmptyState";
 import AdminField from "../admin/ui/AdminField";
 import AdminInput from "../admin/ui/AdminInput";
 import AdminSelect from "../admin/ui/AdminSelect";
@@ -20,11 +18,11 @@ import styles from "./SettingsWorkspace.module.css";
 const MODE_OPTIONS = [
   { value: "LIVE_RATES", label: "Live carrier rates" },
   { value: "MANUAL", label: "Manual rates" },
-  { value: "HYBRID", label: "Hybrid" },
+  { value: "HYBRID", label: "Live with fallback" },
 ];
 
 const MODE_CARD_DESCRIPTIONS = {
-  LIVE_RATES: "Customers see real-time rates from your selected provider.",
+  LIVE_RATES: "Customers see real-time rates from the carrier.",
   MANUAL: "Customers see your fixed manual rates at checkout.",
   HYBRID: "Doopify tries live rates first, then falls back to manual rates if allowed.",
 };
@@ -199,12 +197,6 @@ function renderRateSummary(rate, currency) {
   return formatMoney(rate.amount, currency);
 }
 
-function formatShippingProviderName(provider) {
-  if (provider === "SHIPPO") return "Shippo";
-  if (provider === "EASYPOST") return "EasyPost";
-  return "None";
-}
-
 function businessDraft(defaults, settings) {
   return Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => {
     const value = settings?.[key];
@@ -214,10 +206,9 @@ function businessDraft(defaults, settings) {
 
 export default function ShippingSettingsWorkspace({
   initialSettings,
-  initialSetupStatus,
+  canViewDeveloper = false,
 } = {}) {
   const [loading, setLoading] = useState(!initialSettings);
-  const [setupStatusLoading, setSetupStatusLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -226,7 +217,6 @@ export default function ShippingSettingsWorkspace({
   const loadRequestIdRef = useRef(0);
 
   const [settings, setSettings] = useState(initialSettings);
-  const [setupStatus, setSetupStatus] = useState(initialSetupStatus);
 
   const [mode, setMode] = useState(initialSettings?.shippingMode || "MANUAL");
   const activeRateProvider = settings?.activeRateProvider || "NONE";
@@ -266,15 +256,12 @@ export default function ShippingSettingsWorkspace({
   const fallbackRates = settings?.shippingFallbackRates || [];
   const currency = settings?.currency || "USD";
 
-  const defaultLocationEntry = locations.find(entry => entry.isDefault && entry.isActive) || locations[0] || null;
-  const setupStatusPending = setupStatusLoading && !setupStatus;
   const checkoutMethodDirty = mode !== savedCheckoutMethod.mode || fallbackBehavior !== savedCheckoutMethod.fallbackBehavior;
 
   const load = useCallback(async () => {
     const requestId = ++loadRequestIdRef.current;
     setLoading(true);
     setError("");
-    setSetupStatusLoading(true);
     try {
       const shipping = await fetch("/api/settings/shipping", { cache: "no-store" }).then(parseApiJson);
       if (requestId !== loadRequestIdRef.current) return;
@@ -312,34 +299,12 @@ export default function ShippingSettingsWorkspace({
       });
       setLoading(false);
 
-      void (async () => {
-        try {
-          const setup = await fetch("/api/settings/shipping/setup-status", { cache: "no-store" }).then(parseApiJson);
-          if (requestId !== loadRequestIdRef.current) return;
-          setSetupStatus(setup);
-        } catch {
-          if (requestId !== loadRequestIdRef.current) return;
-          // Preserve the previous saved snapshot on transient load failures
-          // so the UI does not regress to setup-missing while status refreshes.
-        } finally {
-          if (requestId !== loadRequestIdRef.current) return;
-          setSetupStatusLoading(false);
-        }
-      })();
     } catch (loadError) {
       if (requestId !== loadRequestIdRef.current) return;
       setError(loadError instanceof Error ? loadError.message : "Failed to load shipping settings");
       setLoading(false);
-      setSetupStatusLoading(false);
     }
   }, []);
-
-
-  useEffect(() => {
-    if (modeSaveState === "saving" || modeSaveState === "error") return;
-// eslint-disable-next-line react-hooks/set-state-in-effect -- intentional effect-driven state sync for existing async/load flow
-    setModeSaveState(checkoutMethodDirty ? "dirty" : "saved");
-  }, [checkoutMethodDirty, modeSaveState]);
 
 
   async function persistSettings(patch, message) {
@@ -607,6 +572,7 @@ export default function ShippingSettingsWorkspace({
       locationForm.id ? "Ship-from location updated." : "Ship-from location added."
     );
     if (result.success) setLocationDrawerOpen(false);
+    else setLocationDrawerError(result.message || "Failed to save location.");
   }
 
   async function saveManualRate() {
@@ -726,32 +692,13 @@ export default function ShippingSettingsWorkspace({
         <ShippingSettingsWorkspaceStatusStack
           error={error}
           notice={notice}
-          setupStatusPending={!loading && setupStatusPending}
-          setupStatusPendingMessage="Loading saved status..."
         />
 
         {!loading ? (
           <div className={styles.configStack}>
             <section className={styles.configSection}>
               <div className={styles.sectionHeading}>
-                <h3>Simple rule</h3>
-              </div>
-              <p className={styles.statusText}>
-                Checkout rates decide what customers pay. Label providers create postage after the order is placed.
-              </p>
-              <p className={styles.compactMeta}>
-                Keep these configured separately so pilot checkout totals stay predictable while fulfillment stays flexible.
-              </p>
-              <div className={styles.methodChipRow}>
-                <span className={styles.methodChip}>Checkout rates</span>
-                <span className={styles.methodChip}>Label buying</span>
-                <span className={styles.methodChip}>Fallbacks</span>
-              </div>
-            </section>
-
-            <section className={styles.configSection}>
-              <div className={styles.sectionHeading}>
-                <h3>Checkout rate method</h3>
+                <h2>Checkout rates</h2>
               </div>
               <div className={styles.shippingModeGrid}>
                 {MODE_OPTIONS.map((option) => {
@@ -759,6 +706,7 @@ export default function ShippingSettingsWorkspace({
                   return (
                     <button
                       type="button"
+                      aria-pressed={selected}
                       key={option.value}
                       className={`${styles.shippingModeCard} ${selected ? styles.shippingModeCardActive : ""}`}
                       onClick={() => {
@@ -779,8 +727,7 @@ export default function ShippingSettingsWorkspace({
                 })}
               </div>
               <div className={styles.shippingModeFooter}>
-                <p>Live rates: {formatShippingProviderName(activeRateProvider)} · Labels: {formatShippingProviderName(labelProvider)}. Selected by your deployment environment.</p>
-                <AdminField label="Fallback behavior">
+                {mode !== "MANUAL" && <AdminField label="If live rates are unavailable">
                   <AdminSelect
                     value={fallbackBehavior}
                     onChange={(value) => {
@@ -790,26 +737,25 @@ export default function ShippingSettingsWorkspace({
                     }}
                     options={FALLBACK_BEHAVIOR_OPTIONS}
                   />
-                </AdminField>
+                </AdminField>}
               </div>
               <div className={styles.actionRow}>
-                <AdminButton disabled={saving} onClick={saveCheckoutMethod} size="sm" variant="secondary">
+                <AdminButton disabled={saving || !checkoutMethodDirty} onClick={saveCheckoutMethod} size="sm" variant="secondary">
                   {saving ? "Saving..." : "Save checkout method"}
                 </AdminButton>
               </div>
-              <p className={styles.compactMeta}>
-                {activeRateProvider !== "NONE"
-                  ? `${formatShippingProviderName(activeRateProvider)} selected for checkout live rates.`
-                  : mode === "LIVE_RATES" || mode === "HYBRID"
-                    ? "Configure a shipping rate provider in the deployment environment."
-                    : "No live-rate provider selected."}
-              </p>
+              {mode !== "MANUAL" && activeRateProvider === "NONE" && (
+                <p className={styles.statusBlock} role="status">
+                  Live shipping rates are unavailable. Ask your developer to enable a shipping service.
+                  {canViewDeveloper && <Link prefetch={false} href="/admin/system/developer">View Developer status</Link>}
+                </p>
+              )}
               <p className={styles.compactMeta}>
                 {modeSaveState === "saving"
                   ? "Saving checkout method..."
                   : modeSaveState === "saved_just_now"
-                    ? "Saved just now. Run a checkout rate quote to confirm expected customer-facing options."
-                    : modeSaveState === "dirty"
+                    ? "Checkout rate method saved."
+                    : checkoutMethodDirty
                       ? "Unsaved changes. Save checkout method before leaving this section."
                       : modeSaveState === "error"
                         ? modeSaveError || "Save failed. Review the current selection and retry."
@@ -818,17 +764,85 @@ export default function ShippingSettingsWorkspace({
             </section>
 
             <section className={styles.configSection}>
-              <h3>Shipping readiness</h3>
-              <p>Manual rates: {setupStatus?.canUseManualRates ? "Ready" : "Not ready"}. Live rates: {setupStatus?.canUseLiveRates ? "Ready" : "Not ready"}. Labels: {setupStatus?.canBuyLabels ? "Ready" : "Not ready"}.</p>
-              {(setupStatus?.warnings || []).map(warning => <p key={warning}>{warning}</p>)}
-              <p>Provider credentials and selection are configured in environment variables.</p>
-              <Link prefetch={false} href="/admin/system/developer">Environment & integrations</Link>
-              <AdminButton onClick={() => setManualFulfillmentDrawerOpen(true)} variant="secondary">Configure manual fulfillment</AdminButton>
+              <div className={styles.sectionHeading}>
+                <h2>Your shipping rates</h2>
+              </div>
+              <p className={styles.statusText}>Set the amounts customers pay when using manual rates or live rates with fallback.</p>
+              {manualRates.length ? (
+                manualRates.map((rate) => (
+                  <div className={styles.configRow} key={rate.id}>
+                    <p className={styles.statusText}>
+                      <strong>{rate.name}</strong> · {rate.regionCountry || "All regions"} ·{" "}
+                      {renderRateSummary(rate, currency)}
+                      {rate.estimatedDeliveryText ? ` · ${rate.estimatedDeliveryText}` : ""}
+                    </p>
+                    <div className={styles.actionRow}>
+                      {!rate.isActive ? <AdminStatusChip tone="warning">Inactive</AdminStatusChip> : null}
+                      <AdminButton size="sm" variant="secondary" onClick={() => openManualRateDrawer(rate)}>
+                        Edit
+                      </AdminButton>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className={styles.compactMeta}>No manual rates yet. Add a fixed price, free shipping or an order-based rate.</p>
+              )}
+              <div className={styles.actionRow}>
+                <AdminButton size="sm" variant="secondary" onClick={() => openManualRateDrawer(null)}>
+                  Add manual rate
+                </AdminButton>
+              </div>
             </section>
 
+            <details className={styles.disclosure}>
+              <summary><strong>Fallback rates</strong><span className={styles.compactMeta}>{fallbackRates.length} saved</span></summary>
+              <div className={styles.configStack}>
+              <p className={styles.statusText}>Used when live rates are unavailable and your fallback policy allows them.</p>
+              {fallbackRates.length ? (
+                fallbackRates.map((rate) => (
+                  <div className={styles.configRow} key={rate.id}>
+                    <p className={styles.statusText}>
+                      <strong>{rate.name}</strong> · {formatMoney(rate.amount, currency)}
+                      {rate.estimatedDeliveryText ? ` · ${rate.estimatedDeliveryText}` : ""}
+                    </p>
+                    <div className={styles.actionRow}>
+                      {!rate.isActive ? <AdminStatusChip tone="warning">Inactive</AdminStatusChip> : null}
+                      <AdminButton size="sm" variant="secondary" onClick={() => openFallbackRateDrawer(rate)}>
+                        Edit
+                      </AdminButton>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className={styles.compactMeta}>No fallback rates yet.</p>
+              )}
+              <div className={styles.actionRow}>
+                <AdminButton size="sm" variant="secondary" onClick={() => openFallbackRateDrawer(null)}>
+                  Add fallback rate
+                </AdminButton>
+              </div>
+              </div>
+            </details>
+
+            <section className={styles.configSection}>
+              <h2>Ship-from locations</h2>
+              <p className={styles.compactMeta}>Addresses used for shipping quotes and labels.</p>
+              {locations.map((location) => (
+                <div className={styles.configRow} key={location.id}>
+                  <div><strong>{location.name}</strong><p className={styles.compactMeta}>{[location.address1, location.city, location.country].filter(Boolean).join(", ")}</p></div>
+                  <div className={styles.compactActionRow}>
+                    {location.isDefault && <AdminStatusChip tone="success">Default</AdminStatusChip>}
+                    {!location.isActive && <AdminStatusChip tone="neutral">Inactive</AdminStatusChip>}
+                    <AdminButton size="sm" variant="secondary" onClick={() => openLocationDrawer(location)}>Edit location</AdminButton>
+                  </div>
+                </div>
+              ))}
+              {!locations.length && <p>No shipping locations yet.</p>}
+              <div><AdminButton variant="secondary" size="sm" onClick={() => openLocationDrawer(null)}>Add location</AdminButton></div>
+            </section>
             <section className={styles.configSection}>
               <div className={styles.sectionHeading}>
-                <h3>Packages</h3>
+                <h2>Packages</h2>
               </div>
               {packages.length ? (
                 packages.map((entry) => (
@@ -872,81 +886,15 @@ export default function ShippingSettingsWorkspace({
 
             <section className={styles.configSection}>
               <div className={styles.sectionHeading}>
-                <h3>Manual checkout rates</h3>
+                <h2>Fulfillment & local delivery</h2>
               </div>
-              <p className={styles.statusText}>Used in Manual mode, or as fallback in Hybrid mode.</p>
-              {manualRates.length ? (
-                manualRates.map((rate) => (
-                  <div className={styles.configRow} key={rate.id}>
-                    <p className={styles.statusText}>
-                      <strong>{rate.name}</strong> Â· {rate.regionCountry || "All regions"} Â·{" "}
-                      {renderRateSummary(rate, currency)}
-                      {rate.estimatedDeliveryText ? ` Â· ${rate.estimatedDeliveryText}` : ""}
-                    </p>
-                    <div className={styles.actionRow}>
-                      {!rate.isActive ? <AdminStatusChip tone="warning">Inactive</AdminStatusChip> : null}
-                      <AdminButton size="sm" variant="secondary" onClick={() => openManualRateDrawer(rate)}>
-                        Edit
-                      </AdminButton>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <AdminEmptyState
-                  title="No manual checkout rates"
-                  description="Add rates if checkout should work without live carrier rates."
-                  icon="paid"
-                />
-              )}
-              <p className={styles.statusText}>Manual rates control what customers pay. They do not buy postage.</p>
-              <div className={styles.actionRow}>
-                <AdminButton size="sm" variant="secondary" onClick={() => openManualRateDrawer(null)}>
-                  Add manual rate
-                </AdminButton>
-              </div>
-            </section>
-
-            <section className={styles.configSection}>
-              <div className={styles.sectionHeading}>
-                <h3>Fallback shipping rate</h3>
-              </div>
-              <p className={styles.statusText}>Shown only if Shippo/EasyPost cannot return rates.</p>
-              {fallbackRates.length ? (
-                fallbackRates.map((rate) => (
-                  <div className={styles.configRow} key={rate.id}>
-                    <p className={styles.statusText}>
-                      <strong>{rate.name}</strong> Â· {formatMoney(rate.amount, currency)}
-                      {rate.estimatedDeliveryText ? ` Â· ${rate.estimatedDeliveryText}` : ""}
-                    </p>
-                    <div className={styles.actionRow}>
-                      {!rate.isActive ? <AdminStatusChip tone="warning">Inactive</AdminStatusChip> : null}
-                      <AdminButton size="sm" variant="secondary" onClick={() => openFallbackRateDrawer(rate)}>
-                        Edit
-                      </AdminButton>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <AdminEmptyState
-                  title="No fallback rates"
-                  description="Add fallback rates for live-provider outage paths."
-                  icon="error"
-                />
-              )}
-              <div className={styles.actionRow}>
-                <AdminButton size="sm" variant="secondary" onClick={() => openFallbackRateDrawer(null)}>
-                  Add fallback
-                </AdminButton>
-              </div>
-            </section>
-
-            <section className={styles.configSection}>
-              <div className={styles.sectionHeading}>
-                <h3>Local options and documents</h3>
+              <div className={styles.configRow}>
+                <div><strong>Manual fulfillment</strong><p className={styles.compactMeta}>Instructions and tracking defaults for your team.</p></div>
+                <AdminButton size="sm" variant="secondary" onClick={() => setManualFulfillmentDrawerOpen(true)}>Edit instructions</AdminButton>
               </div>
               <div className={styles.configRow}>
                 <p className={styles.statusText}>
-                  <strong>Local delivery</strong> Â· Offer delivery by ZIP code or radius.
+                  <strong>Local delivery</strong> · Offer delivery by ZIP code or radius.
                 </p>
                 <div className={styles.actionRow}>
                   <AdminStatusChip tone={localDeliveryForm.localDeliveryEnabled ? "success" : "neutral"}>
@@ -959,7 +907,7 @@ export default function ShippingSettingsWorkspace({
               </div>
               <div className={styles.configRow}>
                 <p className={styles.statusText}>
-                  <strong>Pickup in store</strong> Â· Let customers pick up from your location.
+                  <strong>Pickup in store</strong> · Let customers pick up from your location.
                 </p>
                 <div className={styles.actionRow}>
                   <AdminStatusChip tone={pickupForm.pickupEnabled ? "success" : "neutral"}>
@@ -972,7 +920,7 @@ export default function ShippingSettingsWorkspace({
               </div>
               <div className={styles.configRow}>
                 <p className={styles.statusText}>
-                  <strong>Packing slip</strong> Â· Logo, SKU, product images, and footer note.
+                  <strong>Packing slip</strong> · Logo, SKU, product images, and footer note.
                 </p>
                 <div className={styles.actionRow}>
                   <AdminButton size="sm" variant="secondary" onClick={() => setPackingSlipDrawerOpen(true)}>
@@ -1055,7 +1003,7 @@ export default function ShippingSettingsWorkspace({
           </p>
         ) : null}
         {locationDrawerError ? (
-          <p className={styles.statusText} style={{ color: "var(--destructive, #ef4444)" }}>
+          <p role="alert" className={styles.statusText} style={{ color: "var(--destructive, #ef4444)" }}>
             {locationDrawerError}
           </p>
         ) : null}

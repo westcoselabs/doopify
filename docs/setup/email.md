@@ -4,7 +4,7 @@ Select the email adapter explicitly in environment variables. `EMAIL_PROVIDER=no
 
 ## Resend
 
-Set `EMAIL_PROVIDER=resend` and `RESEND_API_KEY`. Verify your sending domain with the provider and configure sender/support identity in **Settings → Email** and **Settings → Brand**.
+Set `EMAIL_PROVIDER=resend` and `RESEND_API_KEY`. Verify your sending domain with the provider and configure sender/support identity in **Settings → General** and **Settings → Brand**.
 
 For delivery feedback, register `https://<store-domain>/api/webhooks/email-provider`, subscribe to the delivery/bounce/complaint events you use, and set `RESEND_WEBHOOK_SECRET`. Restart or redeploy after changing the environment.
 
@@ -16,7 +16,7 @@ Set `EMAIL_PROVIDER=smtp` together with `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`,
 
 ## Merchant workflow
 
-**Settings → Email** edits sender identity and order-confirmation/shipping-update templates. Save a template before using **Send saved template test**. Brand settings own logos and support identity. These business fields remain in Postgres.
+**Settings → Customer emails** edits order-confirmation/shipping-update templates, enablement and reply-to addresses. Store contact identity is managed in General. Save a template before using **Send saved template test**. Brand settings own logos and support identity. These business fields remain in Postgres.
 
 **System → Delivery logs** shows safe delivery status and provider metadata. Missing configuration, explicit preview and real provider failure are reported without a false sent confirmation. A failure does not roll back a paid order or repeat inventory changes.
 

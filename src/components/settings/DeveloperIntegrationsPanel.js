@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import Link from "next/link";
+import AdminStatusChip from "../admin/ui/AdminStatusChip";
 import AdminButton from "../admin/ui/AdminButton";
 import { settingsRequest } from "./settings-api";
 import styles from "./SettingsWorkspace.module.css";
@@ -47,6 +48,7 @@ const ENV_NAMES = {
     "ABANDONED_CHECKOUT_SECRET",
   ],
 };
+const LABELS = { stripe: "Stripe", resend: "Resend", smtp: "SMTP", shippo: "Shippo", easypost: "EasyPost", storage: "Media storage", jobs: "Background jobs" };
 const DOCS = {
   stripe: "https://docs.stripe.com/keys",
   resend: "https://resend.com/docs/dashboard/api-keys/introduction",
@@ -73,6 +75,7 @@ export default function DeveloperIntegrationsPanel({
     try {
       const data = await settingsRequest("/api/system/integrations");
       setIntegrations(data.integrations);
+      setResults({});
       setNotice("Environment status refreshed.");
     } catch (failure) {
       setError(failure.message);
@@ -120,14 +123,11 @@ export default function DeveloperIntegrationsPanel({
   }
   return (
     <div className={styles.configStack}>
-      <h1>Environment & integrations</h1>
-      <p>Developers configure infrastructure. Doopify operates the store.</p>
-      <p>
-        Configure environment variables on your host, then restart or redeploy.
-        Configured means required environment values are present. Connection
-        tests run only when requested. Webhook ready means a signing secret is
-        present; verified receipts are shown in delivery logs and launch checks.
-      </p>
+      <header className={styles.pageIntro}>
+        <p className={styles.eyebrow}>System</p>
+        <h1>Developer</h1>
+        <p>Read-only deployment configuration and connection diagnostics.</p>
+      </header>
       <div className={styles.compactActionRow}>
         <AdminButton disabled={Boolean(busy)} onClick={refresh}>
           Refresh status
@@ -136,57 +136,39 @@ export default function DeveloperIntegrationsPanel({
           View delivery logs
         </Link>
       </div>
-      {integrations.map((integration) => (
-        <section key={integration.id} className={styles.configSection}>
-          <h2>{integration.id === "smtp" ? "SMTP" : integration.id}</h2>
-          <p>
-            {integration.configured ? "Configured" : "Missing"}
-            {integration.mode
-              ? ` · ${integration.mode === "test" ? "Test" : "Live"}`
-              : ""}
-            {integration.webhookReady !== null
-              ? ` · Webhook ${integration.webhookReady ? "ready" : "missing"}`
-              : ""}
-          </p>
-          {integration.missing.length > 0 && (
-            <p>Missing: {integration.missing.join(", ")}</p>
-          )}
-          <div className={styles.compactActionRow}>
-            {!["storage", "jobs"].includes(integration.id) && (
-              <AdminButton
-                disabled={Boolean(busy) || !integration.configured}
-                onClick={() => test(integration.id)}
-              >
-                {busy === integration.id ? "Testing…" : "Test connection"}
-              </AdminButton>
-            )}
-            <AdminButton
-              variant="secondary"
-              onClick={() => copyNames(integration.id)}
-            >
-              Copy env variable names
-            </AdminButton>
-            <a href={DOCS[integration.id]} target="_blank" rel="noreferrer">
-              View docs
-            </a>
-          </div>
-          <details>
-            <summary>Environment variables</summary>
-            <pre>{ENV_NAMES[integration.id].join("\n")}</pre>
+      <p className={styles.compactMeta}>Configured means environment values are present. Health is checked only when you test a connection. Webhook configuration does not confirm receipt; inspect delivery logs for verified events.</p>
+      <div className={styles.integrationList}>
+        {integrations.map((integration) => (
+          <details key={integration.id} className={styles.disclosure}>
+            <summary>
+              <strong>{LABELS[integration.id]}</strong>
+              <span className={styles.compactActionRow}>
+                {integration.mode && <span>{integration.mode === "test" ? "Test mode" : "Live mode"}</span>}
+                <AdminStatusChip tone={integration.configured ? "success" : "neutral"}>{integration.configured ? "Configured" : "Not configured"}</AdminStatusChip>
+              </span>
+            </summary>
+            <div className={styles.configStack}>
+              {integration.webhookReady !== null && <p>Webhook signing: {integration.webhookReady ? "Configured" : "Not configured"}</p>}
+              {integration.missing.length > 0 && <p>Missing: {integration.missing.join(", ")}</p>}
+              <div className={styles.compactActionRow}>
+                {!["storage", "jobs"].includes(integration.id) && (
+                  <AdminButton disabled={Boolean(busy) || !integration.configured} onClick={() => test(integration.id)}>
+                    {busy === integration.id ? "Testingâ€¦" : "Test connection"}
+                  </AdminButton>
+                )}
+                <AdminButton variant="secondary" onClick={() => copyNames(integration.id)}>Copy variable names</AdminButton>
+                <a href={DOCS[integration.id]} target="_blank" rel="noreferrer">Provider docs</a>
+              </div>
+              <p className={styles.compactMeta}>Set these variables on your host, then restart or redeploy.</p>
+              <pre className={styles.variableNames}>{ENV_NAMES[integration.id].join("\n")}</pre>
+              {results[integration.id] && <p role="status">{results[integration.id].ok ? "Healthy" : "Error"} Â· {results[integration.id].checkedAt}{results[integration.id].error ? ` Â· ${results[integration.id].error}` : ""}</p>}
+            </div>
           </details>
-          {results[integration.id] && (
-            <p role="status">
-              {results[integration.id].ok ? "Healthy" : "Error"} ·{" "}
-              {results[integration.id].checkedAt}
-              {results[integration.id].error
-                ? ` · ${results[integration.id].error}`
-                : ""}
-            </p>
-          )}
-        </section>
-      ))}
-      <section>
-        <h2>Store readiness</h2>
+        ))}
+      </div>
+      <details className={styles.disclosure}>
+        <summary>Launch checks<span className={styles.compactMeta}>Saved operational checks</span></summary>
+        <div className={styles.configStack}>
         <p>
           {readiness.lastRunAt
             ? `Last checked: ${readiness.lastRunAt}`
@@ -208,7 +190,8 @@ export default function DeveloperIntegrationsPanel({
             )}
           </div>
         ))}
-      </section>
+        </div>
+      </details>
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
     </div>

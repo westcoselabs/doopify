@@ -60,6 +60,10 @@ function TemplateForm({ initialTemplate }) {
       setBusy(false);
     }
   }
+  function patch(key, value) {
+    setDraft((current) => ({ ...current, [key]: value }));
+    setNotice("");
+  }
   return (
     <form
       onSubmit={(event) => {
@@ -78,7 +82,7 @@ function TemplateForm({ initialTemplate }) {
           type="checkbox"
           checked={draft.enabled}
           onChange={(event) =>
-            setDraft({ ...draft, enabled: event.target.checked })
+            patch("enabled", event.target.checked)
           }
         />{" "}
         Enable this message
@@ -90,7 +94,7 @@ function TemplateForm({ initialTemplate }) {
               <AdminTextarea
                 value={draft[key] || ""}
                 onChange={(event) =>
-                  setDraft({ ...draft, [key]: event.target.value })
+                  patch(key, event.target.value)
                 }
               />
             ) : (
@@ -98,7 +102,7 @@ function TemplateForm({ initialTemplate }) {
                 type={key === "replyToEmail" ? "email" : "text"}
                 value={draft[key] || ""}
                 onChange={(event) =>
-                  setDraft({ ...draft, [key]: event.target.value })
+                  patch(key, event.target.value)
                 }
               />
             )}
@@ -125,6 +129,9 @@ function TemplateForm({ initialTemplate }) {
           Reset to defaults
         </AdminButton>
       </div>
+      <details className={styles.disclosure}>
+      <summary>Send a test of the saved message</summary>
+      <div className={styles.configStack}>
       <AdminField label="Test recipient">
         <AdminInput
           type="email"
@@ -140,57 +147,34 @@ function TemplateForm({ initialTemplate }) {
       >
         Send saved template test
       </AdminButton>
+      </div>
+      </details>
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
     </form>
   );
 }
-export default function EmailSettingsForm({ templates, storeEmail }) {
-  const [email, setEmail] = useState(storeEmail || "");
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("");
-  async function saveSender(event) {
-    event.preventDefault();
-    setBusy(true);
-    setMessage("");
-    try {
-      await settingsRequest("/api/settings", jsonRequest("PATCH", { email }));
-      setMessage("Sender identity saved.");
-    } catch (failure) {
-      setMessage(failure.message);
-    } finally {
-      setBusy(false);
-    }
-  }
+export default function EmailSettingsForm({ templates }) {
   return (
     <div className={styles.configStack}>
-      <h1>Customer email</h1>
-      <form onSubmit={saveSender}>
-        <AdminField label="Sender / store contact email">
-          <AdminInput
-            type="email"
-            required
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-          />
-        </AdminField>
-        <AdminButton type="submit" disabled={busy}>
-          Save sender
-        </AdminButton>
-        {message && <p role="status">{message}</p>}
-      </form>
-      <p>
-        <Link prefetch={false} href="/admin/settings/brand">
-          Email logo and branding
-        </Link>{" "}
-        ·{" "}
-        <Link prefetch={false} href="/admin/webhooks">
-          View delivery logs
-        </Link>
-      </p>
+      <header className={styles.pageIntro}>
+        <h1>Customer emails</h1>
+        <p>Choose which messages customers receive and make the wording your own.</p>
+      </header>
+      <div className={styles.compactActionRow}>
+        <Link prefetch={false} href="/admin/settings/brand">Email logo and footer</Link>
+        <Link prefetch={false} href="/admin/webhooks">Delivery logs</Link>
+      </div>
       {templates.map((template) => (
-        <TemplateForm key={template.templateKey} initialTemplate={template} />
+        <details key={template.templateKey} className={styles.disclosure}>
+          <summary>
+            <span>{template.templateKey === "order_confirmation" ? "Order confirmation" : "Shipping update"}</span>
+            <span className={styles.compactMeta}>Edit message</span>
+          </summary>
+          <TemplateForm initialTemplate={template} />
+        </details>
       ))}
+      <p className={styles.compactMeta}>Store contact details are managed in General. Each message can have its own reply-to address.</p>
     </div>
   );
 }

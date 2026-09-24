@@ -2,7 +2,7 @@
 
 > Step-by-step validation guide for a controlled private beta pilot.
 >
-> Last updated: May 3, 2026
+> Last updated: September 24, 2026
 
 ---
 
@@ -25,7 +25,7 @@ Confirm before starting validation:
 - [ ] `DATABASE_URL` configured with `sslmode=verify-full` (for Neon production branch)
 - [ ] `DATABASE_URL` supplies the intended connection for Prisma tooling; `DIRECT_URL` is unused
 - [ ] `JWT_SECRET` — at least 32 characters, high entropy
-- [ ] `DATA_ENCRYPTION_KEY` — set for encrypted integration secrets
+- [ ] `DATA_ENCRYPTION_KEY` — preserved for encrypted MFA and download tokens
 - [ ] `NEXT_PUBLIC_STORE_URL` — points to your deployed storefront
 - [ ] `STRIPE_SECRET_KEY` — test mode secret key (`sk_test_...`)
 - [ ] `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` — test mode publishable key (`pk_test_...`)
@@ -47,7 +47,7 @@ Open System → Developer in the admin. The **Launch readiness** panel should sh
 
 ### Email (optional for private beta)
 
-- [ ] Resend API key added in Settings → Email → Connect Resend
+- [ ] Email adapter and credentials configured in env; verify status under System → Developer
 - [ ] Sending domain verified in Resend (SPF/DKIM/DMARC)
 - [ ] Webhook registered: `https://<your-domain>/api/webhooks/email-provider`
 - [ ] `RESEND_WEBHOOK_SECRET` set for bounce/complaint verification

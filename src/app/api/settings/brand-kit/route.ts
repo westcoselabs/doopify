@@ -2,6 +2,7 @@ import { revalidatePath } from 'next/cache'
 import { ZodError } from 'zod'
 
 import { err, ok, parseBody, unprocessable } from '@/lib/api'
+import { brandKitUpdateSchema } from '@/lib/brand-kit'
 import { requireAdmin } from '@/server/auth/require-auth'
 import { getBrandKit, updateBrandKit } from '@/server/services/settings.service'
 
@@ -28,7 +29,12 @@ export async function PATCH(req: Request) {
   }
 
   try {
-    const updated = await updateBrandKit(body)
+    const identity = brandKitUpdateSchema.pick({
+      name: true, logoUrl: true, faviconUrl: true, emailLogoUrl: true, checkoutLogoUrl: true,
+      emailFooterText: true, supportEmail: true, instagramUrl: true, facebookUrl: true,
+      tiktokUrl: true, youtubeUrl: true,
+    }).strict().parse(body)
+    const updated = await updateBrandKit(identity)
     revalidatePath('/')
     revalidatePath('/shop')
     revalidatePath('/collections')

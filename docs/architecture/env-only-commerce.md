@@ -25,9 +25,9 @@ Postgres owns products, prices, stock, customers, orders, refunds, returns, stor
 | `/admin/settings/brand` | Logos, support identity and social links |
 | `/admin/settings/shipping` | Shipping behavior, manual/fallback rates, packages, origin locations, pickup, local delivery and packing slips |
 | `/admin/settings/taxes` | Tax strategy, rules and origin |
-| `/admin/settings/email` | Customer-message sender identity and templates |
-| `/admin/settings/account` | Password, sessions and owner MFA |
-| `/admin/settings/team` | Owner-only team and invites |
+| `/admin/settings/email` | Customer-message content, enablement and reply-to overrides |
+| `/admin/account` | Password, sessions and owner MFA |
+| `/admin/system/team` | Owner-only team and invites |
 | `/admin/system/developer` | Owner-only environment presence, explicit diagnostics and saved launch checks |
 | `/admin/webhooks` | Inbound/outbound/email delivery monitoring and eligible retries |
 
@@ -54,3 +54,22 @@ Runner batches bound concurrency and acquisition time; crashed claims can expire
 ## Performance acceptance
 
 Measure production client chunks and real browser requests separately. Compare the same fixture, build mode, role, cache state and route. Required evidence includes General compressed JavaScript reduction, no unrelated settings requests or credential queries, bounded catalog pages with search across the full published catalog, metadata-only media reads, aggregate analytics correctness and durable delivery concurrency tests. See [performance artifacts](../performance/) for recorded baselines and acceptance results.
+
+## Settings ownership audit
+
+| Setting family | Decision |
+| --- | --- |
+| Store name, contact email/phone, public business address, currency, timezone | General; persistent business identity. The public address is distinct from shipping origins. |
+| Logos, favicon, support identity, social links, email footer | Brand; merchant identity. Frontend colors/fonts/button styles are code-owned, and the admin mutation API rejects them. Existing values remain readable during migration. |
+| Shipping mode, manual/fallback rates and fallback policy | Shipping; customer-facing pricing behavior. Provider selectors and credentials remain env-only. |
+| Locations, packages, fulfillment instructions, pickup/local delivery, packing slips | Shipping; operational business preferences. Locations can be added and edited from the page. |
+| Tax enablement, strategy, rates, origin and shipping/inclusive-tax rules | Taxes; server-owned commerce calculations. |
+| Customer email enablement, subject, copy, footer and reply-to | Customer emails; message content. Store contact is edited once in General; sender transport/authentication remain deployment concerns. |
+| Password, sessions, MFA | My account; personal security, outside merchant Settings. |
+| Users, roles, invites | System → Team; owner-only access administration. |
+| Provider choice/credentials, storage, runners, webhook destinations, store URL | Environment/typed config; owner-only read-only System → Developer. No secret editing or automatic connection tests. |
+| Store.domain | Unused legacy field; removed from General and rejected by its mutation API. `NEXT_PUBLIC_STORE_URL` owns runtime URLs. |
+
+Settings navigation contains only five merchant pages. Account/Team and former provider/setup bookmarks redirect to their canonical authorized destinations. Developer displays configuration separately from explicit health tests and verified receipt history.
+
+Legacy Store shipping/tax columns and canonical tables still coexist in compatibility readers. This UI pass preserves that behavior; any consolidation requires restored-data equivalence, migration and rollback proof before deletion.

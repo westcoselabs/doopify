@@ -8,5 +8,5 @@ import DeveloperIntegrationsPanel from '@/components/settings/DeveloperIntegrati
 export default async function DeveloperPage() {
   const user=await requirePageRole(['OWNER']);
   const [store,readiness]=await Promise.all([getAdminSettings(),getLatestLaunchReadinessSnapshot()]);
-  return <SettingsRouteShell store={store} role={user.role}><DeveloperIntegrationsPanel initialIntegrations={getIntegrationStatuses()} initialReadiness={readiness}/></SettingsRouteShell>;
+  return <SettingsRouteShell store={store} role={user.role} area="system"><DeveloperIntegrationsPanel initialIntegrations={getIntegrationStatuses()} initialReadiness={readiness}/></SettingsRouteShell>;
 }

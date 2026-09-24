@@ -1,0 +1,73 @@
+{
+  "measuredAt": "2026-09-24T19:13:41.475Z",
+  "productionBuild": true,
+  "browserTimeZone": "Pacific/Auckland",
+  "anonymousStatusDenied": true,
+  "legacyBookmarkRedirect": true,
+  "generalSaveFailurePreservesDraft": true,
+  "shippingLocationFailurePreservesDraft": true,
+  "emailTemplateFailurePreservesDraft": true,
+  "fiveMerchantSections": true,
+  "responsiveWidths": [
+    1440,
+    390
+  ],
+  "results": [
+    {
+      "route": "/admin/settings/general",
+      "status": 200,
+      "initialPrismaQueries": 6,
+      "automaticRequests": [],
+      "browserErrors": []
+    },
+    {
+      "route": "/admin/settings/brand",
+      "status": 200,
+      "initialPrismaQueries": 7,
+      "automaticRequests": [],
+      "browserErrors": []
+    },
+    {
+      "route": "/admin/settings/shipping",
+      "status": 200,
+      "initialPrismaQueries": 13,
+      "automaticRequests": [],
+      "browserErrors": []
+    },
+    {
+      "route": "/admin/settings/taxes",
+      "status": 200,
+      "initialPrismaQueries": 9,
+      "automaticRequests": [],
+      "browserErrors": []
+    },
+    {
+      "route": "/admin/settings/email",
+      "status": 200,
+      "initialPrismaQueries": 7,
+      "automaticRequests": [],
+      "browserErrors": []
+    },
+    {
+      "route": "/admin/account",
+      "status": 200,
+      "initialPrismaQueries": 7,
+      "automaticRequests": [],
+      "browserErrors": []
+    },
+    {
+      "route": "/admin/system/team",
+      "status": 200,
+      "initialPrismaQueries": 8,
+      "automaticRequests": [],
+      "browserErrors": []
+    },
+    {
+      "route": "/admin/system/developer",
+      "status": 200,
+      "initialPrismaQueries": 7,
+      "automaticRequests": [],
+      "browserErrors": []
+    }
+  ]
+}

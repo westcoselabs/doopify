@@ -11,7 +11,7 @@ Doopify is a developer-first, self-hostable commerce engine with a protected ope
 
 - One typed server-only environment entry point supplies Stripe, Resend/SMTP, Shippo/EasyPost, storage and runner adapters. Infrastructure credentials are no longer runtime database data.
 - Owner-only **System → Developer** at `/admin/system/developer` exposes safe configuration states and explicit read-only connection tests. Provider credential forms, save/disconnect APIs, masking helpers, DB verification metadata and the DB → decrypt → env fallback layer are removed.
-- Focused Server Component settings routes load business data for General, Brand, Shipping, Taxes, Email, Account and Team. Business mutation APIs and role guards remain. Admin navigation no longer prefetches unrelated modules.
+- Focused Server Component settings routes load business data for General, Brand, Shipping, Taxes and Customer emails. Team is under System; My account is a separate personal destination. Old bookmarks redirect to their authorized pages. Business mutation APIs and role guards remain. Admin navigation no longer prefetches unrelated modules.
 - Shipping rates/labels select providers through `SHIPPING_RATE_PROVIDER` and `SHIPPING_LABEL_PROVIDER`. Merchant rates, packages, locations, fallback policy, manual fulfillment, local delivery, pickup and packing slips stay in admin.
 - Outbound destinations, event subscriptions and header/signing-secret references are developer-owned in `src/server/config/outbound-webhooks.ts`. Postgres retains durable delivery history. **System → Delivery logs** supports monitoring and eligible retries.
 - `DATA_ENCRYPTION_KEY` protects application-owned encrypted data including owner MFA and digital-download tokens. Existing encrypted data must retain the same key value through the rename.
@@ -20,6 +20,10 @@ Doopify is a developer-first, self-hostable commerce engine with a protected ope
 - Analytics uses server aggregate queries over the complete dataset with separate per-currency money totals, instead of calculating store totals from the first admin list page.
 - Jobs and inbound/outbound webhook deliveries use expiring ownership claims and guarded completion. Inbound signatures are verified before canonical records are written. Runner batches use bounded concurrency and time budgets.
 - Queued email sends persist send-attempt state; unknown outcomes after a provider send require reconciliation instead of blind automatic resend. Missing email configuration and preview never masquerade as successful delivery.
+
+## Settings refinement
+
+Merchant Settings now has five sections. Shipping leads with customer rates and exposes location management; Customer emails focuses on message templates instead of duplicating store contact setup. Developer is a separate compact read-only diagnostics page. Unused email/shipping status APIs and obsolete credential-screen styles are removed. General rejects the unused deployment-domain field; Brand rejects frontend theme mutations. Stored legacy values remain readable until an explicit data migration.
 
 ## Commerce guarantees retained
 
@@ -38,7 +42,7 @@ The preceding remediation work was merged to master at `06c8336cfd7140435ef5a45f
 
 Existing installations must follow the [environment-only migration runbook](ENV_ONLY_MIGRATION_RUNBOOK.md): export and validate configuration, apply additive changes, deploy with legacy tables intact, validate real operations, retain a rollback window, then explicitly contract legacy credential tables and columns. Never rotate the application encryption key as a side effect of moving provider configuration.
 
-Local acceptance passed: Prisma generation, lint, TypeScript, production build, 1,433 fast tests, 40 disposable real-DB tests, 20 browser tests (two live-provider checks skipped), eight production settings routes and the synthetic restored-database migration rehearsal. General route-specific gzip JS fell 82.4% and navigation queries fell 94.5%. See [acceptance evidence](performance/env-only-acceptance.md) for measurement boundaries, warnings and exact artifacts. Actual production smoke checks and rollback-window closure remain operator work.
+Local acceptance passed: Prisma generation, lint, TypeScript, production build, 1,431 fast tests after the Settings refinement, 20 browser tests (two live-provider checks skipped) and eight production Settings/System routes. The earlier 40 disposable real-DB tests and synthetic restored-database migration rehearsal also passed. General route-specific gzip JS is now 83.8% below merged master and navigation queries remain 94.5% lower. See [acceptance evidence](performance/env-only-acceptance.md) for measurement boundaries, warnings and exact artifacts. Actual production smoke checks and rollback-window closure remain operator work.
 
 CI integration tests now provision a disposable Postgres 16 service on every push/PR, without requiring a shared database secret. The published branch's initial dependency-install and workflow-condition failures have repository fixes; final-head remote checks are a separate release gate.
 
@@ -48,7 +52,7 @@ The environment template now has a small active baseline and commented optional 
 
 ## Phase history and remaining scope
 
-Phases 1–3 established catalog, checkout, collections and verified payment finalization. Phase 4 added refunds, returns, outbound delivery, email observability, analytics events, jobs and abandoned-checkout recovery. Phases 20–21 strengthened merchant workflows, team/account management and bootstrap/recovery. Phase 26 tracks production security and operational hardening. The detailed [roadmap](features-roadmap.md) retains that sequence; removed credential UI and wizard descriptions are superseded by the current architecture.
+Phases 1–3 established catalog, checkout, collections and verified payment finalization. Phase 4 added refunds, returns, outbound delivery, email observability, analytics events, jobs and abandoned-checkout recovery. Phases 20–21 strengthened merchant workflows, team/account management and bootstrap/recovery. Phase 26 tracks production security and operational hardening. The concise [roadmap](features-roadmap.md) retains that sequence and next work. Superseded plans and design mockups are recoverable in Git history.
 
 Continue proving real-DB payment/inventory/refund/return and delivery races as services evolve. Complete deployment-specific backups/restore rehearsal, CSP enforcement review, provider webhook tests, email deliverability verification and capacity measurements before broader launch claims.
 
@@ -56,4 +60,4 @@ Deferred: customer accounts, public runtime plugins/marketplace, theme marketpla
 
 ## Source of truth
 
-Read [PROJECT_INTENT.md](PROJECT_INTENT.md), [features-roadmap.md](features-roadmap.md), [HARDENING.md](HARDENING.md), [architecture/env-only-commerce.md](architecture/env-only-commerce.md), and [CONTRIBUTING.md](../CONTRIBUTING.md). Ignore `docs/archive/` for current setup, deployment and security guidance.
+Read [PROJECT_INTENT.md](PROJECT_INTENT.md), [features-roadmap.md](features-roadmap.md), [HARDENING.md](HARDENING.md), [architecture/env-only-commerce.md](architecture/env-only-commerce.md), and [CONTRIBUTING.md](../CONTRIBUTING.md). The [documentation index](README.md) lists maintained guides; Git history contains superseded plans.

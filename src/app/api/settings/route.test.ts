@@ -39,6 +39,16 @@ describe('PATCH /api/settings', () => {
     vi.clearAllMocks()
   })
 
+  it.each(['domain', 'primaryColor', 'STRIPE_SECRET_KEY', 'shippingRateProvider'])('rejects infrastructure or design configuration: %s', async (field) => {
+    mocks.requireAdmin.mockResolvedValue({ ok: true, user: { id: 'owner_1', role: 'OWNER' } })
+    const response = await PATCH(new Request('http://localhost/api/settings', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Store', [field]: 'not-a-merchant-setting' }),
+    }))
+    expect(response.status).toBe(400)
+    expect(mocks.updateStoreSettings).not.toHaveBeenCalled()
+  })
+
   it('rejects unsupported currency values', async () => {
     mocks.requireAdmin.mockResolvedValue({
       ok: true,

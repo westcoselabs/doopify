@@ -1339,7 +1339,7 @@ export default function OrderDetailView({
                     <div className={styles.providerSingleRow}>
                       <span className={styles.metaText}>Label provider</span>
                       <span className={styles.providerSingleMeta}>{providerLabel(selectedProviderForLabel)} · Configured</span>
-                      <Link className={styles.inlineLinkButton} href="/admin/system/integrations">Environment & integrations</Link>
+                      <Link className={styles.inlineLinkButton} href="/admin/system/developer">Environment & integrations</Link>
                     </div>
 
                     <h4 className={styles.workflowTitle}>Buy shipping label with {providerLabel(selectedProviderForLabel || rateProvider)}</h4>

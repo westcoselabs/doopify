@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from 'react';
+import { useState, useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSettings } from '../../context/SettingsContext';
@@ -10,7 +10,10 @@ export const NAV_GROUPS = [
   {
     id: 'workspace',
     label: 'Workspace',
-    items: [{ href: '/admin', label: 'Dashboard', icon: 'dashboard', exact: true }],
+    items: [
+      { href: '/admin', label: 'Dashboard', icon: 'dashboard', exact: true },
+      { href: '/admin/settings/general', label: 'Settings', icon: 'settings', activePrefix: '/admin/settings' },
+    ],
   },
   {
     id: 'sales',
@@ -43,16 +46,17 @@ export const NAV_GROUPS = [
     id: 'system',
     label: 'System',
     items: [
-      { href: '/admin/system/developer', label: 'Developer', icon: 'code' },
+      { href: '/admin/system/developer', label: 'Developer', icon: 'code', ownerOnly: true },
+      { href: '/admin/system/team', label: 'Team', icon: 'group', ownerOnly: true },
       { href: '/admin/webhooks', label: 'Delivery logs', icon: 'sync_problem' },
-      { href: '/admin/settings/general', label: 'Settings', icon: 'settings' },
     ],
   },
 ];
 
 const emptySubscribe = () => () => {};
 
-export default function Sidebar() {
+export default function Sidebar({ role }) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const { settings } = useSettings();
@@ -66,7 +70,7 @@ export default function Sidebar() {
   const storeName = (settings.storeName || 'Doopify Store').trim() || 'Doopify Store';
 
   return (
-    <aside className={`${styles.sidebar} glass-panel refraction-edge admin-spotlight`}>
+    <aside className={`${styles.sidebar} glass-panel refraction-edge admin-spotlight`} data-mobile-open={mobileMenuOpen}>
       <div className={styles.brand}>
         <div className={styles.brandLockup}>
           {settings.logoUrl ? (
@@ -82,20 +86,26 @@ export default function Sidebar() {
         </div>
       </div>
 
-      <nav className={styles.nav}>
+      <button type="button" className={styles.mobileMenu} aria-expanded={mobileMenuOpen} aria-controls="admin-navigation" onClick={() => setMobileMenuOpen(!mobileMenuOpen)}>
+        <span className="material-symbols-outlined" aria-hidden="true">{mobileMenuOpen ? 'close' : 'menu'}</span>
+        {mobileMenuOpen ? 'Close navigation' : 'Open navigation'}
+      </button>
+      <nav className={styles.nav} id="admin-navigation" aria-label="Admin navigation">
         {NAV_GROUPS.map((group) => (
           <section className={styles.navSection} key={group.id}>
             <p className={`font-headline tracking-widest ${styles.sectionLabel}`}>{group.label}</p>
             <div className={styles.sectionItems}>
-              {group.items.map((item) => {
+              {group.items.filter((item) => !item.ownerOnly || !role || role === "OWNER").map((item) => {
                 const isActive =
                   item.exact
                     ? activePathname === item.href
-                    : activePathname === item.href || activePathname.startsWith(`${item.href}/`);
+                    : activePathname === item.href || activePathname.startsWith(`${item.activePrefix || item.href}/`);
                 return (
                   <Link prefetch={false}
                     key={item.href}
                     href={item.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    aria-current={isActive ? 'page' : undefined}
                     className={`${styles.navLink} ${isActive ? styles.navLinkActive : ''} font-headline`}
                   >
                     <span
@@ -114,6 +124,10 @@ export default function Sidebar() {
       </nav>
 
       <div className={styles.bottomNav}>
+        <Link prefetch={false} href="/admin/account" className={`${styles.navLink} font-headline`} aria-current={activePathname === "/admin/account" ? "page" : undefined}>
+          <span className="material-symbols-outlined" aria-hidden="true">account_circle</span>
+          <span>My account</span>
+        </Link>
         <button className={`${styles.navLink} font-headline`} onClick={handleLogout} type="button">
           <span className="material-symbols-outlined">logout</span>
           <span>Log out</span>

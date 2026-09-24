@@ -62,6 +62,16 @@ Provider execution is env-only, but existing database tables remain physically p
 
 Deployment-specific provider smoke tests, actual backup rehearsal and cutover remain operator acceptance. The post-commit event/side-effect crash window remains an explicit transactional-outbox follow-up. Expiring claims and email send-start markers do not promise exactly-once external delivery.
 
+## Settings and documentation refinement, September 24
+
+The [current bundle measurement](settings-refinement-bundle.json) records General route-specific gzip JS at **12,085 bytes**, down another **8.0%** from 13,134 bytes and **83.8%** from merged master. General still performs six initial Prisma queries. The [current browser checks](settings-refinement-browser.json) cover five merchant pages, separate Account/Team/Developer routes, bookmark redirects, mobile navigation and preserved drafts after failed General, shipping-location and template saves. All eight pages issue **zero initial fetch/XHR requests**. Light/dark and 390/1440px renders were inspected.
+
+Prisma generation, lint (zero errors, 25 existing warnings), TypeScript, build and repository hygiene passed. The unit suite passes **1,431 tests**; deleted cases belonged to the two removed, unused status APIs and email-status service, while new cases reject infrastructure/theme mutations through merchant APIs. Existing browser suites pass **20 tests**, with the same two live-Stripe checks skipped. React Doctor remains **71/100**, with the same three pre-existing callback diagnostics. The known private-download tracing warning remains.
+
+Shipping no longer loads a separate readiness snapshot. Its location editor is reachable, fallback rates are collapsible, and failed location saves display an error in the open editor. Customer emails owns message content rather than duplicate sender setup. Developer diagnostics are compact read-only disclosures outside merchant Settings. Legacy Store data and migration runbooks remain; this pass makes no schema or deployment changes.
+
+Superseded archives, beta plans and the duplicate contributing pointer were removed from the working tree; Git history retains them. The maintained documentation index replaces that navigation clutter, while original performance and migration evidence above remains available. Use `node scripts/measure-settings-bundle.mjs refinement` and `node scripts/check-settings-browser.mjs` to reproduce the current refinement artifacts.
+
 ## Reproduction and artifacts
 
 `scripts/seed-performance-fixture.mjs` is guarded to the disposable loopback `doopify_test/commerce_perf` target on port 55432. `scripts/performance-server.mjs` runs an inert production server on port 3107. Run `node scripts/measure-performance.mjs after`, `node scripts/measure-settings-bundle.mjs after` and `node scripts/check-settings-browser.mjs` against that fixture; `baseline` selects the old Settings URL and requires a build of merged master. Promotion profiling uses `PERFORMANCE_DATABASE_URL` and `PERFORMANCE_LABEL=after` with `npx vitest run --config scripts/performance.config.ts`.

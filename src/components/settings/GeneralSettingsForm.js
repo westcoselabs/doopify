@@ -34,7 +34,6 @@ export default function GeneralSettingsForm({ initialStore }) {
           "name",
           "email",
           "phone",
-          "domain",
           "address1",
           "city",
           "province",
@@ -55,14 +54,13 @@ export default function GeneralSettingsForm({ initialStore }) {
   }
   return (
     <form onSubmit={save} className={styles.configStack}>
-      <h1>General</h1>
+      <header className={styles.pageIntro}><h1>General</h1><p>Your store identity, contact details and regional preferences.</p></header>
       <div className={styles.drawerFormGrid}>
         {[
           ["name", "Store name"],
-          ["email", "Contact email"],
+          ["email", "Store contact email"],
           ["phone", "Phone"],
-          ["domain", "Store domain"],
-          ["address1", "Street address"],
+          ["address1", "Public business address"],
           ["city", "City"],
           ["province", "State / province"],
           ["postalCode", "Postal code"],

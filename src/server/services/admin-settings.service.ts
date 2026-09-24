@@ -10,7 +10,6 @@ export const getAdminSettings = cache(async () => {
       name: true,
       email: true,
       phone: true,
-      domain: true,
       currency: true,
       timezone: true,
       logoUrl: true,

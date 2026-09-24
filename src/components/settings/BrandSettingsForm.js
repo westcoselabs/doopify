@@ -79,7 +79,7 @@ export default function BrandSettingsForm({ initialBrand }) {
   }
   return (
     <form onSubmit={save} className={styles.configStack}>
-      <h1>Brand & appearance</h1>
+      <h1>Brand</h1>
       <p>
         Logos and support identity appear in your storefront, checkout, customer
         emails and packing slips. Theme colors remain managed by the storefront.

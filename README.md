@@ -33,6 +33,8 @@ Doopify is a real commerce application built with Next.js 16, Prisma, PostgreSQL
 
 ## Getting started
 
+**Documentation:** [Maintained guides](docs/README.md)
+
 **Quickstart (15 minutes):** [docs/quickstart.md](./docs/quickstart.md)
 
 **Deploy to Vercel:** [docs/deployment/vercel.md](./docs/deployment/vercel.md)
