@@ -38,9 +38,11 @@ The preceding remediation work was merged to master at `06c8336cfd7140435ef5a45f
 
 Existing installations must follow the [environment-only migration runbook](ENV_ONLY_MIGRATION_RUNBOOK.md): export and validate configuration, apply additive changes, deploy with legacy tables intact, validate real operations, retain a rollback window, then explicitly contract legacy credential tables and columns. Never rotate the application encryption key as a side effect of moving provider configuration.
 
-Local acceptance passed: Prisma generation, lint, TypeScript, production build, 1,430 fast tests, 40 disposable real-DB tests, 20 browser tests (two live-provider checks skipped), eight production settings routes and the synthetic restored-database migration rehearsal. General route-specific gzip JS fell 82.4% and navigation queries fell 94.5%. See [acceptance evidence](performance/env-only-acceptance.md) for measurement boundaries, warnings and exact artifacts. Actual production smoke checks and rollback-window closure remain operator work.
+Local acceptance passed: Prisma generation, lint, TypeScript, production build, 1,433 fast tests, 40 disposable real-DB tests, 20 browser tests (two live-provider checks skipped), eight production settings routes and the synthetic restored-database migration rehearsal. General route-specific gzip JS fell 82.4% and navigation queries fell 94.5%. See [acceptance evidence](performance/env-only-acceptance.md) for measurement boundaries, warnings and exact artifacts. Actual production smoke checks and rollback-window closure remain operator work.
 
 CI integration tests now provision a disposable Postgres 16 service on every push/PR, without requiring a shared database secret. The published branch's initial dependency-install and workflow-condition failures have repository fixes; final-head remote checks are a separate release gate.
+
+The Vercel preview currently fails environment validation for `DATA_ENCRYPTION_KEY`. Complete the migration with the existing effective key material before redeploying; do not generate a replacement key to bypass validation.
 
 ## Phase history and remaining scope
 

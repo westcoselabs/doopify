@@ -41,7 +41,7 @@ The loader's cost still grows with active promotion count. Candidate filtering i
 
 - Prisma generation, TypeScript, production build and repository hygiene passed.
 - Lint: zero errors, 25 warnings (merged baseline: 43 warnings). JavaScript pages now also enforce undefined-variable detection.
-- Fast unit/service suite: **1,430 passed**, zero failures or skips. Removed tests covered deleted credential CRUD, masking, provider setup and monolithic Settings implementations; equivalent commerce/reliability tests remain or were replaced with the env-only contracts.
+- Fast unit/service suite: **1,433 passed**, zero failures or skips, including three additional cross-platform upload filename cases after Linux CI exposed a host-dependent basename operation. Removed tests covered deleted credential CRUD, masking, provider setup and monolithic Settings implementations; equivalent commerce/reliability tests remain or were replaced with the env-only contracts.
 - Disposable real-Postgres suite: **40 passed** across six files, including checkout/inventory races, refund/return behavior, complete analytics/catalog datasets, email ownership and concurrent job/inbound/outbound claims.
 - Existing Playwright suite: **20 passed**, two live-Stripe checks intentionally skipped because ordinary tests strip external credentials. This includes promotion admin/checkout, capability POST behavior, digital order snapshots, smoke checks and desktop/mobile snapshots.
 - Production settings browser checks: **eight routes passed** with a Pacific/Auckland browser timezone differing from the server; no browser errors, anonymous diagnostics denied, legacy section bookmarks redirected, failed General save preserved the draft and did not show success.
@@ -53,6 +53,8 @@ The production build retains one Turbopack dynamic-filesystem tracing warning fo
 ## Reduction and deployment boundaries
 
 The initial published branch exposed two CI setup defects before tests ran: an incomplete optional dependency lock entry and a pre-existing unsupported job-level secret condition. The lockfile was regenerated without an installed dependency tree and validated with npm 11.19's Linux/x64 clean-install dry run. Integration CI now provisions its own disposable Postgres 16 service instead of depending on a shared database secret. Remote verification results must be checked for the final branch head separately from the local evidence above.
+
+The [remote Postgres suite](https://github.com/westcoselabs/doopify/actions/runs/35956701179) passed all 40 tests. Linux unit CI then caught Windows-style upload names being parsed with POSIX server path rules; filename parsing now handles both client path styles explicitly. The [Vercel preview](https://vercel.com/westcoselabs/doopify/GZ7u1KZnkuZ66ZGyC7EshCpaBdJ5) fails on `Invalid environment configuration: DATA_ENCRYPTION_KEY`. This requires deployment configuration migration preserving the existing effective encryption key, not a new key or a runtime fallback.
 
 Production `src` code (TS/JS/JSX/TSX/CSS, excluding tests/declarations) falls from 93,910 to approximately 77,900 physical lines: **about 16,000 lines removed net**. API route files fall from **148 to 133**. The [exact code/API inventory](env-only-code-size.json) includes new files, not just tracked deletions.
 

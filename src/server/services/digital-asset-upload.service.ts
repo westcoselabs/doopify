@@ -119,7 +119,8 @@ function sanitizeFileNamePart(value: string) {
 }
 
 export function sanitizeDigitalAssetFileName(fileName: string) {
-  const safe = sanitizeFileNamePart(path.basename(fileName || 'file'))
+  // Upload names can contain either client's path separators on any server OS.
+  const safe = sanitizeFileNamePart(path.win32.basename(fileName || 'file'))
   return safe.slice(0, 180) || 'file'
 }
 
