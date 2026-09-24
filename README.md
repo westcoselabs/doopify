@@ -42,7 +42,7 @@ Doopify is a real commerce application built with Next.js 16, Prisma, PostgreSQL
 ### Setup essentials
 
 - Copy `.env.example` to `.env.local` before first boot.
-- `DATABASE_URL` and `DIRECT_URL` are required before the app can boot.
+- `DATABASE_URL`, `JWT_SECRET` and `DATA_ENCRYPTION_KEY` are required before the app can boot. `DIRECT_URL` is unused; Prisma tooling uses `DATABASE_URL` too.
 - `SETUP_TOKEN` behavior:
   - Local development: optional.
   - Deployed production first-owner bootstrap: required.

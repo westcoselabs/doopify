@@ -42,7 +42,9 @@ Local acceptance passed: Prisma generation, lint, TypeScript, production build, 
 
 CI integration tests now provision a disposable Postgres 16 service on every push/PR, without requiring a shared database secret. The published branch's initial dependency-install and workflow-condition failures have repository fixes; final-head remote checks are a separate release gate.
 
-The Vercel preview currently fails environment validation for `DATA_ENCRYPTION_KEY`. Complete the migration with the existing effective key material before redeploying; do not generate a replacement key to bypass validation.
+The local environment and Vercel Preview/Production now have `DATA_ENCRYPTION_KEY` with the existing effective key material preserved. The old hosted variable remains for the existing deployment and rollback. This configuration change does not apply database migrations or complete production cutover.
+
+The environment template now has a small active baseline and commented optional provider/setup values. Unused `DIRECT_URL` configuration is removed; Prisma tooling consumes `DATABASE_URL`. Independent runner credentials remain supported and must be retained while schedulers use them.
 
 ## Phase history and remaining scope
 

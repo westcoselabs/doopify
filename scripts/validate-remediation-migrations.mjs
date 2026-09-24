@@ -44,7 +44,6 @@ function childEnvironment(databaseUrl) {
   return createInertTestEnvironment(process.env, {
     DATABASE_URL: databaseUrl,
     DATABASE_URL_TEST: testUrl,
-    DIRECT_URL: databaseUrl,
     NODE_ENV: 'test',
     DOOPIFY_MIGRATION_TIMEOUT_MS: String(COMMAND_TIMEOUT_MS),
   })

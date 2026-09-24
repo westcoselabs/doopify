@@ -23,7 +23,7 @@ Optional pre-check: run `npm run test:e2e` locally for a safe smoke baseline bef
 Confirm before starting validation:
 
 - [ ] `DATABASE_URL` configured with `sslmode=verify-full` (for Neon production branch)
-- [ ] `DIRECT_URL` configured for Prisma tooling
+- [ ] `DATABASE_URL` supplies the intended connection for Prisma tooling; `DIRECT_URL` is unused
 - [ ] `JWT_SECRET` — at least 32 characters, high entropy
 - [ ] `DATA_ENCRYPTION_KEY` — set for encrypted integration secrets
 - [ ] `NEXT_PUBLIC_STORE_URL` — points to your deployed storefront

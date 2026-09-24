@@ -9,7 +9,6 @@
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `DATABASE_URL` | Yes | Primary Postgres connection string used by Prisma/runtime. |
-| `DIRECT_URL` | Recommended | Direct Postgres URL used by Prisma tooling/migrations. |
 | `JWT_SECRET` | Yes | Auth JWT signing secret. Use high-entropy value. |
 | `DATA_ENCRYPTION_KEY` | Required outside tests | High-entropy application-data encryption key for MFA and private download tokens; preserve the old effective key value when upgrading. |
 | `DATA_ENCRYPTION_KEY_PREVIOUS` | During rotation only | Previous application-data key retained until guarded re-encryption and validation finish. |
@@ -44,8 +43,8 @@
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `SMTP_HOST` | Required when SMTP is used | SMTP server hostname. |
-| `SMTP_PORT` | Required when SMTP is used | SMTP server port (default 587). |
-| `SMTP_SECURE` | Required when SMTP is used | `true`/`false` secure transport toggle for SMTP. |
+| `SMTP_PORT` | Optional | SMTP server port (default 587). |
+| `SMTP_SECURE` | Optional | `true`/`false` secure transport toggle for SMTP (default false). |
 | `SMTP_USERNAME` | Required when SMTP is used | SMTP username. |
 | `SMTP_PASSWORD` | Required when SMTP is used | SMTP password. |
 | `SMTP_FROM_EMAIL` | Optional | Default sender used by SMTP delivery wiring. |
@@ -126,8 +125,7 @@ Define destination IDs, URLs and event subscriptions in `src/server/config/outbo
 
 ## Notes
 
-- Keep database URLs in `.env`.
-- Keep app/runtime secrets in `.env.local`.
+- Start with one private `.env`, including `DATABASE_URL` so Prisma commands can read it. Use `.env.local` only for intentional local overrides, such as disposable test databases; avoid duplicate definitions.
 - Keep `.env` and `.env.local` local-only; use host-managed secrets for production.
 - Never commit real credentials.
 - Rotate production secrets after incident response or compromise suspicion.
@@ -136,3 +134,13 @@ Define destination IDs, URLs and event subscriptions in `src/server/config/outbo
 - Product/gallery media is public by design. Do not upload sensitive/private files.
 - Private digital uploads are intentionally rejected for `MEDIA_STORAGE_PROVIDER=vercel-blob` until private-object guarantees are finalized.
 - For digital downloads on S3-compatible storage, bucket privacy and IAM policy configuration are required to keep files private.
+
+## Cleaning up an existing installation
+
+- Rename `ENCRYPTION_KEY` to `DATA_ENCRYPTION_KEY` without changing its value, and likewise rename `ENCRYPTION_KEY_PREVIOUS` if present. Add the new names to the host before deploying; retain the old names while old application instances or rollback deployments still need them. Do not regenerate application keys to resolve a missing-variable error.
+- `DIRECT_URL` is unused by this repository. Prisma uses `DATABASE_URL` for runtime and tooling. If migrations need a direct connection, explicitly supply that connection as `DATABASE_URL` to the guarded migration command.
+- Remove placeholder credentials and completed-bootstrap `DOOPIFY_STORE_*` / `DOOPIFY_ADMIN_*` values from the running app's environment. These are CLI inputs, not merchant settings. Preserve any needed bootstrap information privately before removing it.
+- Keep only the chosen email/shipping/storage provider variables. Set selectors explicitly; a saved API key alone does not enable email or live shipping.
+- `JOB_RUNNER_SECRET` and `ABANDONED_CHECKOUT_SECRET` can be omitted for a new installation because the endpoints fall back to `WEBHOOK_RETRY_SECRET`. Existing different values must remain until every external scheduler/worker is updated; deleting them changes authorization.
+- Keep test-only, Vercel CLI and setup helper values out of hosted application environments. Do not remove `SETUP_TOKEN` until the owner exists, or previous encryption keys until rotation is complete.
+- Vercel variable changes apply to subsequent deployments. Redeploy Preview to validate changes before production cutover.

@@ -838,7 +838,6 @@ async function buildEnvUpdates(existingEnv) {
     DOOPIFY_ADMIN_PASSWORD: values.ownerPassword,
     NEXT_PUBLIC_STORE_URL: values.publicAppUrl,
     DATABASE_URL: values.databaseUrl,
-    DIRECT_URL: existingEnv.DIRECT_URL || values.databaseUrl,
     STRIPE_SECRET_KEY: values.stripeSecretKey,
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: values.stripePublishableKey,
     STRIPE_WEBHOOK_SECRET: values.stripeWebhookSecret,
