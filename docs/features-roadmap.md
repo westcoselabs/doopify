@@ -352,7 +352,7 @@ Status: foundation shipped; continue operational hardening
   - `npx tsc --noEmit`
   - `npm run test`
   - `npm run build`
-- `.github/workflows/integration.yml` optional integration workflow (`npm run test:integration`) gated by `DATABASE_URL_TEST` secret
+- `.github/workflows/integration.yml` runs `npm run test:integration` against its own disposable Postgres 16 service on push/PR, without shared database secrets
 - production runbook pack:
   - `deployment/checklist.md`
   - `ENVIRONMENT_VARIABLE_REFERENCE.md`

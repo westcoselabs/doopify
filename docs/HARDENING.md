@@ -106,7 +106,7 @@ Phase 4 adds merchant lifecycle and integration risks: refunds, returns, outboun
 - fulfillment lifecycle jobs now run through the shared job system: `SYNC_SHIPPING_TRACKING` for safe tracking-field sync plus provider polling-driven `deliveredAt` updates, and `SEND_FULFILLMENT_EMAIL` for tracked shipping-update delivery attempts
 - shipping provider webhook ingestion now supports `POST /api/webhooks/shipping-provider?provider=EASYPOST|SHIPPO` with signature verification and tracked fulfillment/shipping-label updates
 - inbound Stripe webhook deliveries are durably logged with provider event id, type, status, attempts, processed timestamp, last error, payload hash, verified local payload storage, and retry metadata
-- inbound Stripe webhook signature verification now prefers verified DB webhook secret and falls back to env webhook secret only when verified DB webhook secret is unavailable
+- inbound Stripe webhook signature verification uses only the typed environment webhook secret; no database credential lookup or fallback remains
 - inbound webhook replay uses verified local payloads instead of refetching from Stripe
 - inbound webhook retry/support diagnostics are available through admin API/UI
 - fast automated tests cover checkout pricing, discount-code math and invalid states, checkout creation, checkout payload validation failures, checkout inventory-exhaustion rejection, duplicate payment-intent completion, invalid webhook signature rejection, verified webhook payload capture, retry scheduling/exhaustion, cron retry authorization, local-payload replay, and support diagnostics
@@ -210,7 +210,7 @@ npm run build
 ## Production Readiness Foundation
 
 - push and pull request CI verification is now codified in `.github/workflows/ci.yml`
-- optional integration workflow exists in `.github/workflows/integration.yml` and runs when `DATABASE_URL_TEST` secret is configured
+- `.github/workflows/integration.yml` runs against a disposable Postgres 16 service on push/PR; it does not consume a shared database secret
 - production runbook docs now cover:
   - deployment checklist
   - environment variable reference
@@ -296,11 +296,11 @@ These invariants should not be broken by future work:
 
 ## Outbound Webhook Invariants
 
-- outbound webhook subscriptions must be explicit by integration and event
-- integration/event subscriptions must be unique
+- outbound webhook subscriptions must be explicit by destination and event in typed developer configuration
+- destination identities must be unique and stable across deployments
 - delivery records must be durable before delivery is attempted
-- signing secrets and custom header secrets must be encrypted at rest
-- editing an integration must not clear signing secrets unless explicitly requested
+- signing secrets and custom header secrets live only in environment variables; persisted snapshots contain references, never secret values
+- configuration changes must retain delivery identities and snapshots; a destination mismatch requires review before historical delivery resumes
 - outbound payload signing must include a timestamp to reduce replay risk
 - non-2xx responses should be recorded and retried according to policy
 - due delivery processing must claim a delivery before sending to reduce duplicate sends from overlapping workers
@@ -337,7 +337,7 @@ See `SETUP_AND_CLI_PLAN.md` for the planned implementation sequence.
 The first setup hardening milestone is complete when:
 
 - `doopify doctor` can run read-only setup diagnostics locally
-- setup status is available through a safe server service and owner-only `/api/setup/status` access
+- infrastructure status is available through a safe server service and owner-only `/api/system/integrations` access
 - System -> Developer shows safe presence states, explicit diagnostics and persisted business readiness without browser shell execution.
 - `doopify setup` can write env files, run Prisma setup, and bootstrap owner/store from a local trusted environment
 - secrets are redacted from logs and never exposed through setup-status APIs
@@ -462,8 +462,8 @@ These ideas are intentionally rejected for this phase:
 The next hardening milestone is complete when:
 
 - transactional email delivery records, status transitions, bounce/complaint handling, and safe resend tooling remain stable as coverage expands
-- email failure/resend, outbound retry/idempotency, and integration secret-preservation behavior remain green in real-DB runs
+- email failure/resend, outbound retry/idempotency, ownership fencing and migration secret-preservation behavior remain green in real-DB runs
 - analytics fan-out behavior remains covered with side-effect safety checks as lifecycle flows expand
-- setup diagnostics are implemented in a way that redacts secrets and reuses checks between CLI and admin Setup tab
+- diagnostics redact secrets and share the environment contract between the CLI and System -> Developer
 - General, Brand, Shipping, Taxes, Email, Account and Team own business settings; System -> Developer owns safe infrastructure status.
 - operational logging is good enough to debug a missing email, duplicate delivery, stuck retry, exhausted outbound webhook, or broken setup without inspecting the database manually

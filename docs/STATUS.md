@@ -40,6 +40,8 @@ Existing installations must follow the [environment-only migration runbook](ENV_
 
 Local acceptance passed: Prisma generation, lint, TypeScript, production build, 1,430 fast tests, 40 disposable real-DB tests, 20 browser tests (two live-provider checks skipped), eight production settings routes and the synthetic restored-database migration rehearsal. General route-specific gzip JS fell 82.4% and navigation queries fell 94.5%. See [acceptance evidence](performance/env-only-acceptance.md) for measurement boundaries, warnings and exact artifacts. Actual production smoke checks and rollback-window closure remain operator work.
 
+CI integration tests now provision a disposable Postgres 16 service on every push/PR, without requiring a shared database secret. The published branch's initial dependency-install and workflow-condition failures have repository fixes; final-head remote checks are a separate release gate.
+
 ## Phase history and remaining scope
 
 Phases 1–3 established catalog, checkout, collections and verified payment finalization. Phase 4 added refunds, returns, outbound delivery, email observability, analytics events, jobs and abandoned-checkout recovery. Phases 20–21 strengthened merchant workflows, team/account management and bootstrap/recovery. Phase 26 tracks production security and operational hardening. The detailed [roadmap](features-roadmap.md) retains that sequence; removed credential UI and wizard descriptions are superseded by the current architecture.

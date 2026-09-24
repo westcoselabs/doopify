@@ -52,6 +52,8 @@ The production build retains one Turbopack dynamic-filesystem tracing warning fo
 
 ## Reduction and deployment boundaries
 
+The initial published branch exposed two CI setup defects before tests ran: an incomplete optional dependency lock entry and a pre-existing unsupported job-level secret condition. The lockfile was regenerated without an installed dependency tree and validated with npm 11.19's Linux/x64 clean-install dry run. Integration CI now provisions its own disposable Postgres 16 service instead of depending on a shared database secret. Remote verification results must be checked for the final branch head separately from the local evidence above.
+
 Production `src` code (TS/JS/JSX/TSX/CSS, excluding tests/declarations) falls from 93,910 to approximately 77,900 physical lines: **about 16,000 lines removed net**. API route files fall from **148 to 133**. The [exact code/API inventory](env-only-code-size.json) includes new files, not just tracked deletions.
 
 Provider execution is env-only, but existing database tables remain physically present through the rollback window. The [upgrade runbook](../ENV_ONLY_MIGRATION_RUNBOOK.md) requires a restored copy of the actual installation, preserved effective accounts/keys/destinations, a maintenance window, drained work and application/worker cutover together. The local rehearsal is synthetic. No production secrets were exported, live emails sent, payment/label operations performed, or production tables dropped by this work.

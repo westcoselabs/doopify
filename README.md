@@ -137,6 +137,8 @@ DATABASE_URL_TEST="postgresql://..." npm run test:integration
 ```
 
 Never point `DATABASE_URL_TEST` at your development or production database.
+
+GitHub Actions provisions a disposable Postgres 16 service for integration tests on every push and pull request. No database secret is needed for CI.
 For a disposable `public` schema, also set `E2E_DATABASE_URL` to the exact same target and explicitly acknowledge the reset with `DOOPIFY_ALLOW_PUBLIC_TEST_SCHEMA=1`.
 
 E2E smoke tests (safe-by-default, local only):
