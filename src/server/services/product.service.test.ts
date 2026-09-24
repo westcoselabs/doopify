@@ -320,7 +320,7 @@ describe('product storefront visibility', () => {
         where: expect.objectContaining({
           status: 'ACTIVE',
           AND: expect.arrayContaining([
-            { OR: [{ publishedAt: null }, { publishedAt: { lte: expect.any(Date) } }] },
+            { status: 'ACTIVE', OR: [{ publishedAt: null }, { publishedAt: { lte: expect.any(Date) } }] },
           ]),
         }),
       })

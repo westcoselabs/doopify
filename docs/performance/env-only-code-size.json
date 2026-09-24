@@ -1,0 +1,32 @@
+{
+  "baseline": "06c8336cfd7140435ef5a45fcc803db7a5010c70",
+  "scope": "Production src TS/JS/JSX/TSX/CSS physical lines; excludes tests, declarations, scripts, docs and generated output. All lines counted, including blank lines.",
+  "beforeProductionLines": 93910,
+  "afterProductionLines": 77878,
+  "netLinesRemoved": 16032,
+  "beforeApiRoutes": 148,
+  "afterApiRoutes": 133,
+  "removedApiRoutes": [
+    "src/app/api/deployment-validation/route.ts",
+    "src/app/api/settings/integrations/[id]/route.ts",
+    "src/app/api/settings/integrations/route.ts",
+    "src/app/api/settings/payments/stripe/runtime-status/route.ts",
+    "src/app/api/settings/payments/stripe/status/route.ts",
+    "src/app/api/settings/providers/[provider]/credentials/route.ts",
+    "src/app/api/settings/providers/[provider]/route.ts",
+    "src/app/api/settings/providers/[provider]/test-email/route.ts",
+    "src/app/api/settings/providers/[provider]/verify/route.ts",
+    "src/app/api/settings/providers/route.ts",
+    "src/app/api/settings/shipping/connect-provider/route.ts",
+    "src/app/api/settings/shipping/disconnect-provider/route.ts",
+    "src/app/api/settings/shipping/locations/validate/route.ts",
+    "src/app/api/settings/shipping/setup/route.ts",
+    "src/app/api/settings/shipping/test-provider/route.ts",
+    "src/app/api/setup/status/route.ts",
+    "src/app/api/setup/wizard/route.ts"
+  ],
+  "addedApiRoutes": [
+    "src/app/api/system/integrations/[provider]/test/route.ts",
+    "src/app/api/system/integrations/route.ts"
+  ]
+}

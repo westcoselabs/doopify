@@ -2,7 +2,7 @@
 
 > This file guides AI coding agents and future maintainers without creating a second conflicting roadmap.
 
-Documentation refresh: May 5, 2026
+Documentation refresh: September 24, 2026
 
 ## Required Reading Order
 
@@ -48,7 +48,7 @@ Implemented:
 - Refund service with pending persistence, Stripe idempotency, item validation, restocking, return linkage
 - Return service with state-machine transitions and close-with-refund
 - Outbound merchant webhooks with subscriptions, HMAC signing, retry/backoff, dead-letter visibility
-- Encrypted integration secrets via `IntegrationSecret` model
+- Environment-only infrastructure configuration through `src/lib/env-schema.ts` and server-only `src/lib/env.ts`; data encryption remains for MFA and download tokens
 - Transactional email delivery tracking with Resend or SMTP
 - Provider bounce/complaint webhook handling
 - Analytics event fan-out through the dispatcher
@@ -58,7 +58,7 @@ Implemented:
 - Team management: invite, accept, role change, disable, reactivate, password reset, session management
 - `UserInvite` and `PasswordReset` Prisma models with hashed single-use expiring tokens
 - Production security headers with proxy-applied baseline, HSTS, and CSP report-only mode
-- Audit logging for team operations, provider credentials, refunds, returns, and fulfillments
+- Audit logging for team operations, refunds, returns, and fulfillments
 - GitHub Actions CI workflow
 - Vitest fast tests plus `DATABASE_URL_TEST`-gated real-DB integration specs
 - Media object storage adapter: Postgres (default) or S3-compatible (Cloudflare R2/AWS S3)
@@ -80,7 +80,7 @@ Do not rebuild these foundations unless source inspection proves they are broken
 - Shipping rate service and provider adapters
 - Inbound webhook delivery/replay/retry foundation
 - Outbound merchant webhook delivery foundation
-- Integration secrets foundation
+- Typed environment configuration and application-data encryption
 - Typed event dispatcher and static registry
 - Email delivery service and provider adapter
 - Background job lifecycle
@@ -131,9 +131,9 @@ Do not add runtime plugin loading or marketplace mechanics yet.
 
 ### Keep Setup Automation Split Correctly
 
-The browser Setup tab may read setup status and guide the user. It must not run local shell commands.
+System -> Developer reports environment presence and supports explicit read-only connection tests. Navigation must not call providers or run local shell commands.
 
-Local file writes, provider API calls, Prisma commands, Vercel env changes, and Stripe webhook configuration belong in a local CLI (`doopify doctor` / `doopify setup`).
+Local file writes, provider provisioning, Prisma commands, Vercel env changes, and Stripe webhook configuration belong in a local CLI (`doopify doctor` / `doopify setup`).
 
 ### Respect Next.js Version Conventions
 

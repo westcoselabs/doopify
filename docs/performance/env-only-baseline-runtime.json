@@ -1,0 +1,1220 @@
+{
+  "label": "baseline",
+  "measuredAt": "2026-09-24T03:16:52.120Z",
+  "node": "v24.11.1",
+  "note": "Synthetic local warm server, cold browser cache, one browser navigation per route; HTTP latencies are 30 sequential warm requests. SQL includes all queries during the initial navigation. Checkout is empty-cart navigation; promotion checkout timing is measured separately.",
+  "results": [
+    {
+      "route": "/settings",
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:3107/settings",
+      "requests": [
+        {
+          "url": "/settings",
+          "type": "document"
+        },
+        {
+          "url": "/_next/static/media/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2",
+          "type": "font"
+        },
+        {
+          "url": "/_next/static/media/a343f882a40d2cc9-s.p.1sj6eobyi31rd.woff2",
+          "type": "font"
+        },
+        {
+          "url": "/_next/static/chunks/23eor0qan_ng3.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/2finzjkd5ofgl.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/2_080rh9ssfaz.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/0dq8zjba4gehe.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/37jz06nz7go5q.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/1ycd5by80-dnr.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0nmn3_ni2r51b.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0t1cupau1mtgy.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/06j3juy1u5a-6.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/3nc6x0_y5iwnk.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/turbopack-2nsx2ikl33_7r.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/2yl1jv4w6po1z.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/1ntn7efqc-iiw.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/2_w2d7x-32u0e.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/18--l2c1x_55r.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/41-y90gh36ttg.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0vd32mvq3vv_w.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/2qc8h1i4y3i5b.js",
+          "type": "script"
+        },
+        {
+          "url": "https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/api/csp-report",
+          "type": "other"
+        },
+        {
+          "url": "/api/csp-report",
+          "type": "other"
+        },
+        {
+          "url": "https://fonts.gstatic.com/s/materialsymbolsoutlined/v374/kJEhBvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oFsI.woff2",
+          "type": "font"
+        },
+        {
+          "url": "/api/auth/me",
+          "type": "fetch"
+        },
+        {
+          "url": "/api/settings",
+          "type": "fetch"
+        },
+        {
+          "url": "/admin/webhooks?_rsc=DQxjArDrgutTG17x",
+          "type": "fetch"
+        },
+        {
+          "url": "/analytics?_rsc=DQxjArDrgutTG17x",
+          "type": "fetch"
+        },
+        {
+          "url": "/admin/abandoned-checkouts?_rsc=DQxjArDrgutTG17x",
+          "type": "fetch"
+        },
+        {
+          "url": "/discounts?_rsc=DQxjArDrgutTG17x",
+          "type": "fetch"
+        },
+        {
+          "url": "/media?_rsc=DQxjArDrgutTG17x",
+          "type": "fetch"
+        },
+        {
+          "url": "/admin/collections?_rsc=DQxjArDrgutTG17x",
+          "type": "fetch"
+        },
+        {
+          "url": "/products?_rsc=DQxjArDrgutTG17x",
+          "type": "fetch"
+        },
+        {
+          "url": "/customers?_rsc=DQxjArDrgutTG17x",
+          "type": "fetch"
+        },
+        {
+          "url": "/draft-orders?_rsc=DQxjArDrgutTG17x",
+          "type": "fetch"
+        },
+        {
+          "url": "/orders?_rsc=DQxjArDrgutTG17x",
+          "type": "fetch"
+        },
+        {
+          "url": "/admin?_rsc=DQxjArDrgutTG17x",
+          "type": "fetch"
+        },
+        {
+          "url": "/settings?_rsc=aSNK_J6MSRxpxu_0",
+          "type": "fetch"
+        },
+        {
+          "url": "/settings?_rsc=ERfXn7tGRj5EupPH",
+          "type": "fetch"
+        },
+        {
+          "url": "/settings?_rsc=eHnRheWUCGQfq675",
+          "type": "fetch"
+        },
+        {
+          "url": "/settings?_rsc=mxNTQUl9w9Iktfvu",
+          "type": "fetch"
+        },
+        {
+          "url": "/settings?_rsc=tpdqQC7MNy4b1zTJ",
+          "type": "fetch"
+        },
+        {
+          "url": "/admin/webhooks?_rsc=aSNK_J6MSRxpxu_0",
+          "type": "fetch"
+        },
+        {
+          "url": "/admin/webhooks?_rsc=IZ9gcqLc6Fqn7qsK",
+          "type": "fetch"
+        },
+        {
+          "url": "/admin/webhooks?_rsc=uufzltoLAJekSB8f",
+          "type": "fetch"
+        },
+        {
+          "url": "/admin/webhooks?_rsc=kMHxPW7mcrOneZgH",
+          "type": "fetch"
+        },
+        {
+          "url": "/analytics?_rsc=aSNK_J6MSRxpxu_0",
+          "type": "fetch"
+        },
+        {
+          "url": "/analytics?_rsc=kydQm-7jdVTGlkJx",
+          "type": "fetch"
+        },
+        {
+          "url": "/analytics?_rsc=SRH02iqHhvHzqqRJ",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/34a2g5rdynzf-.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/1xeq0lp4rx_b-.js",
+          "type": "script"
+        },
+        {
+          "url": "/admin/abandoned-checkouts?_rsc=aSNK_J6MSRxpxu_0",
+          "type": "fetch"
+        },
+        {
+          "url": "/admin/abandoned-checkouts?_rsc=wkOrcxrX30hXMOn2",
+          "type": "fetch"
+        },
+        {
+          "url": "/admin/abandoned-checkouts?_rsc=3jUy-ha70GVAiUw1",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/0ggrockoardy4.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0jqi5tqf775-o.js",
+          "type": "script"
+        },
+        {
+          "url": "/discounts?_rsc=aSNK_J6MSRxpxu_0",
+          "type": "fetch"
+        },
+        {
+          "url": "/discounts?_rsc=Xa6UjCXtE4kP3ef6",
+          "type": "fetch"
+        },
+        {
+          "url": "/discounts?_rsc=Mh3wrEXsrOZAsvfl",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/1dffzj2ktey0l.js",
+          "type": "script"
+        },
+        {
+          "url": "/media?_rsc=aSNK_J6MSRxpxu_0",
+          "type": "fetch"
+        },
+        {
+          "url": "/media?_rsc=PrQYp-bFIe8eXMSY",
+          "type": "fetch"
+        },
+        {
+          "url": "/media?_rsc=NWHNQGyq8oETch7T",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/0fxma95tokbnz.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0k7rkig-j5_5k.js",
+          "type": "script"
+        },
+        {
+          "url": "/admin/collections?_rsc=aSNK_J6MSRxpxu_0",
+          "type": "fetch"
+        },
+        {
+          "url": "/admin/collections?_rsc=t5UtqqOCNo1hARCY",
+          "type": "fetch"
+        },
+        {
+          "url": "/admin/collections?_rsc=bICZ70Jf6yl35lQ6",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/1m8g3n69m2nd7.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0crmr6u3rki_b.js",
+          "type": "script"
+        },
+        {
+          "url": "/products?_rsc=aSNK_J6MSRxpxu_0",
+          "type": "fetch"
+        },
+        {
+          "url": "/products?_rsc=q80GDrXlBX1XfkeT",
+          "type": "fetch"
+        },
+        {
+          "url": "/products?_rsc=FO7F-qIPY04_2v4D",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/28yoofjil_p_r.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/1kufmzt1bz3oc.js",
+          "type": "script"
+        },
+        {
+          "url": "/customers?_rsc=aSNK_J6MSRxpxu_0",
+          "type": "fetch"
+        },
+        {
+          "url": "/customers?_rsc=v6ev3jHpBcDj1jor",
+          "type": "fetch"
+        },
+        {
+          "url": "/customers?_rsc=vW5PuwQmrIF-1CiC",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/3ymwdgd1-xr97.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/3zmvs0en260jn.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/2z788dkj57gdm.js",
+          "type": "script"
+        },
+        {
+          "url": "/draft-orders?_rsc=aSNK_J6MSRxpxu_0",
+          "type": "fetch"
+        },
+        {
+          "url": "/draft-orders?_rsc=S6mJVCkOmkA3eN7-",
+          "type": "fetch"
+        },
+        {
+          "url": "/draft-orders?_rsc=n_9yuEGADnQp3_X0",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/0zoxyab7og3dz.js",
+          "type": "script"
+        },
+        {
+          "url": "/orders?_rsc=aSNK_J6MSRxpxu_0",
+          "type": "fetch"
+        },
+        {
+          "url": "/orders?_rsc=03b-3np39fhVarDG",
+          "type": "fetch"
+        },
+        {
+          "url": "/orders?_rsc=uYJlse3pWQU7ZWOf",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/1y-b-iovk2dgz.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/3ndogy8xd8_66.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/3o6_2b0smr3ie.js",
+          "type": "script"
+        },
+        {
+          "url": "/admin?_rsc=aSNK_J6MSRxpxu_0",
+          "type": "fetch"
+        },
+        {
+          "url": "/admin?_rsc=n5aLiLl44NPhkojX",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/16mx1v8c3y_-2.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/3g9soszi3k9fs.js",
+          "type": "script"
+        }
+      ],
+      "errors": [],
+      "navigationMs": 4761,
+      "scriptEncodedBytes": 385777,
+      "transferBytes": 544578,
+      "sql": {
+        "count": 109,
+        "durationMs": 753.7381000000023
+      },
+      "scriptingSeconds": 0.101832,
+      "samples": 30,
+      "p50Ms": 6.5338999999994485,
+      "p95Ms": 9.302599999999984,
+      "htmlBytes": 27687
+    },
+    {
+      "route": "/shop",
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:3107/shop",
+      "requests": [
+        {
+          "url": "/shop",
+          "type": "document"
+        },
+        {
+          "url": "/_next/static/media/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2",
+          "type": "font"
+        },
+        {
+          "url": "/_next/static/media/a343f882a40d2cc9-s.p.1sj6eobyi31rd.woff2",
+          "type": "font"
+        },
+        {
+          "url": "/_next/static/chunks/23eor0qan_ng3.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/2a6s7qmbtlxm3.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/2_080rh9ssfaz.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/1ycd5by80-dnr.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0nmn3_ni2r51b.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0t1cupau1mtgy.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/06j3juy1u5a-6.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/3nc6x0_y5iwnk.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/turbopack-2nsx2ikl33_7r.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/2yl1jv4w6po1z.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/1ntn7efqc-iiw.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/42ao36az2c-_6.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/1pn9hytsy1lcf.js",
+          "type": "script"
+        },
+        {
+          "url": "/api/storefront/products?pageSize=50",
+          "type": "fetch"
+        },
+        {
+          "url": "/api/storefront/collections",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections?_rsc=XyVmYtFX6zHDMoh_",
+          "type": "fetch"
+        },
+        {
+          "url": "/?_rsc=XyVmYtFX6zHDMoh_",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections?_rsc=DYQ6xeu1WzGBuOtK",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections?_rsc=KPjGRY_gIDDPUf4W",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections?_rsc=DxAw5TEDSMlECPLh",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/43dtcovg1i391.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/collections?_rsc=XujoAePwkbJJAShJ",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections?_rsc=TmlT_D8S9Uhxy72W",
+          "type": "fetch"
+        },
+        {
+          "url": "/?_rsc=DYQ6xeu1WzGBuOtK",
+          "type": "fetch"
+        },
+        {
+          "url": "/?_rsc=XRk6x3z1m6yqZ1dW",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/40m-vs1gjf57a.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/428m5smpkkqrk.js",
+          "type": "script"
+        },
+        {
+          "url": "/api/media/perf-media-00999",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00998",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00997",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00996",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00995",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00994",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00993",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00992",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00991",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00990",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00989",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00988",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00987",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00986",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00985",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00984",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00983",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00982",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00981",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00980",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00979",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00978",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00977",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00976",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00975",
+          "type": "image"
+        },
+        {
+          "url": "/shop/performance-product-992?_rsc=XyVmYtFX6zHDMoh_",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-993?_rsc=XyVmYtFX6zHDMoh_",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-994?_rsc=XyVmYtFX6zHDMoh_",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-995?_rsc=XyVmYtFX6zHDMoh_",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-996?_rsc=XyVmYtFX6zHDMoh_",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-997?_rsc=XyVmYtFX6zHDMoh_",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-998?_rsc=XyVmYtFX6zHDMoh_",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-999?_rsc=XyVmYtFX6zHDMoh_",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-5?_rsc=XyVmYtFX6zHDMoh_",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-4?_rsc=XyVmYtFX6zHDMoh_",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-3?_rsc=XyVmYtFX6zHDMoh_",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-2?_rsc=XyVmYtFX6zHDMoh_",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-1?_rsc=XyVmYtFX6zHDMoh_",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-0?_rsc=XyVmYtFX6zHDMoh_",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-992?_rsc=4CEEjZVs8gMj_MrP",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-993?_rsc=4CEEjZVs8gMj_MrP",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-994?_rsc=4CEEjZVs8gMj_MrP",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-995?_rsc=4CEEjZVs8gMj_MrP",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-996?_rsc=4CEEjZVs8gMj_MrP",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-997?_rsc=4CEEjZVs8gMj_MrP",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-998?_rsc=4CEEjZVs8gMj_MrP",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-999?_rsc=4CEEjZVs8gMj_MrP",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-5?_rsc=4CEEjZVs8gMj_MrP",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-4?_rsc=4CEEjZVs8gMj_MrP",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-3?_rsc=4CEEjZVs8gMj_MrP",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-2?_rsc=4CEEjZVs8gMj_MrP",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-1?_rsc=4CEEjZVs8gMj_MrP",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-0?_rsc=4CEEjZVs8gMj_MrP",
+          "type": "fetch"
+        }
+      ],
+      "errors": [],
+      "navigationMs": 1390,
+      "scriptEncodedBytes": 181780,
+      "transferBytes": 3638958,
+      "sql": {
+        "count": 120,
+        "durationMs": 1323.6929999999702
+      },
+      "scriptingSeconds": 0.04602,
+      "samples": 30,
+      "p50Ms": 3.890900000000329,
+      "p95Ms": 5.394800000000032,
+      "htmlBytes": 27957
+    },
+    {
+      "route": "/collections/performance-collection-0",
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:3107/collections/performance-collection-0",
+      "requests": [
+        {
+          "url": "/collections/performance-collection-0",
+          "type": "document"
+        },
+        {
+          "url": "/_next/static/media/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2",
+          "type": "font"
+        },
+        {
+          "url": "/_next/static/media/a343f882a40d2cc9-s.p.1sj6eobyi31rd.woff2",
+          "type": "font"
+        },
+        {
+          "url": "/_next/static/chunks/23eor0qan_ng3.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/2a6s7qmbtlxm3.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/2_080rh9ssfaz.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/api/media/perf-media-00975",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00976",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00977",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00978",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00979",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00980",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00981",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00982",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00983",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00984",
+          "type": "image"
+        },
+        {
+          "url": "/_next/static/chunks/1ycd5by80-dnr.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0nmn3_ni2r51b.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0t1cupau1mtgy.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/06j3juy1u5a-6.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/3nc6x0_y5iwnk.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/turbopack-2nsx2ikl33_7r.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/2yl1jv4w6po1z.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/1ntn7efqc-iiw.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/42ao36az2c-_6.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/11v20tpr6z4yk.js",
+          "type": "script"
+        },
+        {
+          "url": "/api/media/perf-media-00985",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00986",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00987",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00988",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00989",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00990",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00991",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00992",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00993",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00994",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00995",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00996",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00997",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00998",
+          "type": "image"
+        },
+        {
+          "url": "/api/media/perf-media-00999",
+          "type": "image"
+        },
+        {
+          "url": "/shop/performance-product-2?_rsc=fg-CQJJspYOdeKiO",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-1?_rsc=fg-CQJJspYOdeKiO",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-0?_rsc=fg-CQJJspYOdeKiO",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-5?_rsc=fg-CQJJspYOdeKiO",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-4?_rsc=fg-CQJJspYOdeKiO",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-3?_rsc=fg-CQJJspYOdeKiO",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-2?_rsc=fg-CQJJspYOdeKiO",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-1?_rsc=fg-CQJJspYOdeKiO",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections?_rsc=fg-CQJJspYOdeKiO",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop?_rsc=fg-CQJJspYOdeKiO",
+          "type": "fetch"
+        },
+        {
+          "url": "/?_rsc=fg-CQJJspYOdeKiO",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-2?_rsc=Ky1HGdRqlyBvw6On",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-1?_rsc=Ky1HGdRqlyBvw6On",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop/performance-product-0?_rsc=Ky1HGdRqlyBvw6On",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/43dtcovg1i391.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/collections/performance-collection-5?_rsc=Ky1HGdRqlyBvw6On",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-4?_rsc=Ky1HGdRqlyBvw6On",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-3?_rsc=Ky1HGdRqlyBvw6On",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-2?_rsc=Ky1HGdRqlyBvw6On",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections/performance-collection-1?_rsc=Ky1HGdRqlyBvw6On",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections?_rsc=s_WiIwO65JUBzN3M",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections?_rsc=qoJrxC81cknYjOCJ",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections?_rsc=h2gGVbXf_X1FSQwY",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections?_rsc=8F5YsxiSZua_kMKu",
+          "type": "fetch"
+        },
+        {
+          "url": "/collections?_rsc=KFdOtVNsQRQmYeB2",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop?_rsc=s_WiIwO65JUBzN3M",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop?_rsc=K17JhQlE9McOAoFI",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop?_rsc=QPPtANTr-NZABB-2",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/40m-vs1gjf57a.js",
+          "type": "script"
+        },
+        {
+          "url": "/?_rsc=s_WiIwO65JUBzN3M",
+          "type": "fetch"
+        },
+        {
+          "url": "/?_rsc=fm7CdTDyfTDf6tf8",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/1pn9hytsy1lcf.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/428m5smpkkqrk.js",
+          "type": "script"
+        }
+      ],
+      "errors": [],
+      "navigationMs": 1111,
+      "scriptEncodedBytes": 190066,
+      "transferBytes": 3587073,
+      "sql": {
+        "count": 92,
+        "durationMs": 723.0926999999792
+      },
+      "scriptingSeconds": 0.074092,
+      "samples": 30,
+      "p50Ms": 131.23970000000008,
+      "p95Ms": 157.48689999999988,
+      "htmlBytes": 1318875
+    },
+    {
+      "route": "/checkout",
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:3107/checkout",
+      "requests": [
+        {
+          "url": "/checkout",
+          "type": "document"
+        },
+        {
+          "url": "/_next/static/media/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2",
+          "type": "font"
+        },
+        {
+          "url": "/_next/static/media/a343f882a40d2cc9-s.p.1sj6eobyi31rd.woff2",
+          "type": "font"
+        },
+        {
+          "url": "/_next/static/chunks/23eor0qan_ng3.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/2a6s7qmbtlxm3.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/2_080rh9ssfaz.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/1ycd5by80-dnr.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0nmn3_ni2r51b.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0t1cupau1mtgy.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/06j3juy1u5a-6.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/3nc6x0_y5iwnk.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/turbopack-2nsx2ikl33_7r.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/2yl1jv4w6po1z.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/1ntn7efqc-iiw.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/42ao36az2c-_6.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/2a6agh-lf1c79.js",
+          "type": "script"
+        },
+        {
+          "url": "/api/checkout/stripe-config",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop?_rsc=a9Lu7oUMcKkSuDdI",
+          "type": "fetch"
+        },
+        {
+          "url": "/?_rsc=a9Lu7oUMcKkSuDdI",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop?_rsc=L4mEFhsiNQdeNQ13",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop?_rsc=3LSo7LTRs_S7T0Cj",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop?_rsc=PXX77GAZqWe5po2o",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/43dtcovg1i391.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/shop?_rsc=k0CF_sxTLTfIc3Tx",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop?_rsc=zaloDeErVfqSRc3z",
+          "type": "fetch"
+        },
+        {
+          "url": "/?_rsc=L4mEFhsiNQdeNQ13",
+          "type": "fetch"
+        },
+        {
+          "url": "/?_rsc=M9iL7CpPVqgalxiY",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/1pn9hytsy1lcf.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/40m-vs1gjf57a.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/428m5smpkkqrk.js",
+          "type": "script"
+        }
+      ],
+      "errors": [],
+      "navigationMs": 671,
+      "scriptEncodedBytes": 194653,
+      "transferBytes": 289040,
+      "sql": {
+        "count": 6,
+        "durationMs": 16.94430000000284
+      },
+      "scriptingSeconds": 0.036851,
+      "samples": 30,
+      "p50Ms": 10.21140000000014,
+      "p95Ms": 12.578600000000733,
+      "htmlBytes": 20476
+    }
+  ]
+}

@@ -105,5 +105,13 @@ describe('worker route runner', () => {
     expect(joinedLogs).not.toContain(secretB)
     expect(joinedLogs).not.toContain(secretC)
   })
+  it('needs no database or application encryption key and preserves runner-secret fallback', () => {
+    const config = buildWorkerConfig({ DOOPIFY_WORKER_BASE_URL: 'https://shop.example.com', WEBHOOK_RETRY_SECRET: 'single-fallback-secret' }, ['--once'])
+    expect(config.secrets).toEqual({ jobsRunner: 'single-fallback-secret', webhookRetry: 'single-fallback-secret', abandonedCheckout: 'single-fallback-secret' })
+  })
+  it('rejects invalid runner configuration without revealing the supplied value', () => {
+    expect(() => buildWorkerConfig({ DOOPIFY_WORKER_BASE_URL: 'https://shop.example.com', JOB_RUNNER_SECRET: 'short' }, [])).toThrow('Invalid environment configuration: JOB_RUNNER_SECRET')
+  })
+
 })
 

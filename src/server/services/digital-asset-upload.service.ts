@@ -1,4 +1,5 @@
-import { Client as MinioClient } from 'minio'
+import { env } from '@/lib/env'
+import { getPrivateS3Storage } from '@/server/media/s3-client'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -142,12 +143,12 @@ function buildSanitizedStorageFileName(fileName: string) {
 type ResolvedPrivateStorageProvider = 's3' | 'local-private'
 
 function resolvePrivateDigitalStorageProvider(): ResolvedPrivateStorageProvider {
-  const provider = (process.env.MEDIA_STORAGE_PROVIDER || 'postgres').trim().toLowerCase()
+  const provider = env.MEDIA_STORAGE_PROVIDER
   if (provider === 's3') {
     return 's3'
   }
 
-  if (provider === 'vercel-blob' || provider === 'blob') {
+  if (provider === 'vercel-blob') {
     throw new PrivateDigitalAssetStorageConfigError(
       'Private digital uploads are not supported with MEDIA_STORAGE_PROVIDER=vercel-blob because blob objects are public.'
     )
@@ -156,57 +157,13 @@ function resolvePrivateDigitalStorageProvider(): ResolvedPrivateStorageProvider 
   return 'local-private'
 }
 
-function buildS3Client() {
-  const region = process.env.MEDIA_S3_REGION?.trim()
-  const bucket = process.env.MEDIA_S3_BUCKET?.trim()
-  const accessKey = process.env.MEDIA_S3_ACCESS_KEY_ID?.trim()
-  const secretKey = process.env.MEDIA_S3_SECRET_ACCESS_KEY?.trim()
-  const endpoint = process.env.MEDIA_S3_ENDPOINT?.trim()
-
-  if (!region || !bucket || !accessKey || !secretKey) {
-    throw new PrivateDigitalAssetStorageConfigError(
-      'S3 private digital upload requires MEDIA_S3_REGION, MEDIA_S3_BUCKET, MEDIA_S3_ACCESS_KEY_ID, and MEDIA_S3_SECRET_ACCESS_KEY.'
-    )
-  }
-
-  if (!endpoint) {
-    return {
-      bucket,
-      client: new MinioClient({
-        endPoint: 's3.amazonaws.com',
-        useSSL: true,
-        region,
-        accessKey,
-        secretKey,
-        pathStyle: false,
-      }),
-    }
-  }
-
-  const normalizedEndpoint = endpoint.includes('://') ? endpoint : `https://${endpoint}`
-  const parsedEndpoint = new URL(normalizedEndpoint)
-
-  return {
-    bucket,
-    client: new MinioClient({
-      endPoint: parsedEndpoint.hostname,
-      useSSL: parsedEndpoint.protocol === 'https:',
-      port: parsedEndpoint.port ? Number(parsedEndpoint.port) : undefined,
-      region,
-      accessKey,
-      secretKey,
-      pathStyle: true,
-    }),
-  }
-}
-
 async function storePrivateDigitalFileInS3(params: {
   storeId: string
   fileName: string
   contentType: AllowedDigitalAssetContentType
   buffer: Buffer
 }) {
-  const { bucket, client } = buildS3Client()
+  const { bucket, client } = getPrivateS3Storage()
   const safeStoreScope = sanitizeStorageScopeSegment(params.storeId, 'store')
   const storageFileName = buildSanitizedStorageFileName(params.fileName)
   const storageKey = `digital-private/${safeStoreScope}/${randomUUID()}-${storageFileName}`
@@ -228,7 +185,7 @@ async function storePrivateDigitalFileInLocalDisk(params: {
   buffer: Buffer
 }) {
   const baseDirectory =
-    process.env.DIGITAL_ASSET_LOCAL_DIR?.trim() || path.join(process.cwd(), '.private-digital-assets')
+    env.DIGITAL_ASSET_LOCAL_DIR || path.join(process.cwd(), '.private-digital-assets')
   const resolvedBaseDirectory = path.resolve(baseDirectory)
   const safeStoreScope = sanitizeStorageScopeSegment(params.storeId, 'store')
   const storageFileName = buildSanitizedStorageFileName(params.fileName)

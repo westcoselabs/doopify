@@ -1,6 +1,6 @@
 import { ok, err } from '@/lib/api'
 import { requireAdmin } from '@/server/auth/require-auth'
-import { getAnalytics } from '@/server/services/order.service'
+import { getAnalytics } from '@/server/services/analytics.service'
 
 export async function GET(req: Request) {
   const auth = await requireAdmin(req)

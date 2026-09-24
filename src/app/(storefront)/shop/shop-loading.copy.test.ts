@@ -8,7 +8,7 @@ function read(relativePath: string) {
 
 describe('shop loading-state clarity copy', () => {
   it('uses explicit loading copy instead of an ambiguous count placeholder', () => {
-    const source = read('src/app/(storefront)/shop/page.js')
+    const source = read('src/app/(storefront)/shop/loading.js')
 
     expect(source).toContain('Loading products...')
     expect(source).toContain('Syncing live catalog inventory and prices.')

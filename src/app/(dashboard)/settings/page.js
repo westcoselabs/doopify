@@ -1,12 +1,6 @@
-"use client";
+import { redirect } from 'next/navigation';
+import { settingsSectionPath } from '@/lib/settings-navigation';
 
-import SettingsWorkspace from '@/components/settings/SettingsWorkspace';
-import DashboardRouteProviders from '@/components/dashboard/DashboardRouteProviders';
-
-export default function SettingsPage() {
-  return (
-    <DashboardRouteProviders>
-      <SettingsWorkspace />
-    </DashboardRouteProviders>
-  );
+export default async function SettingsPage({ searchParams }) {
+  redirect(settingsSectionPath((await searchParams)?.section));
 }

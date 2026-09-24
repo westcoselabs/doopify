@@ -22,6 +22,11 @@ vi.mock('@/server/services/audit-log.service', () => ({
   recordAuditLogBestEffort: mocks.recordAuditLogBestEffort,
 }))
 
+vi.mock('@/server/shipping/shipping-provider-selection', () => ({
+  resolveActiveRateProvider: () => null,
+  resolveLabelProvider: () => null,
+}))
+
 import { GET, PATCH } from './route'
 
 function storeFixture(overrides: Record<string, unknown> = {}) {
@@ -30,10 +35,7 @@ function storeFixture(overrides: Record<string, unknown> = {}) {
     email: 'store@example.com',
     supportEmail: 'support@example.com',
     shippingMode: 'MANUAL',
-    shippingLiveProvider: null,
-    shippingProviderUsage: 'LIVE_AND_LABELS',
-    activeRateProvider: 'NONE',
-    labelProvider: 'NONE',
+
     fallbackBehavior: 'SHOW_FALLBACK',
     shippingThresholdCents: 10000,
     shippingDomesticRateCents: 999,
@@ -185,8 +187,7 @@ describe('settings shipping route', () => {
         shippingDomesticRate: 9.99,
         shippingInternationalRate: 19.99,
         shippingThreshold: 100,
-        activeRateProvider: 'NONE',
-        labelProvider: 'NONE',
+
         fallbackBehavior: 'SHOW_FALLBACK',
         shippingZones: [
           {
@@ -329,145 +330,6 @@ describe('settings shipping route', () => {
     })
   })
 
-  it('PATCH persists shipping mode HYBRID and provider usage mapping for labels-only usage', async () => {
-    mocks.requireAdmin.mockResolvedValue({
-      ok: true,
-      user: { id: 'owner_1', email: 'owner@example.com', role: 'OWNER' },
-    })
-
-    mocks.getShippingSettingsStore.mockResolvedValueOnce(storeFixture())
-    mocks.updateShippingSettings.mockResolvedValueOnce(
-      storeFixture({
-        shippingMode: 'HYBRID',
-        shippingLiveProvider: 'SHIPPO',
-        shippingProviderUsage: 'LABELS_ONLY',
-        activeRateProvider: 'NONE',
-        labelProvider: 'SHIPPO',
-      })
-    )
-
-    const response = await PATCH(
-      new Request('http://localhost/api/settings/shipping', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          shippingMode: 'HYBRID',
-          shippingLiveProvider: 'SHIPPO',
-          shippingProviderUsage: 'LABELS_ONLY',
-        }),
-      })
-    )
-
-    expect(response.status).toBe(200)
-    expect(mocks.updateShippingSettings).toHaveBeenCalledWith(
-      'store_1',
-      expect.objectContaining({
-        shippingMode: 'HYBRID',
-        shippingLiveProvider: 'SHIPPO',
-        shippingProviderUsage: 'LABELS_ONLY',
-        activeRateProvider: 'NONE',
-        labelProvider: 'SHIPPO',
-      })
-    )
-
-    const payload = await response.json()
-    expect(payload).toMatchObject({
-      success: true,
-      data: {
-        shippingMode: 'HYBRID',
-        shippingProviderUsage: 'LABELS_ONLY',
-        activeRateProvider: 'NONE',
-        labelProvider: 'SHIPPO',
-      },
-    })
-
-    mocks.getShippingSettingsStore.mockResolvedValueOnce(
-      storeFixture({
-        shippingMode: 'HYBRID',
-        shippingLiveProvider: 'SHIPPO',
-        shippingProviderUsage: 'LABELS_ONLY',
-        activeRateProvider: 'NONE',
-        labelProvider: 'SHIPPO',
-      })
-    )
-    const getResponse = await GET(new Request('http://localhost/api/settings/shipping'))
-    expect(getResponse.status).toBe(200)
-    const getPayload = await getResponse.json()
-    expect(getPayload).toMatchObject({
-      success: true,
-      data: {
-        shippingMode: 'HYBRID',
-        shippingProviderUsage: 'LABELS_ONLY',
-        activeRateProvider: 'NONE',
-        labelProvider: 'SHIPPO',
-      },
-    })
-  })
-
-  it('PATCH writes Shippo as the active live-rate provider with compatible legacy fields', async () => {
-    mocks.requireAdmin.mockResolvedValue({
-      ok: true,
-      user: { id: 'owner_1', email: 'owner@example.com', role: 'OWNER' },
-    })
-
-    mocks.getShippingSettingsStore.mockResolvedValueOnce(
-      storeFixture({
-        shippingMode: 'LIVE_RATES',
-        activeRateProvider: 'NONE',
-        labelProvider: 'NONE',
-        shippingLiveProvider: null,
-        shippingProviderUsage: 'LIVE_AND_LABELS',
-      })
-    )
-    mocks.updateShippingSettings.mockResolvedValueOnce(
-      storeFixture({
-        shippingMode: 'LIVE_RATES',
-        activeRateProvider: 'SHIPPO',
-        labelProvider: 'SHIPPO',
-        shippingLiveProvider: 'SHIPPO',
-        shippingProviderUsage: 'LIVE_AND_LABELS',
-      })
-    )
-
-    const response = await PATCH(
-      new Request('http://localhost/api/settings/shipping', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          shippingMode: 'LIVE_RATES',
-          activeRateProvider: 'SHIPPO',
-          labelProvider: 'SHIPPO',
-          fallbackBehavior: 'SHOW_FALLBACK',
-        }),
-      })
-    )
-
-    expect(response.status).toBe(200)
-    expect(mocks.updateShippingSettings).toHaveBeenCalledWith(
-      'store_1',
-      expect.objectContaining({
-        shippingMode: 'LIVE_RATES',
-        activeRateProvider: 'SHIPPO',
-        labelProvider: 'SHIPPO',
-        fallbackBehavior: 'SHOW_FALLBACK',
-        shippingLiveProvider: 'SHIPPO',
-        shippingProviderUsage: 'LIVE_AND_LABELS',
-      })
-    )
-
-    const payload = await response.json()
-    expect(payload).toMatchObject({
-      success: true,
-      data: {
-        shippingMode: 'LIVE_RATES',
-        activeRateProvider: 'SHIPPO',
-        labelProvider: 'SHIPPO',
-        shippingLiveProvider: 'SHIPPO',
-        shippingProviderUsage: 'LIVE_AND_LABELS',
-      },
-    })
-  })
-
   it('PATCH persists shipping mode MANUAL and returns it on subsequent GET', async () => {
     mocks.requireAdmin.mockResolvedValue({
       ok: true,
@@ -477,19 +339,13 @@ describe('settings shipping route', () => {
     mocks.getShippingSettingsStore.mockResolvedValueOnce(
       storeFixture({
         shippingMode: 'LIVE_RATES',
-        activeRateProvider: 'SHIPPO',
-        labelProvider: 'SHIPPO',
-        shippingLiveProvider: 'SHIPPO',
-        shippingProviderUsage: 'LIVE_AND_LABELS',
+
       })
     )
     mocks.updateShippingSettings.mockResolvedValueOnce(
       storeFixture({
         shippingMode: 'MANUAL',
-        activeRateProvider: 'NONE',
-        labelProvider: 'NONE',
-        shippingLiveProvider: null,
-        shippingProviderUsage: 'LIVE_AND_LABELS',
+
       })
     )
 
@@ -499,11 +355,9 @@ describe('settings shipping route', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           shippingMode: 'MANUAL',
-          activeRateProvider: 'NONE',
-          labelProvider: 'NONE',
+
           fallbackBehavior: 'SHOW_FALLBACK',
-          shippingLiveProvider: null,
-          shippingProviderUsage: 'LIVE_AND_LABELS',
+
         }),
       })
     )
@@ -536,8 +390,7 @@ describe('settings shipping route', () => {
         shippingMode: 'MANUAL',
         shippingPackages: [],
         shippingLocations: [],
-        activeRateProvider: 'NONE',
-        labelProvider: 'NONE',
+
       })
     )
     mocks.updateShippingSettings.mockResolvedValueOnce(
@@ -545,8 +398,7 @@ describe('settings shipping route', () => {
         shippingMode: 'LIVE_RATES',
         shippingPackages: [],
         shippingLocations: [],
-        activeRateProvider: 'NONE',
-        labelProvider: 'NONE',
+
       })
     )
 
@@ -569,6 +421,13 @@ describe('settings shipping route', () => {
         shippingMode: 'LIVE_RATES',
       },
     })
+  })
+
+  it.each(['activeRateProvider','labelProvider','shippingLiveProvider','shippingProviderUsage'])('rejects infrastructure selection %s without updating business settings', async (field) => {
+    mocks.requireAdmin.mockResolvedValue({ok:true,user:{id:'owner_1',role:'OWNER'}})
+    const response = await PATCH(new Request('http://localhost/api/settings/shipping', {method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({shippingMode:'HYBRID',[field]:'SHIPPO'})}))
+    expect(response.status).toBe(422)
+    expect(mocks.updateShippingSettings).not.toHaveBeenCalled()
   })
 
   it('PATCH returns a clear save error when persistence fails', async () => {

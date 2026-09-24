@@ -2,9 +2,22 @@
 
 > Security, correctness, and operational readiness for the commerce loop.
 >
-> Documentation refresh: May 5, 2026
-> Last repo verification recorded in active docs: May 5, 2026
+> Documentation refresh: September 24, 2026
+> Latest local verification: September 24, 2026; see performance/env-only-acceptance.md
 > Companion to `STATUS.md` and `features-roadmap.md`.
+
+## Environment-only implementation (September 2026)
+
+See [acceptance evidence](performance/env-only-acceptance.md) and the [upgrade runbook](ENV_ONLY_MIGRATION_RUNBOOK.md). This is repository implementation evidence, not production rollout confirmation.
+
+- Atomic expiring claims fence job and inbound/outbound delivery completion by owner token and lease; real-DB tests cover competing workers and expired owners.
+- Provider requests and outbound response reads are bounded. Runner acquisition stops after 45 seconds with four workers per queue; inbound/outbound batches share a request window.
+- Email delivery and job creation are atomic. A persisted send-start marker makes an uncertain provider outcome an operator-review failure, preventing blind SMTP resend. A provider receipt cannot be downgraded by a stale sender.
+- Rejected Stripe signatures use separate identities; they cannot overwrite a verified receipt or its processing outcome.
+- MFA/download encryption retains key material, current/previous keys and versioned envelopes. Provider secret decryption exists only in offline migration tooling.
+- Storefront reads are paged and publication-filtered; media listings select metadata. Analytics aggregates full paid-order cohorts separately per currency.
+
+The larger post-commit event durability change is deferred: the static dispatcher still has a crash window between a committed commerce transaction and downstream event/job persistence. A future transactional outbox must close that window without changing paid finalization, saved promotion snapshots or consumer idempotency. This refactor does not claim exactly-once external delivery.
 
 ## Why Hardening Matters
 
@@ -53,7 +66,7 @@ Phase 4 adds merchant lifecycle and integration risks: refunds, returns, outboun
 - admin and private API protection is running through the active Next.js 16 proxy hook
 - Sensitive API routes use route-level authorization helpers in addition to `src/proxy.ts`. Proxy protection is the outer gate; route-level helpers are the route's own authorization guard.
 - route-level auth helpers in `src/server/auth/require-auth.ts` provide a second authorization layer for sensitive API handlers
-- ADMIN role added to UserRole enum; `requireAdmin` now accepts OWNER, ADMIN, and STAFF; `requireOwner` remains OWNER-only; team and payment credential APIs require OWNER
+- ADMIN role added to UserRole enum; `requireAdmin` now accepts OWNER, ADMIN, and STAFF; `requireOwner` remains OWNER-only; team and integration diagnostic APIs require OWNER
 - product and variant creation routes now call `requireAdmin(req)` before mutation work
 - the old idea of adding `src/middleware.ts` was intentionally not kept because the repo should not maintain both proxy and middleware flows
 
@@ -74,7 +87,7 @@ Phase 4 adds merchant lifecycle and integration risks: refunds, returns, outboun
 - persisted money fields now store integer minor units at rest to eliminate floating-point drift in database truth
 - checkout pricing flows through `src/server/checkout/pricing.ts`
 - checkout validates live variant pricing and inventory before creating the payment intent
-- checkout Stripe runtime now prefers verified DB credentials and safely falls back to env credentials when no verified DB Stripe connection exists
+- Checkout, refunds and webhook verification share one environment-only Stripe configuration.
 - orders are created only from verified Stripe webhook success
 - duplicate webhook deliveries are handled idempotently through the payment-intent path
 - checkout failure state is persisted and surfaced on the success-page polling flow
@@ -87,7 +100,7 @@ Phase 4 adds merchant lifecycle and integration risks: refunds, returns, outboun
 - manual fulfillment now uses an admin-only API (`POST /api/orders/[orderNumber]/manual-fulfillment`) with order-item ownership checks, over-fulfillment rejection, and paid-order gating
 - shipping label rates and purchases now use admin-only order APIs (`POST /api/orders/[orderNumber]/shipping-rates`, `POST /api/orders/[orderNumber]/shipping-labels`) with provider-rate revalidation against fresh server-fetched rates
 - shipping label purchase persists a separate `ShippingLabel.labelAmountCents` value and must not mutate checkout/order totals or payment status
-- checkout shipping-rate mode selection (`LIVE_RATES` / `MANUAL` / `HYBRID`) is persisted server-side and enforced in the shipping-rate service using persisted provider/package/location/manual/fallback configuration
+- checkout shipping-rate mode selection (`LIVE_RATES` / `MANUAL` / `HYBRID`) is persisted server-side and enforced in the shipping-rate service using environment provider selection and persisted package/location/manual/fallback configuration
 - checkout rate selection and label purchase remain decoupled: manual checkout rates do not imply a label exists, and connected label providers remain available for post-order label buying even when checkout used a manual rate
 - shipping provider intent remains explicit: active-rate-provider and label-provider settings can diverge, and fallback behavior (`SHOW_FALLBACK` / `HIDE_SHIPPING` / `MANUAL_QUOTE`) must be enforced by server-owned shipping rate resolution
 - fulfillment lifecycle jobs now run through the shared job system: `SYNC_SHIPPING_TRACKING` for safe tracking-field sync plus provider polling-driven `deliveredAt` updates, and `SEND_FULFILLMENT_EMAIL` for tracked shipping-update delivery attempts
@@ -125,9 +138,9 @@ Phase 4 adds merchant lifecycle and integration risks: refunds, returns, outboun
 - delivery payloads include event metadata and creation timestamp
 - outbound deliveries use timestamped HMAC signatures in `sha256=<hex>` format
 - delivery requests include `X-Doopify-Delivery`, `X-Doopify-Event`, `X-Doopify-Timestamp`, and `X-Doopify-Signature`
-- custom outbound headers can be stored as encrypted `IntegrationSecret` rows using `HEADER_`-prefixed keys
-- integration edits preserve existing signing secrets unless explicitly cleared
-- integration event subscriptions are deduplicated and constrained unique by integration/event
+- Custom outbound headers and signing keys reference environment variables in typed developer configuration.
+- Outbound delivery IDs, destination snapshots and signing-key identity survive the guarded migration.
+- Outbound subscriptions use the existing typed event contract.
 - outbound delivery processing now claims a delivery before sending to reduce duplicate sends from overlapping retry workers
 - manual outbound retry returns clean not-retryable behavior for missing or successful deliveries
 - responses record status code, truncated response body, attempts, last error, retry timestamps, and processed timestamps
@@ -136,7 +149,7 @@ Phase 4 adds merchant lifecycle and integration risks: refunds, returns, outboun
 - manual retry is available through `POST /api/outbound-webhook-deliveries/[id]/retry`
 - `/admin/webhooks` shows inbound and outbound delivery visibility with outbound retry controls
 - `/admin/webhooks` is user-labeled as **System -> Delivery logs** to separate monitoring/debugging from setup workflows
-- settings integration UI supports webhook URL, selected events, active/inactive status, signing secret, explicit signing-secret clear, and encrypted custom headers
+- Admin exposes delivery monitoring and retries; destination/secret CRUD is removed.
 - fast tests cover outbound queueing, signing, delivery success, retry/exhaustion, due processing, manual retry, claim behavior, listing, and retry route behavior
 
 ### Transactional Email Observability (Current Slice)
@@ -145,7 +158,7 @@ Phase 4 adds merchant lifecycle and integration risks: refunds, returns, outboun
 - safe resend eligibility is limited to failed, bounced, and complained deliveries
 - resend reuses order-confirmation template rendering and creates a new tracked delivery attempt instead of mutating order/payment/inventory/refund/return/webhook state
 - `/admin/webhooks` now includes an email delivery observability surface with filters, detail inspection, and resend controls
-- setup remains in Settings (`Settings -> Webhooks`, `Payments`, `Email`, and `Shipping`) while `/admin/webhooks` stays observability-only
+- Infrastructure configuration lives in deployment environment variables and typed code; `/admin/webhooks` remains observability-only.
 - provider webhook ingestion now exists at `POST /api/webhooks/email-provider` with Svix signature verification and bounced/complained status transitions
 - fast tests now cover email delivery API routes, resend eligibility behavior, and provider webhook signature/path handling
 - `DATABASE_URL_TEST`-gated integration specs now cover safe resend audit-trail behavior and provider bounce/complaint state transitions
@@ -222,10 +235,10 @@ npm run build
 
 ### Medium Priority
 
-- Extract the remaining business logic that still lives in route handlers, especially analytics, discounts, and media administration paths
+- Extract the remaining business logic that still lives in route handlers, especially discounts and media administration paths; analytics is now service-owned
 - Keep collection assignment and merchandising APIs admin-only while storefront collection reads stay public and read-only
 - Expand audit logging around integration changes, email resends, and webhook retries (refund creation/failed attempts and return lifecycle transitions now emit best-effort audit events; remaining gaps are email resends and webhook retries)
-- Keep Settings -> Setup guidance aligned with the shipped setup status service/API and `doopify doctor` as setup automation expands
+- Keep System -> Developer, local `doopify doctor`, and the pure environment parser aligned.
 
 ### Later
 
@@ -260,13 +273,13 @@ These invariants should not be broken by future work:
 - buying labels must never mutate order totals or payment status
 - checkout rates decide what customers pay; label providers create postage after order placement
 - manual shipping and manual fulfillment paths must remain available without live carrier credentials
-- shipping setup wizard/status/test-rate admin routes must remain admin-authorized and must not expose provider credentials
-- shipping provider connect/disconnect/test routes must remain owner-authorized, store credentials only in encrypted `IntegrationSecret` rows, and never return credential values
-- owner-only provider settings gateway routes must remain masked-response only, never return raw credential values, and persist provider credentials in encrypted `IntegrationSecret` rows
-- Settings -> Payments keeps provider credential entry inside slide-over drawers; the main page should remain status-only and must not render raw provider secrets
+- Shipping business settings and test-rate APIs remain admin-authorized and never return provider credentials.
+- Owner-only integration diagnostics run on explicit POST; navigation performs no provider checks.
+- Infrastructure secrets are consumed directly from typed server config with zero credential-table reads.
+- Focused Settings Server Components load only the business data and forms needed for that route.
 - Stripe runtime status and checkout config routes must never expose raw Stripe secret key or webhook secret; publishable key exposure must remain explicit and source-labeled
-- provider verification failures should be represented as provider status `ERROR` (normal setup state) rather than treated as app-level exceptions
-- retryable provider failures must retain the last verified credential/runtime state and record the new attempt separately; only definitive credential failures may invalidate prior verification
+- Diagnostic failures report Error at the time of the test, separately from environment presence and verified webhook receipt.
+- Provider failures never mutate deployment configuration; failed webhook attempts cannot overwrite verified deliveries.
 - Playwright mutation suites must require `DATABASE_URL_TEST` on a dedicated non-public schema and must never read `.env` to obtain a normal development database URL
 - manual, EasyPost, and Shippo shipping quotes should flow through a normalized internal quote shape before checkout/admin consumers use rate data
 
@@ -325,10 +338,10 @@ The first setup hardening milestone is complete when:
 
 - `doopify doctor` can run read-only setup diagnostics locally
 - setup status is available through a safe server service and owner-only `/api/setup/status` access
-- Settings -> Setup shows setup health and next actions without running shell commands from the browser
+- System -> Developer shows safe presence states, explicit diagnostics and persisted business readiness without browser shell execution.
 - `doopify setup` can write env files, run Prisma setup, and bootstrap owner/store from a local trusted environment
 - secrets are redacted from logs and never exposed through setup-status APIs
-- broad Vercel, Neon, Stripe, or email-provider account tokens are not stored long term inside the app unless a scoped token lifecycle exists
+- Infrastructure tokens are environment-only. Browser credential-management APIs and credential DB models are removed.
 
 ## Pricing Hardening Target
 
@@ -452,5 +465,5 @@ The next hardening milestone is complete when:
 - email failure/resend, outbound retry/idempotency, and integration secret-preservation behavior remain green in real-DB runs
 - analytics fan-out behavior remains covered with side-effect safety checks as lifecycle flows expand
 - setup diagnostics are implemented in a way that redacts secrets and reuses checks between CLI and admin Setup tab
-- provider onboarding UX is split by domain: Setup (foundation only), Payments (payment providers), Shipping (carrier/manual-live mode), Email (email providers), Webhooks (outbound merchant webhooks)
+- General, Brand, Shipping, Taxes, Email, Account and Team own business settings; System -> Developer owns safe infrastructure status.
 - operational logging is good enough to debug a missing email, duplicate delivery, stuck retry, exhausted outbound webhook, or broken setup without inspecting the database manually

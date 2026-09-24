@@ -43,8 +43,9 @@ export const NAV_GROUPS = [
     id: 'system',
     label: 'System',
     items: [
+      { href: '/admin/system/developer', label: 'Developer', icon: 'code' },
       { href: '/admin/webhooks', label: 'Delivery logs', icon: 'sync_problem' },
-      { href: '/settings', label: 'Settings', icon: 'settings' },
+      { href: '/admin/settings/general', label: 'Settings', icon: 'settings' },
     ],
   },
 ];
@@ -92,7 +93,7 @@ export default function Sidebar() {
                     ? activePathname === item.href
                     : activePathname === item.href || activePathname.startsWith(`${item.href}/`);
                 return (
-                  <Link
+                  <Link prefetch={false}
                     key={item.href}
                     href={item.href}
                     className={`${styles.navLink} ${isActive ? styles.navLinkActive : ''} font-headline`}

@@ -2,7 +2,6 @@ import type { ShippingLiveProvider } from '@prisma/client'
 
 import { centsToDollars } from '@/lib/money'
 import { prisma } from '@/lib/prisma'
-import { findPrimaryStore } from '@/server/services/primary-store.service'
 import { getShippingProviderConnectionStatus } from '@/server/shipping/shipping-provider.service'
 import { resolveLabelProvider } from '@/server/shipping/shipping-provider-selection'
 import {
@@ -10,7 +9,7 @@ import {
   shippingStatusToFilterValue,
   shippingStatusToUiLabel,
 } from '@/server/services/fulfillment-status.service'
-import { getRuntimeProviderConnection } from '@/server/services/provider-connection.service'
+import { isTransactionalEmailConfigured } from '@/server/email/provider'
 
 function normalizeStatusLabel(value: string | null | undefined) {
   return String(value || '').toLowerCase().replaceAll('_', ' ')
@@ -218,14 +217,6 @@ async function resolveShippingAndEmailCapabilities(input: {
   orderEmail: string | null
   customerEmail: string | null
 }) {
-  const store = await findPrimaryStore({
-    select: {
-      shippingLiveProvider: true,
-      shippingProviderUsage: true,
-      labelProvider: true,
-    },
-  })
-
   const providerCandidates: ShippingLiveProvider[] = ['SHIPPO', 'EASYPOST']
   const providerStatuses = await Promise.all(
     providerCandidates.map(async (provider) => ({
@@ -238,17 +229,11 @@ async function resolveShippingAndEmailCapabilities(input: {
     .filter((entry) => Boolean(entry.status.connected))
     .map((entry) => entry.provider)
 
-  const configuredLabelProvider = store ? resolveLabelProvider(store) : null
-  const labelProvider =
-    (configuredLabelProvider && connectedProviders.includes(configuredLabelProvider)
-      ? configuredLabelProvider
-      : connectedProviders[0] ?? configuredLabelProvider) || null
+  const labelProvider = resolveLabelProvider()
+  const canBuyShippingLabelFromProvider = Boolean(labelProvider && connectedProviders.includes(labelProvider))
 
-  const canBuyShippingLabelFromProvider = connectedProviders.length > 0
-
-  const emailRuntime = await getRuntimeProviderConnection('RESEND')
   const emailProviderConfigured = Boolean(
-    emailRuntime.source !== 'none' && emailRuntime.credentials?.API_KEY
+    isTransactionalEmailConfigured()
   )
 
   const hasCustomerEmail = Boolean(input.orderEmail || input.customerEmail)
@@ -263,7 +248,6 @@ async function resolveShippingAndEmailCapabilities(input: {
         acc[entry.provider] = Boolean(entry.status.connected)
         return acc
       }, {}),
-      providerUsage: store?.shippingProviderUsage || null,
       canBuyShippingLabel: canBuyShippingLabelFromProvider,
     },
     emailCapabilities: {

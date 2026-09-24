@@ -2,7 +2,7 @@
 
 > Runtime and CLI environment variable reference for production operations.
 >
-> Last updated: May 5, 2026
+> Last updated: September 24, 2026
 
 ## Runtime Core
 
@@ -11,7 +11,8 @@
 | `DATABASE_URL` | Yes | Primary Postgres connection string used by Prisma/runtime. |
 | `DIRECT_URL` | Recommended | Direct Postgres URL used by Prisma tooling/migrations. |
 | `JWT_SECRET` | Yes | Auth JWT signing secret. Use high-entropy value. |
-| `ENCRYPTION_KEY` | Strongly recommended (required in production) | Secret used by integration secret encryption helpers. |
+| `DATA_ENCRYPTION_KEY` | Required outside tests | High-entropy application-data encryption key for MFA and private download tokens; preserve the old effective key value when upgrading. |
+| `DATA_ENCRYPTION_KEY_PREVIOUS` | During rotation only | Previous application-data key retained until guarded re-encryption and validation finish. |
 | `SESSION_LEGACY_TOKEN_CUTOFF` | Required only during legacy-session rollout | Absolute ISO-8601 cutoff for accepting historical plaintext session rows. Set once to deployment time plus seven days; unset or invalid values safely disable legacy-token compatibility. Do not extend it without an intentional security review. |
 | `NEXT_PUBLIC_STORE_URL` | Yes | Public base URL used for setup/deployment checks and links. |
 | `WEBHOOK_RETRY_SECRET` | Yes | Auth secret for `POST /api/webhook-retries/run`. |
@@ -27,6 +28,10 @@
 | `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Yes | Client-side Stripe key for checkout UI. |
 | `STRIPE_WEBHOOK_SECRET` | Yes | Stripe signing secret used to verify `/api/webhooks/stripe`. |
 
+## Email selection
+
+`EMAIL_PROVIDER=none|resend|smtp|preview` explicitly selects delivery (default `none`). Preview is development-only and never records a successful send. Missing configuration fails visibly. `SMTP_FROM_EMAIL` is an optional fallback; sender identity and templates remain business settings.
+
 ## Resend / Email Provider
 
 | Variable | Required | Purpose |
@@ -38,8 +43,8 @@
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `SMTP_HOST` | Required when SMTP is used | SMTP host for runtime provider connection fallback. |
-| `SMTP_PORT` | Required when SMTP is used | SMTP port for runtime provider connection fallback. |
+| `SMTP_HOST` | Required when SMTP is used | SMTP server hostname. |
+| `SMTP_PORT` | Required when SMTP is used | SMTP server port (default 587). |
 | `SMTP_SECURE` | Required when SMTP is used | `true`/`false` secure transport toggle for SMTP. |
 | `SMTP_USERNAME` | Required when SMTP is used | SMTP username. |
 | `SMTP_PASSWORD` | Required when SMTP is used | SMTP password. |
@@ -47,17 +52,19 @@
 
 ## Shipping Provider Credentials
 
+`SHIPPING_RATE_PROVIDER` and `SHIPPING_LABEL_PROVIDER` independently select `none|shippo|easypost` (default `none`). Admin shipping mode, rates, origin, packages and fallback behavior remain database settings.
+
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `SHIPPO_API_KEY` | Required when Shippo env fallback is used | Shippo API key for shipping rate/provider fallback paths. |
-| `EASYPOST_API_KEY` | Required when EasyPost env fallback is used | EasyPost API key for shipping rate/provider fallback paths. |
+| `SHIPPO_API_KEY` | Required when Shippo is selected | Shippo rates/labels API key. |
+| `EASYPOST_API_KEY` | Required when EasyPost is selected | EasyPost rates/labels API key. |
 
 ## Media / Object Storage
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `MEDIA_STORAGE_PROVIDER` | Optional | `postgres` (local/dev fallback), `vercel-blob`/`blob` (recommended on Vercel), or `s3` (S3/R2). Controls where media binary data is stored. |
-| `BLOB_READ_WRITE_TOKEN` | Required when `MEDIA_STORAGE_PROVIDER=vercel-blob` or `blob` | Vercel Blob read/write token used for media uploads and deletes. |
+| `MEDIA_STORAGE_PROVIDER` | Optional | `postgres` (local/dev fallback), `vercel-blob` (recommended on Vercel), or `s3` (S3/R2). Controls where media binary data is stored. |
+| `BLOB_READ_WRITE_TOKEN` | Required when `MEDIA_STORAGE_PROVIDER=vercel-blob` | Vercel Blob read/write token used for media uploads and deletes. |
 | `MEDIA_S3_REGION` | Required when `MEDIA_STORAGE_PROVIDER=s3` | S3/R2 region (e.g., `auto` for Cloudflare R2). |
 | `MEDIA_S3_BUCKET` | Required when `MEDIA_STORAGE_PROVIDER=s3` | S3/R2 bucket name. |
 | `MEDIA_S3_ACCESS_KEY_ID` | Required when `MEDIA_STORAGE_PROVIDER=s3` | S3/R2 access key ID. |
@@ -112,6 +119,10 @@
 | `DATABASE_URL_TEST` | For integration tests | Disposable Postgres target for `npm run test:integration`. A public schema requires the safeguards below. |
 | `E2E_DATABASE_URL` | Required for public-schema test reset | Must normalize to the exact same protocol, host, port, username, database, and schema as `DATABASE_URL_TEST`. |
 | `DOOPIFY_ALLOW_PUBLIC_TEST_SCHEMA` | Explicit test-only acknowledgement | Set to `1` only for a confirmed disposable public schema. It is converted to an internal child-process permission only after target equality succeeds. |
+
+## Outbound webhooks
+
+Define destination IDs, URLs and event subscriptions in `src/server/config/outbound-webhooks.ts`. Signing keys and optional header values reference separate variables matching `OUTBOUND_WEBHOOK_[A-Z0-9_]+`; no values belong in that file. Retain IDs and keys through the [upgrade](ENV_ONLY_MIGRATION_RUNBOOK.md).
 
 ## Notes
 

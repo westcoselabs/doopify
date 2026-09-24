@@ -9,11 +9,14 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/server/email/provider', () => ({
   sendTransactionalEmail: mocks.sendTransactionalEmail,
+  isTransactionalEmailConfigured: () => true,
 }))
 
 import {
   applyEmailProviderWebhookEvent,
   resendEmailDelivery,
+  queueOrderConfirmationEmailDelivery,
+  processOrderConfirmationEmailDeliveryJob,
 } from './email-delivery.service'
 
 const runIntegration =
@@ -24,11 +27,9 @@ const runIntegration =
 const originalResendApiKey = process.env.RESEND_API_KEY
 
 async function cleanTestData() {
+  await prisma.job.deleteMany({ where: { type: { in: ['SEND_ORDER_CONFIRMATION_EMAIL', 'SEND_FULFILLMENT_EMAIL'] } } })
   await prisma.analyticsEvent.deleteMany()
   await prisma.emailDelivery.deleteMany()
-  await prisma.integrationSecret.deleteMany()
-  await prisma.integrationEvent.deleteMany()
-  await prisma.integration.deleteMany()
   await prisma.discountApplication.deleteMany()
   await prisma.discount.deleteMany()
   await prisma.refund.deleteMany()
@@ -110,7 +111,7 @@ runIntegration('email delivery integration', () => {
   beforeEach(async () => {
     process.env.RESEND_API_KEY = ''
     mocks.sendTransactionalEmail.mockReset()
-    mocks.sendTransactionalEmail.mockResolvedValue({ provider: 'preview', providerMessageId: undefined })
+    mocks.sendTransactionalEmail.mockResolvedValue({ provider: 'resend', providerMessageId: 'msg_sent' })
     await cleanTestData()
   }, 60_000)
 
@@ -169,7 +170,7 @@ runIntegration('email delivery integration', () => {
     expect(deliveries[0].status).toBe('FAILED')
     expect(deliveries[1].id).not.toBe(originalDelivery.id)
     expect(deliveries[1].status).toBe('SENT')
-    expect(deliveries[1].providerMessageId).toBeNull()
+    expect(deliveries[1].providerMessageId).toBe('msg_sent')
     expect(deliveries[1].attempts).toBe(1)
 
     expect(await prisma.order.count()).toBe(beforeOrderCount)
@@ -264,4 +265,28 @@ runIntegration('email delivery integration', () => {
     expect(originalAfterComplaint.status).toBe('BOUNCED')
     expect(await prisma.emailDelivery.count()).toBe(3)
   })
+  it('persists a delivery/job pair and permits only one send under concurrent execution', async () => {
+    await prisma.store.create({ data: { name: 'Integration Store', email: 'orders@example.com' } })
+    const order = await seedOrderForEmail('claimed-email', 'buyer@example.com')
+    const { delivery, job } = await queueOrderConfirmationEmailDelivery({ orderId: order.id, orderNumber: order.orderNumber, email: order.email })
+    expect(await prisma.emailDelivery.count({ where: { id: delivery.id } })).toBe(1)
+    expect(await prisma.job.count({ where: { id: job.id, payload: { path: ['deliveryId'], equals: delivery.id } } })).toBe(1)
+    const claim = { jobId: job.id, claimToken: 'email-integration-claim' }
+    await prisma.job.update({ where: { id: job.id }, data: { status: 'RUNNING', claimToken: claim.claimToken, leaseExpiresAt: new Date(Date.now() + 120_000) } })
+    await Promise.allSettled([
+      processOrderConfirmationEmailDeliveryJob({ deliveryId: delivery.id }, claim),
+      processOrderConfirmationEmailDeliveryJob({ deliveryId: delivery.id }, claim),
+    ])
+    expect(mocks.sendTransactionalEmail).toHaveBeenCalledOnce()
+    expect(await prisma.emailDelivery.findUnique({ where: { id: delivery.id } })).toMatchObject({ status: 'SENT', sendStartedAt: expect.any(Date) })
+  })
+
+  it('requires review for an interrupted send instead of repeating the provider request', async () => {
+    const delivery = await prisma.emailDelivery.create({ data: { event: 'order.paid', template: 'order_confirmation', recipientEmail: 'buyer@example.com', subject: 'Order', provider: 'smtp', status: 'PENDING', sendStartedAt: new Date() } })
+    const job = await prisma.job.create({ data: { type: 'SEND_ORDER_CONFIRMATION_EMAIL', payload: { deliveryId: delivery.id }, status: 'RUNNING', claimToken: 'email-recovery-claim', leaseExpiresAt: new Date(Date.now() + 120_000) } })
+    await expect(processOrderConfirmationEmailDeliveryJob({ deliveryId: delivery.id }, { jobId: job.id, claimToken: job.claimToken })).rejects.toThrow('outcome is uncertain')
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled()
+    expect(await prisma.emailDelivery.findUnique({ where: { id: delivery.id } })).toMatchObject({ status: 'FAILED', nextRetryAt: null, lastError: expect.stringContaining('Review provider delivery logs') })
+  })
+
 })

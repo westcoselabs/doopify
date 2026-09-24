@@ -8,6 +8,8 @@ import readline from 'node:readline/promises'
 
 import bcrypt from 'bcryptjs'
 import dotenv from 'dotenv'
+import { buildSetupDoctorReport } from '../src/server/services/setup.service.ts'
+import { environmentFields, parseEnvironment } from '../src/lib/env-schema.ts'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -83,10 +85,11 @@ const SETUP_FIELDS = [
     required: true,
     secret: true,
   },
+  { id: 'emailProvider', envKey: 'EMAIL_PROVIDER', label: 'Email provider (none, resend, smtp, preview)', required: true, secret: false, validate: (value) => ['none', 'resend', 'smtp', 'preview'].includes(value) },
   {
     id: 'resendApiKey',
     envKey: 'RESEND_API_KEY',
-    label: 'Resend API key (optional: leave blank for preview mode)',
+    label: 'Resend API key (optional unless EMAIL_PROVIDER=resend)',
     required: false,
     secret: true,
   },
@@ -111,18 +114,7 @@ const SECRET_KEY_PATTERN = /(PASSWORD|SECRET|KEY|TOKEN|DATABASE_URL|DIRECT_URL)/
 const STRIPE_WEBHOOK_EVENTS = ['payment_intent.succeeded', 'payment_intent.payment_failed']
 const RESEND_WEBHOOK_EVENTS = ['email.bounced', 'email.complained']
 const VERCEL_ENV_TARGETS = ['development', 'preview', 'production']
-const VERCEL_ENV_KEYS = [
-  'DATABASE_URL',
-  'DIRECT_URL',
-  'JWT_SECRET',
-  'STRIPE_SECRET_KEY',
-  'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY',
-  'STRIPE_WEBHOOK_SECRET',
-  'RESEND_API_KEY',
-  'RESEND_WEBHOOK_SECRET',
-  'NEXT_PUBLIC_STORE_URL',
-  'WEBHOOK_RETRY_SECRET',
-]
+const VERCEL_ENV_KEYS = Object.keys(environmentFields).filter((key) => key !== 'NODE_ENV' && !key.startsWith('DOOPIFY_WORKER_'))
 
 function loadEnvFiles(rootDir) {
   dotenv.config({ path: path.join(rootDir, '.env'), quiet: true })
@@ -157,33 +149,6 @@ function sanitizeErrorMessage(error) {
     .replace(/:\/\/([^:\s]+):([^@\s]+)@/g, '://$1:***@')
     .replace(/\s+/g, ' ')
     .trim()
-}
-
-async function loadSetupService() {
-  const servicePath = path.join(repoRoot, 'src', 'server', 'services', 'setup.service.ts')
-
-  try {
-    return await import(servicePath)
-  } catch {
-    // Fall through to transpile fallback for older Node runtimes.
-  }
-
-  try {
-    const tsModule = await import('typescript')
-    const source = fs.readFileSync(servicePath, 'utf8')
-    const transpiled = tsModule.transpileModule(source, {
-      compilerOptions: {
-        module: tsModule.ModuleKind.ESNext,
-        target: tsModule.ScriptTarget.ES2020,
-      },
-      fileName: servicePath,
-    })
-
-    const encoded = Buffer.from(transpiled.outputText, 'utf8').toString('base64')
-    return import(`data:text/javascript;base64,${encoded}`)
-  } catch {
-    return null
-  }
 }
 
 function normalizeDatabaseUrl(connectionString) {
@@ -338,62 +303,6 @@ function requireValue(value, message) {
   return value.trim()
 }
 
-function buildSetupDoctorReportFallback(facts) {
-  const checks = []
-  const add = (id, title, required, status, summary, fix) => checks.push({ id, title, required, status, summary, fix })
-  const pass = (value) => (value ? 'PASS' : 'FAIL')
-  const isWeak = (value) => /(change[-_]?me|example|default|test|password|secret|doopify)/i.test(value || '')
-
-  add('node-version', 'Node version', true, facts.nodeMajorVersion >= facts.minimumNodeMajor ? 'PASS' : 'FAIL', facts.nodeMajorVersion >= facts.minimumNodeMajor ? `Node ${facts.nodeVersion} satisfies minimum v${facts.minimumNodeMajor}.` : `Node ${facts.nodeVersion} is below minimum v${facts.minimumNodeMajor}.`, `Upgrade Node.js to v${facts.minimumNodeMajor} or newer.`)
-  add('npm-available', 'npm available', true, pass(facts.npmAvailable), facts.npmAvailable ? `npm is available${facts.npmVersion ? ` (${facts.npmVersion})` : ''}.` : 'npm command is not available.', 'Install npm and ensure it is available on PATH.')
-  add('package-install-state', 'Package install state', true, pass(facts.dependenciesInstalled), facts.dependenciesInstalled ? 'Dependencies appear installed.' : `Missing dependencies: ${facts.missingDependencies.join(', ')}`, 'Run npm install, then re-run npm run doopify:doctor.')
-  add('env-files', '.env / .env.local presence', false, facts.hasEnvFile || facts.hasEnvLocalFile ? 'PASS' : 'WARN', facts.hasEnvFile || facts.hasEnvLocalFile ? 'Env files detected.' : 'No .env or .env.local file found in the repo root.', 'Create .env.local with required environment values (or provide them via shell/CI environment).')
-  add('database-url', 'DATABASE_URL present', true, pass(facts.databaseUrlPresent), facts.databaseUrlPresent ? 'DATABASE_URL is set.' : 'DATABASE_URL is missing.', 'Set DATABASE_URL in .env.local or your runtime environment.')
-  add('database-reachable', 'Database reachable', true, facts.databaseUrlPresent ? pass(facts.databaseReachable) : 'WARN', !facts.databaseUrlPresent ? 'Skipped because DATABASE_URL is missing.' : facts.databaseReachable ? 'Database connection succeeded.' : 'Database connection failed.', facts.databaseReachable ? undefined : 'Verify database server accessibility and credentials.')
-  add('prisma-client-generated', 'Prisma client generated', true, pass(facts.prismaClientGenerated), facts.prismaClientGenerated ? 'Prisma client artifacts were found.' : 'Prisma client artifacts were not found.', 'Run npm run db:generate to generate Prisma client artifacts.')
-  add('store-exists', 'Store exists', true, facts.databaseReachable ? (facts.storeCount > 0 ? 'PASS' : 'FAIL') : 'WARN', facts.databaseReachable ? (facts.storeCount > 0 ? `${facts.storeCount} store record(s) found.` : 'No store records found.') : 'Skipped because database check did not complete.', 'Run npm run db:seed:bootstrap or create a store via setup flow.')
-  add('owner-user-exists', 'Owner/admin user exists', true, facts.databaseReachable ? (facts.ownerCount > 0 ? 'PASS' : 'FAIL') : 'WARN', facts.databaseReachable ? (facts.ownerCount > 0 ? `${facts.ownerCount} OWNER user(s) found.` : 'No OWNER user found.') : 'Skipped because database check did not complete.', 'Run npm run db:seed:bootstrap or create an OWNER user through setup tooling.')
-  add('user-role-admin-enum', 'UserRole enum includes ADMIN', true, facts.databaseReachable ? (facts.userRoleAdminSupported ? 'PASS' : 'FAIL') : 'WARN', facts.databaseReachable ? (facts.userRoleAdminSupported ? 'UserRole enum contains ADMIN.' : 'UserRole enum is missing ADMIN.') : 'Skipped because database check did not complete.', 'Inspect migration history and the applicable migration runbook, use reviewed prisma migrate resolve only where documented, then run npm run db:deploy:safe.')
-
-  const jwtStrong = Boolean(facts.jwtSecret) && facts.jwtSecret.length >= 32
-  add('jwt-secret', 'JWT_SECRET strength', true, jwtStrong ? (isWeak(facts.jwtSecret) ? 'WARN' : 'PASS') : 'FAIL', !facts.jwtSecret ? 'JWT_SECRET is missing.' : jwtStrong ? 'JWT_SECRET is present and strong enough.' : `JWT_SECRET is too short (${facts.jwtSecret.length} characters).`, 'Set JWT_SECRET in .env.local to a random secret with at least 32 characters.')
-  add('stripe-keys', 'Stripe keys present', true, facts.stripeSecretKeyPresent && facts.stripePublishableKeyPresent ? 'PASS' : 'FAIL', facts.stripeSecretKeyPresent && facts.stripePublishableKeyPresent ? 'Stripe secret and publishable keys are present.' : 'Missing Stripe secret key and/or publishable key.', 'Set STRIPE_SECRET_KEY and NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY.')
-  add('stripe-webhook-secret', 'Stripe webhook secret present', true, pass(facts.stripeWebhookSecretPresent), facts.stripeWebhookSecretPresent ? 'STRIPE_WEBHOOK_SECRET is present.' : 'STRIPE_WEBHOOK_SECRET is missing.', 'Set STRIPE_WEBHOOK_SECRET for /api/webhooks/stripe.')
-
-  const retryStrong = Boolean(facts.webhookRetrySecret) && facts.webhookRetrySecret.length >= 16
-  add('webhook-retry-secret', 'WEBHOOK_RETRY_SECRET present', true, retryStrong ? (isWeak(facts.webhookRetrySecret) ? 'WARN' : 'PASS') : 'FAIL', !facts.webhookRetrySecret ? 'WEBHOOK_RETRY_SECRET is missing.' : retryStrong ? 'WEBHOOK_RETRY_SECRET is present.' : `WEBHOOK_RETRY_SECRET is too short (${facts.webhookRetrySecret.length} characters).`, 'Set WEBHOOK_RETRY_SECRET in .env.local to a random secret with at least 16 characters.')
-  add('resend-api-or-preview', 'RESEND_API_KEY or preview mode', true, 'PASS', facts.resendApiKeyPresent ? 'RESEND_API_KEY is present.' : 'RESEND_API_KEY is not set; preview mode is active.', 'Set RESEND_API_KEY to enable live provider sends (optional in local preview mode).')
-  add('resend-webhook-secret-enabled', 'RESEND_WEBHOOK_SECRET for email-provider webhooks', facts.emailProviderWebhooksEnabled, facts.emailProviderWebhooksEnabled ? pass(facts.resendWebhookSecretPresent) : facts.resendWebhookSecretPresent ? 'PASS' : 'WARN', facts.emailProviderWebhooksEnabled ? (facts.resendWebhookSecretPresent ? 'RESEND_WEBHOOK_SECRET is present for email-provider webhook verification.' : 'Email-provider webhooks appear enabled but RESEND_WEBHOOK_SECRET is missing.') : facts.resendWebhookSecretPresent ? 'RESEND_WEBHOOK_SECRET is configured.' : 'Email-provider webhook verification is not enabled; RESEND_WEBHOOK_SECRET is optional right now.', facts.emailProviderWebhooksEnabled ? 'Set RESEND_WEBHOOK_SECRET to verify webhook signatures on /api/webhooks/email-provider.' : 'If you enable provider webhooks, set RESEND_WEBHOOK_SECRET first.')
-
-  let storeUrlStatus = 'FAIL'
-  let storeUrlSummary = 'NEXT_PUBLIC_STORE_URL is missing.'
-  if (facts.nextPublicStoreUrl) {
-    try {
-      const parsed = new URL(facts.nextPublicStoreUrl)
-      storeUrlStatus = ['http:', 'https:'].includes(parsed.protocol) ? 'PASS' : 'FAIL'
-      storeUrlSummary = storeUrlStatus === 'PASS' ? 'NEXT_PUBLIC_STORE_URL is present and valid.' : 'NEXT_PUBLIC_STORE_URL must use http:// or https://.'
-    } catch {
-      storeUrlStatus = 'FAIL'
-      storeUrlSummary = 'NEXT_PUBLIC_STORE_URL is not a valid URL.'
-    }
-  }
-  add('next-public-store-url', 'NEXT_PUBLIC_STORE_URL present', true, storeUrlStatus, storeUrlSummary, 'Set NEXT_PUBLIC_STORE_URL to your storefront base URL.')
-
-  const passCount = checks.filter((check) => check.status === 'PASS').length
-  const warnCount = checks.filter((check) => check.status === 'WARN').length
-  const failCount = checks.filter((check) => check.status === 'FAIL').length
-  const requiredFailCount = checks.filter((check) => check.required && check.status === 'FAIL').length
-
-  return {
-    checks,
-    passCount,
-    warnCount,
-    failCount,
-    requiredFailCount,
-    ok: requiredFailCount === 0,
-  }
-}
-
 function checkNpmAvailability() {
   const userAgent = process.env.npm_config_user_agent || ''
   const npmVersionFromUserAgent = /(?:^|\s)npm\/([0-9][0-9A-Za-z.+-]*)/.exec(userAgent)?.[1]
@@ -517,9 +426,6 @@ async function checkDatabaseFacts(databaseUrlPresent, dependenciesInstalled) {
 }
 
 async function createDoctorReport() {
-  const setupService = await loadSetupService()
-  const reportBuilder = setupService?.buildSetupDoctorReport || buildSetupDoctorReportFallback
-
   const nodeMajorVersion = parseNodeMajor(process.version)
   const npmCheck = checkNpmAvailability()
   const dependencyCheck = checkDependenciesInstalled()
@@ -537,7 +443,7 @@ async function createDoctorReport() {
   const facts = {
     nodeVersion: process.version,
     nodeMajorVersion,
-    minimumNodeMajor: 20,
+    minimumNodeMajor: 22,
     npmAvailable: npmCheck.available,
     npmVersion: npmCheck.version,
     dependenciesInstalled: dependencyCheck.installed,
@@ -553,22 +459,12 @@ async function createDoctorReport() {
     userRoleAdminSupported: databaseFacts.userRoleAdminSupported,
     storeConfigured: databaseFacts.storeConfigured,
     storeContactConfigured: databaseFacts.storeContactConfigured,
-    jwtSecret: process.env.JWT_SECRET,
-    stripeSecretKeyPresent: Boolean(process.env.STRIPE_SECRET_KEY),
-    stripePublishableKeyPresent: Boolean(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY),
-    stripeWebhookSecretPresent: Boolean(process.env.STRIPE_WEBHOOK_SECRET),
-    webhookRetrySecret: process.env.WEBHOOK_RETRY_SECRET,
-    resendApiKeyPresent: Boolean(process.env.RESEND_API_KEY),
-    resendWebhookSecretPresent: Boolean(process.env.RESEND_WEBHOOK_SECRET),
-    emailProviderWebhooksEnabled: Boolean(process.env.RESEND_API_KEY || process.env.RESEND_WEBHOOK_SECRET),
-    nextPublicStoreUrl: process.env.NEXT_PUBLIC_STORE_URL,
-    vercelEnvironmentDetected: Boolean(process.env.VERCEL || process.env.VERCEL_ENV),
-    vercelUrlPresent: Boolean(process.env.VERCEL_URL),
+    environment: process.env,
   }
 
-  const report = reportBuilder(facts, { profile: 'cli' })
+  const report = buildSetupDoctorReport(facts)
 
-  return { report, usedFallback: !setupService?.buildSetupDoctorReport }
+  return { report }
 }
 
 function printDoctorReport(report) {
@@ -589,12 +485,7 @@ async function runDoctor(options = {}) {
   const { exitOnFailure = true } = options
   loadEnvFiles(repoRoot)
 
-  const { report, usedFallback } = await createDoctorReport()
-
-  if (usedFallback) {
-    console.log('WARN setup service model could not be loaded directly; using CLI fallback model.')
-    console.log('')
-  }
+  const { report } = await createDoctorReport()
 
   console.log('Doopify Doctor (read-only)')
   console.log('')
@@ -905,7 +796,7 @@ async function collectSetupInputs(existingEnv) {
       }
 
       values[field.id] = await prompts.ask(field.label, {
-        defaultValue: field.secret ? undefined : existingValue,
+        defaultValue: field.secret ? undefined : existingValue || (field.id === 'emailProvider' ? 'none' : undefined),
         required: field.required,
         secret: field.secret,
         minLength: field.minLength,
@@ -913,7 +804,13 @@ async function collectSetupInputs(existingEnv) {
       })
     }
 
-    if (!hasValue(values.resendWebhookSecret) && hasValue(values.resendApiKey)) {
+    if (values.emailProvider === 'smtp') {
+      for (const key of ['SMTP_HOST', 'SMTP_USERNAME', 'SMTP_PASSWORD']) {
+        values[key] = hasValue(existingEnv[key]) ? existingEnv[key] : await prompts.ask(key, { required: true, secret: key === 'SMTP_PASSWORD' })
+      }
+    }
+
+    if (values.emailProvider === 'resend' && !hasValue(values.resendWebhookSecret)) {
       values.resendWebhookSecret = await prompts.ask(
         'Resend webhook secret is required when RESEND_API_KEY is set',
         { required: true, secret: true }
@@ -932,6 +829,7 @@ async function collectSetupInputs(existingEnv) {
 }
 
 async function buildEnvUpdates(existingEnv) {
+  if (!hasValue(existingEnv.DATA_ENCRYPTION_KEY) && hasValue(existingEnv.ENCRYPTION_KEY)) throw new Error('Legacy ENCRYPTION_KEY found. Run the environment migration preflight/export before setup; existing encrypted data must keep the same effective key.');
   const values = await collectSetupInputs(existingEnv)
   const updates = {
     DOOPIFY_STORE_NAME: values.storeName,
@@ -944,9 +842,16 @@ async function buildEnvUpdates(existingEnv) {
     STRIPE_SECRET_KEY: values.stripeSecretKey,
     NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: values.stripePublishableKey,
     STRIPE_WEBHOOK_SECRET: values.stripeWebhookSecret,
+    EMAIL_PROVIDER: values.emailProvider,
+    ...(values.emailProvider === 'smtp' ? { SMTP_HOST: values.SMTP_HOST, SMTP_USERNAME: values.SMTP_USERNAME, SMTP_PASSWORD: values.SMTP_PASSWORD } : {}),
     RESEND_API_KEY: values.resendApiKey || '',
     RESEND_WEBHOOK_SECRET: values.resendWebhookSecret || '',
     WEBHOOK_RETRY_SECRET: values.webhookRetrySecret,
+  }
+
+  if (!hasValue(existingEnv.DATA_ENCRYPTION_KEY)) {
+    updates.DATA_ENCRYPTION_KEY = generateSecret(48)
+    console.log('Generated DATA_ENCRYPTION_KEY.')
   }
 
   if (!hasValue(existingEnv.JWT_SECRET)) {
@@ -1085,6 +990,7 @@ async function runSetup() {
 
   const { values, updates: requestedUpdates } = await buildEnvUpdates(existingEnv)
   const updates = await filterUpdatesWithOverwriteConfirmation(existingEnv, requestedUpdates)
+  parseEnvironment({ ...existingEnv, ...updates, NODE_ENV: process.env.NODE_ENV || 'development' })
   printEnvSummary(updates)
 
   writeEnvLocal(updates)
@@ -1191,14 +1097,13 @@ async function runEnvPush() {
   syncProjectLinkEnv(vercel)
   ensureVercelProjectLink(vercel)
 
-  const missing = VERCEL_ENV_KEYS.filter((key) => !hasValue(existingEnv[key]))
-  if (missing.length > 0) {
-    throw new Error(`Missing local env values for Vercel push: ${missing.join(', ')}`)
+  const parsed = parseEnvironment({ ...existingEnv, NODE_ENV: 'production' })
+  const envValues = Object.fromEntries(VERCEL_ENV_KEYS
+    .filter((key) => parsed[key] !== undefined)
+    .map((key) => [key, String(parsed[key])]))
+  for (const [key, value] of Object.entries(existingEnv)) {
+    if (/^OUTBOUND_WEBHOOK_[A-Z0-9_]+$/.test(key) && hasValue(value)) envValues[key] = value.trim()
   }
-
-  const envValues = Object.fromEntries(
-    VERCEL_ENV_KEYS.map((key) => [key, String(existingEnv[key]).trim()])
-  )
 
   const payload = Object.entries(envValues)
     .filter(([key]) => isDeployRuntimeKey(key))

@@ -1,27 +1,16 @@
-import { type ShippingLiveProvider, type ShippingMode, type ShippingProviderUsage } from '@prisma/client'
+import { type ShippingLiveProvider } from '@prisma/client'
 
-import { prisma } from '@/lib/prisma'
-import { findPrimaryStore } from '@/server/services/primary-store.service'
+export { getShippingSettingsStore as getShippingSetupStore } from './shipping-settings.service'
 import { getShippingProviderConnectionStatus } from '@/server/shipping/shipping-provider.service'
 import {
   resolveActiveRateProvider,
   resolveLabelProvider,
 } from '@/server/shipping/shipping-provider-selection'
-import { getProviderStatus } from '@/server/services/provider-connection.service'
-
-type ShippingVerificationStatus =
-  | 'verified'
-  | 'configured'
-  | 'verification_unavailable'
-  | 'needs_attention'
-  | 'needs_setup'
 
 export type ShippingSetupStatus = {
   shippingMode: 'MANUAL' | 'LIVE_RATES' | 'HYBRID'
   activeRateProvider: ShippingLiveProvider | null
   labelProvider: ShippingLiveProvider | null
-  shippingLiveProvider: ShippingLiveProvider | null
-  shippingProviderUsage: ShippingProviderUsage
   mode: 'MANUAL' | 'LIVE_RATES' | 'HYBRID'
   hasOriginAddress: boolean
   hasDefaultPackage: boolean
@@ -29,9 +18,6 @@ export type ShippingSetupStatus = {
   hasFallbackRate: boolean
   hasProvider: boolean
   providerConnected: boolean
-  providerLastVerifiedAt: string | null
-  providerLastError: string | null
-  providerVerificationStatus: ShippingVerificationStatus
   liveProviderConnected: boolean
   labelProviderConnected: boolean
   shippingProviderConnections: Record<
@@ -48,55 +34,6 @@ export type ShippingSetupStatus = {
   canBuyLabels: boolean
   warnings: string[]
   nextSteps: string[]
-}
-
-type ShippingSetupPatch = Partial<{
-  shippingMode: ShippingMode
-  shippingLiveProvider: ShippingLiveProvider | null
-  shippingProviderUsage: ShippingProviderUsage
-  shippingOriginName: string | null
-  shippingOriginPhone: string | null
-  shippingOriginAddress1: string | null
-  shippingOriginAddress2: string | null
-  shippingOriginCity: string | null
-  shippingOriginProvince: string | null
-  shippingOriginPostalCode: string | null
-  shippingOriginCountry: string | null
-  defaultPackageWeightOz: number | null
-  defaultPackageLengthIn: number | null
-  defaultPackageWidthIn: number | null
-  defaultPackageHeightIn: number | null
-  defaultLabelFormat: string | null
-  defaultLabelSize: string | null
-  shippingFallbackEnabled: boolean
-  shippingThresholdCents: number | null
-  shippingDomesticRateCents: number
-  shippingInternationalRateCents: number
-}>
-
-function includeStoreRelations() {
-  return {
-    shippingPackages: {
-      orderBy: [{ isDefault: 'desc' as const }, { createdAt: 'asc' as const }],
-    },
-    shippingLocations: {
-      orderBy: [{ isDefault: 'desc' as const }, { createdAt: 'asc' as const }],
-    },
-    shippingManualRates: {
-      orderBy: [{ createdAt: 'asc' as const }],
-    },
-    shippingFallbackRates: {
-      orderBy: [{ createdAt: 'asc' as const }],
-    },
-    shippingZones: {
-      include: {
-        rates: {
-          orderBy: [{ priority: 'asc' as const }, { createdAt: 'asc' as const }],
-        },
-      },
-      orderBy: [{ priority: 'asc' as const }, { createdAt: 'asc' as const }],
-    },
-  }
 }
 
 function normalizeOptionalText(value?: string | null) {
@@ -190,58 +127,9 @@ function hasFallbackRate(store: any) {
   return hasConfiguredFallbackRates || hasLegacyFallbackRates
 }
 
-function isShippingProviderValue(value: unknown): value is ShippingLiveProvider {
-  return value === 'EASYPOST' || value === 'SHIPPO'
-}
-
-function deriveProviderVerificationStatus(input: {
-  mode: ShippingMode
-  selectedProvider: ShippingLiveProvider | null
-  providerConnected: boolean
-  providerState: string | null
-  providerLastVerifiedAt: string | null
-  providerLastError: string | null
-}): ShippingVerificationStatus {
-  const providerRequired = input.mode === 'LIVE_RATES' || input.mode === 'HYBRID'
-  if (!input.selectedProvider) {
-    return providerRequired ? 'needs_setup' : 'configured'
-  }
-
-  if (!input.providerConnected) return 'needs_setup'
-  if (input.providerLastError || input.providerState === 'ERROR') return 'needs_attention'
-  if (input.providerLastVerifiedAt || input.providerState === 'VERIFIED') return 'verified'
-  if (input.providerState === 'CREDENTIALS_SAVED') return 'configured'
-  if (input.providerState === 'NOT_CONFIGURED') return 'needs_setup'
-  return 'verification_unavailable'
-}
-
-export async function getShippingSetupStore() {
-  return findPrimaryStore({
-    include: includeStoreRelations(),
-  })
-}
-
-export async function updateShippingSetup(storeId: string, patch: ShippingSetupPatch) {
-  return prisma.store.update({
-    where: { id: storeId },
-    data: patch,
-    include: includeStoreRelations(),
-  })
-}
-
 export async function buildShippingSetupStatus(store: any) {
-  const activeRateProvider = resolveActiveRateProvider(store)
-  const labelProvider = resolveLabelProvider(store)
-  const shippingLiveProvider = isShippingProviderValue(store.shippingLiveProvider)
-    ? store.shippingLiveProvider
-    : null
-  const selectedProvider = shippingLiveProvider || activeRateProvider || labelProvider || null
-  const shippingProviderUsage =
-    store.shippingProviderUsage === 'LABELS_ONLY' ||
-    store.shippingProviderUsage === 'LIVE_RATES_ONLY' ||
-    store.shippingProviderUsage === 'LIVE_AND_LABELS'
-      ? store.shippingProviderUsage
-      : 'LIVE_AND_LABELS'
+  const activeRateProvider = resolveActiveRateProvider()
+  const labelProvider = resolveLabelProvider()
   const hasProvider = Boolean(activeRateProvider)
   const shipFromEmail = resolveShipFromEmail(store)
   const shipFromPhone = resolveShipFromPhone(store)
@@ -296,48 +184,29 @@ export async function buildShippingSetupStatus(store: any) {
   const canBuyLabels =
     originReady && packageReady && Boolean(labelProvider) && labelProviderConnected && shippoLabelContactReady
 
-  let providerLastVerifiedAt: string | null = null
-  let providerLastError: string | null = null
-  let providerState: string | null = null
-  if (selectedProvider) {
-    const providerStatus = await getProviderStatus(selectedProvider)
-    providerLastVerifiedAt = providerStatus.lastVerifiedAt || null
-    providerLastError = providerStatus.lastError || null
-    providerState = providerStatus.state
-  }
-
-  const providerVerificationStatus = deriveProviderVerificationStatus({
-    mode,
-    selectedProvider,
-    providerConnected,
-    providerState,
-    providerLastVerifiedAt,
-    providerLastError,
-  })
-
   const warnings: string[] = []
   const nextSteps: string[] = []
 
   if (!originReady) {
     warnings.push('Shipping origin address is incomplete.')
-    nextSteps.push('Add origin address details in setup step 2.')
+    nextSteps.push('Add shipping origin address details.')
   }
   if (!packageReady) {
     warnings.push('Default package dimensions/weight are incomplete.')
-    nextSteps.push('Add a default package in setup step 3.')
+    nextSteps.push('Add a default shipping package.')
   }
   if (!manualReady) {
     warnings.push('Manual fallback rates are not configured.')
-    nextSteps.push('Configure manual fallback rates in setup step 4.')
+    nextSteps.push('Configure manual fallback rates.')
   }
 
   if ((mode === 'LIVE_RATES' || mode === 'HYBRID') && !hasProvider) {
     warnings.push('Live shipping mode is selected but no provider is chosen.')
-    nextSteps.push('Choose a live provider in setup step 5.')
+    nextSteps.push('Set SHIPPING_RATE_PROVIDER in the deployment environment.')
   }
   if ((mode === 'LIVE_RATES' || mode === 'HYBRID') && hasProvider && !liveProviderConnected) {
     warnings.push('Selected shipping provider is not connected yet.')
-    nextSteps.push('Connect and test the provider credentials in setup step 5.')
+    nextSteps.push('Configure provider environment credentials and test them in Developer settings.')
   }
   if (mode === 'HYBRID' && store.shippingFallbackEnabled && !manualReady) {
     warnings.push('Hybrid mode requires manual fallback rates.')
@@ -360,8 +229,6 @@ export async function buildShippingSetupStatus(store: any) {
     shippingMode: mode,
     activeRateProvider,
     labelProvider,
-    shippingLiveProvider,
-    shippingProviderUsage,
     mode,
     hasOriginAddress: originReady,
     hasDefaultPackage: packageReady,
@@ -369,9 +236,6 @@ export async function buildShippingSetupStatus(store: any) {
     hasFallbackRate: fallbackRateReady,
     hasProvider,
     providerConnected,
-    providerLastVerifiedAt,
-    providerLastError,
-    providerVerificationStatus,
     liveProviderConnected,
     labelProviderConnected,
     shippingProviderConnections,

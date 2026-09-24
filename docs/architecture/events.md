@@ -79,7 +79,7 @@ Current job types:
 
 `src/server/integrations/registry.ts` is the static integration registry. Integrations register their event subscriptions here before any plugin platform exists.
 
-Custom merchant integrations are configured in **Settings → Webhooks** and stored as `Integration` + `IntegrationEvent` records in the database.
+Developers define outbound destinations/events in `src/server/config/outbound-webhooks.ts` with separate environment secret references. Durable delivery records preserve destination snapshots and history.
 
 ---
 

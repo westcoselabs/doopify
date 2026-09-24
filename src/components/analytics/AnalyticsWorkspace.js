@@ -1,52 +1,20 @@
 "use client";
 
-import { useMemo } from 'react';
 import AppShell from '../AppShell';
-import { useOrders } from '../../context/OrdersContext';
-import { useCustomers } from '../../context/CustomersContext';
-import { useDiscounts } from '../../context/DiscountsContext';
-import { useProducts } from '../../context/ProductsContext';
 import AdminCard from '../admin/ui/AdminCard';
 import AdminEmptyState from '../admin/ui/AdminEmptyState';
 import AdminPage from '../admin/ui/AdminPage';
 import AdminPageHeader from '../admin/ui/AdminPageHeader';
-import AdminSkeleton from '../admin/ui/AdminSkeleton';
 import AdminStatCard, { AdminStatsGrid } from '../admin/ui/AdminStatCard';
 import AdminTable from '../admin/ui/AdminTable';
 import AdminToolbar from '../admin/ui/AdminToolbar';
 import styles from './AnalyticsWorkspace.module.css';
 
-function formatMoney(value) {
-  return `$${Number(value || 0).toFixed(2)}`;
+function formatMoney(cents, currency) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(cents / 100);
 }
 
-export default function AnalyticsWorkspace() {
-  const { orders, loading: ordersLoading } = useOrders();
-  const { customers, loading: customersLoading } = useCustomers();
-  const { discounts, loading: discountsLoading } = useDiscounts();
-  const { products, loading: productsLoading } = useProducts();
-
-  const isLoading = ordersLoading || customersLoading || discountsLoading || productsLoading;
-
-  const metrics = useMemo(() => {
-    const grossSales = orders.reduce((sum, order) => sum + Number(order.total || 0), 0);
-    const averageOrderValue = orders.length ? grossSales / orders.length : 0;
-    const repeatCustomers = customers.filter((customer) => Number(customer.orderCount || 0) > 1).length;
-    const topProducts = [...products]
-      .map((product) => ({
-        id: product.id,
-        title: product.title,
-        inventory: product.variants.reduce((sum, variant) => sum + Number(variant.inventoryQty || 0), 0),
-      }))
-      .sort((a, b) => a.inventory - b.inventory)
-      .slice(0, 6);
-    const topDiscounts = [...discounts]
-      .sort((a, b) => Number(b.usageCount || 0) - Number(a.usageCount || 0))
-      .slice(0, 6);
-
-    return { grossSales, averageOrderValue, repeatCustomers, topProducts, topDiscounts };
-  }, [customers, discounts, orders, products]);
-
+export default function AnalyticsWorkspace({ metrics }) {
   return (
     <AppShell>
       <AdminPage>
@@ -57,11 +25,24 @@ export default function AnalyticsWorkspace() {
         />
 
         <AdminStatsGrid>
-          <AdminStatCard label="Gross sales" value={formatMoney(metrics.grossSales)} />
-          <AdminStatCard label="Orders" value={String(orders.length)} />
-          <AdminStatCard label="Average order value" value={formatMoney(metrics.averageOrderValue)} />
+          <AdminStatCard label="Paid orders" value={String(metrics.paidOrderCount)} />
           <AdminStatCard label="Repeat customers" value={String(metrics.repeatCustomers)} />
         </AdminStatsGrid>
+
+        <AdminCard className={styles.panel} variant="panel">
+          <h2 className={styles.snapshotTitle}>Paid order value</h2>
+          <p>All-time paid orders, including partially and fully refunded orders. Value includes discounts, tax and shipping, before refunds. Refunds are shown separately.</p>
+          {metrics.currencies.length ? <AdminTable
+            columns={[
+              { key: 'currency', header: 'Currency', render: (row) => row.currency },
+              { key: 'paidOrderValueCents', header: 'Paid order value', render: (row) => formatMoney(row.paidOrderValueCents, row.currency) },
+              { key: 'paidOrderCount', header: 'Paid orders', render: (row) => row.paidOrderCount },
+              { key: 'averageOrderValueCents', header: 'Average order value', render: (row) => formatMoney(row.averageOrderValueCents, row.currency) },
+              { key: 'refundCents', header: 'Issued refunds', render: (row) => formatMoney(row.refundCents, row.currency) },
+            ]}
+            rows={metrics.currencies.map((row) => ({ ...row, id: row.currency }))}
+          /> : <AdminEmptyState title="No paid orders yet" description="Paid order value appears after a verified payment." icon="payments" />}
+        </AdminCard>
 
         <AdminCard className={styles.panel} variant="panel">
           <AdminToolbar>
@@ -71,9 +52,7 @@ export default function AnalyticsWorkspace() {
           <div className={styles.gridTwo}>
             <AdminCard className={styles.snapshotCard} variant="card">
               <h2 className={styles.snapshotTitle}>Top discount usage</h2>
-              {isLoading ? (
-                <AdminSkeleton rows={6} variant="table" />
-              ) : metrics.topDiscounts.length ? (
+              {metrics.topDiscounts.length ? (
                 <AdminTable
                   columns={[
                     { key: 'title', header: 'Discount', render: (discount) => discount.title },
@@ -93,15 +72,13 @@ export default function AnalyticsWorkspace() {
 
             <AdminCard className={styles.snapshotCard} variant="card">
               <h2 className={styles.snapshotTitle}>Inventory pressure</h2>
-              {isLoading ? (
-                <AdminSkeleton rows={6} variant="table" />
-              ) : metrics.topProducts.length ? (
+              {metrics.inventoryPressure.length ? (
                 <AdminTable
                   columns={[
                     { key: 'title', header: 'Product', render: (product) => product.title },
                     { key: 'inventory', header: 'Available', render: (product) => `${product.inventory} in stock` },
                   ]}
-                  rows={metrics.topProducts}
+                  rows={metrics.inventoryPressure}
                 />
               ) : (
                 <AdminEmptyState

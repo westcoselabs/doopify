@@ -1,7 +1,8 @@
+vi.mock('@/lib/env', () => ({ env: new Proxy({}, { get: (_, name) => name === 'MEDIA_STORAGE_PROVIDER' ? process.env.MEDIA_STORAGE_PROVIDER || 'postgres' : process.env[String(name)] }) }))
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   deriveDigitalAssetTitle,

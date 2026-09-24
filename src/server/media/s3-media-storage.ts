@@ -1,4 +1,4 @@
-import { Client as MinioClient } from 'minio'
+import { createS3Client } from './s3-client'
 import type { Readable } from 'node:stream'
 
 import { prisma } from '@/lib/prisma'
@@ -113,39 +113,11 @@ async function streamToBuffer(stream: Readable): Promise<Buffer> {
   return Buffer.concat(chunks)
 }
 
-function buildMinioClient(config: S3MediaStorageConfig) {
-  const endpoint = config.endpoint?.trim()
-
-  if (!endpoint) {
-    return new MinioClient({
-      endPoint: 's3.amazonaws.com',
-      useSSL: true,
-      region: config.region,
-      accessKey: config.accessKeyId,
-      secretKey: config.secretAccessKey,
-      pathStyle: false,
-    })
-  }
-
-  const normalizedEndpoint = endpoint.includes('://') ? endpoint : `https://${endpoint}`
-  const parsed = new URL(normalizedEndpoint)
-
-  return new MinioClient({
-    endPoint: parsed.hostname,
-    useSSL: parsed.protocol === 'https:',
-    port: parsed.port ? Number(parsed.port) : undefined,
-    region: config.region,
-    accessKey: config.accessKeyId,
-    secretKey: config.secretAccessKey,
-    pathStyle: true,
-  })
-}
-
 export function createS3MediaStorageAdapter(
   config: S3MediaStorageConfig,
   deps: S3MediaAdapterDeps = {
     prismaClient: prisma as unknown as PrismaMediaClient,
-    objectClient: buildMinioClient(config),
+    objectClient: createS3Client(config),
   }
 ): MediaStorageAdapter {
   return {

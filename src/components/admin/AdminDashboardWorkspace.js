@@ -13,7 +13,6 @@ import { useCustomers } from '../../context/CustomersContext';
 import { useOrders } from '../../context/OrdersContext';
 import { useProducts } from '../../context/ProductsContext';
 import { useSettings } from '../../context/SettingsContext';
-import { buildDashboardFirstRunGuide } from './dashboard-first-run-guide.helpers';
 import styles from './AdminDashboardWorkspace.module.css';
 
 function formatCompactNumber(value) {
@@ -39,22 +38,12 @@ function formatRelativeTime(dateValue) {
   return formatter.format(Math.round(diffHours / 24), 'day');
 }
 
-const STEP_STATUS_TONE = {
-  Ready: 'success',
-  'Needs setup': 'warning',
-  Configured: 'success',
-  Optional: 'neutral',
-};
-
 export default function AdminDashboardWorkspace() {
   const { orders, loading: ordersLoading } = useOrders();
   const { products, loading: productsLoading } = useProducts();
   const { customers, loading: customersLoading } = useCustomers();
   const { settings } = useSettings();
   const [sessionUser, setSessionUser] = useState(null);
-  const [setupWizard, setSetupWizard] = useState(null);
-  const [setupWizardLoaded, setSetupWizardLoaded] = useState(false);
-  const [setupWizardLoading, setSetupWizardLoading] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -126,46 +115,6 @@ export default function AdminDashboardWorkspace() {
 
   const recentActivity = overview.activity;
   const loading = ordersLoading || productsLoading || customersLoading;
-  const firstRunGuide = useMemo(() => buildDashboardFirstRunGuide(setupWizard), [setupWizard]);
-  const shouldLoadSetupWizard =
-    sessionUser?.role === 'OWNER' &&
-    !setupWizardLoaded &&
-    !setupWizardLoading;
-
-  useEffect(() => {
-    if (!shouldLoadSetupWizard) return;
-
-    let ignore = false;
-    let handle = null;
-
-    async function loadSetupWizard() {
-      setSetupWizardLoading(true);
-      try {
-        const response = await fetch('/api/setup/wizard', { cache: 'no-store' });
-        if (!response.ok) return;
-
-        const payload = await response.json().catch(() => null);
-        if (!ignore && payload?.success) {
-          setSetupWizard(payload.data || null);
-        }
-      } catch {
-      } finally {
-        if (!ignore) {
-          setSetupWizardLoading(false);
-          setSetupWizardLoaded(true);
-        }
-      }
-    }
-
-    // Delay non-critical setup wizard fetch so readiness/main dashboard content can render first.
-    handle = setTimeout(loadSetupWizard, 250);
-
-    return () => {
-      ignore = true;
-      if (handle) clearTimeout(handle);
-    };
-  }, [shouldLoadSetupWizard]);
-
   const userName =
     [sessionUser?.firstName, sessionUser?.lastName].filter(Boolean).join(' ') ||
     sessionUser?.email ||
@@ -196,48 +145,11 @@ export default function AdminDashboardWorkspace() {
           <AdminStatCard label="Customers" meta="Profiles available to support" value={loading ? '--' : formatCompactNumber(customers.length)} />
         </AdminStatsGrid>
 
-        {firstRunGuide ? (
-          <AdminCard className={styles.setupPanel} variant="card">
-            <div className={styles.setupPanelHeader}>
-              <div>
-                <h2 className="font-headline">Pilot readiness checklist</h2>
-                <p>Complete the required steps, then run a test checkout and confirm it appears in Orders.</p>
-              </div>
-              <AdminStatusChip tone="warning">In progress</AdminStatusChip>
-            </div>
-
-            <div className={styles.requiredSetupGrid}>
-              {firstRunGuide.requiredSteps.map((step) => (
-                <div className={styles.requiredSetupItem} key={step.id}>
-                  <div className={styles.stepMeta}>
-                    <strong>{step.title}</strong>
-                    <small>{step.description}</small>
-                  </div>
-                  <div className={styles.stepActions}>
-                    <AdminStatusChip tone={STEP_STATUS_TONE[step.statusLabel] || 'neutral'}>
-                      {step.statusLabel}
-                    </AdminStatusChip>
-                    <Link href={step.route}>{step.ctaLabel}</Link>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <details className={styles.optionalSetupWrap}>
-              <summary>Optional hardening: Email, Team, MFA</summary>
-              <div className={styles.optionalSetupChips}>
-                {firstRunGuide.optionalSteps.map((step) => (
-                  <Link className={styles.optionalSetupChip} href={step.route} key={step.id}>
-                    <span>{step.title}</span>
-                    <AdminStatusChip tone={STEP_STATUS_TONE[step.statusLabel] || 'neutral'}>
-                      {step.statusLabel}
-                    </AdminStatusChip>
-                  </Link>
-                ))}
-              </div>
-            </details>
-          </AdminCard>
-        ) : null}
+        {sessionUser?.role === 'OWNER' && <AdminCard className={styles.setupPanel} variant="card">
+          <h2 className="font-headline">Environment and launch readiness</h2>
+          <p>Review configured integrations and run a launch check before accepting orders.</p>
+          <Link prefetch={false} href="/admin/system/developer">Open Developer</Link>
+        </AdminCard>}
 
         <div className={styles.grid}>
           <AdminCard className={styles.primaryCard} variant="panel">
@@ -255,14 +167,14 @@ export default function AdminDashboardWorkspace() {
                 <h3>No activity yet</h3>
                 <p>Create your first product, then run setup checks before placing a test checkout.</p>
                 <div className={styles.activityEmptyActions}>
-                  <Link className={styles.activityPrimaryAction} href="/settings?section=setup">Open setup</Link>
-                  <Link className={styles.activitySecondaryAction} href="/products">Add product</Link>
+                  <Link prefetch={false} className={styles.activityPrimaryAction} href="/admin/system/developer">Open Developer</Link>
+                  <Link prefetch={false} className={styles.activitySecondaryAction} href="/products">Add product</Link>
                 </div>
               </div>
             ) : (
               <div className={styles.activityList}>
                 {recentActivity.map((item) => (
-                  <Link className={styles.activityRow} href={item.href} key={item.id}>
+                  <Link prefetch={false} className={styles.activityRow} href={item.href} key={item.id}>
                     <span className={`material-symbols-outlined ${styles.activityIcon}`} aria-hidden="true">{item.icon}</span>
                     <div className={styles.activityCopy}>
                       <strong>{item.title}</strong>
@@ -292,10 +204,10 @@ export default function AdminDashboardWorkspace() {
                 <h2 className="font-headline">Quick links</h2>
               </div>
               <div className={styles.linkList}>
-                <Link href="/orders">Review orders</Link>
-                <Link href="/products">Add product</Link>
-                <Link href="/settings?section=shipping">Review shipping and rates</Link>
-                <Link href="/admin/webhooks">Open delivery logs</Link>
+                <Link prefetch={false} href="/orders">Review orders</Link>
+                <Link prefetch={false} href="/products">Add product</Link>
+                <Link prefetch={false} href="/settings?section=shipping">Review shipping and rates</Link>
+                <Link prefetch={false} href="/admin/webhooks">Open delivery logs</Link>
               </div>
             </AdminCard>
           </div>

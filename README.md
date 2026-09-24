@@ -6,6 +6,8 @@ Doopify is a real commerce application built with Next.js 16, Prisma, PostgreSQL
 
 ---
 
+**Developers configure infrastructure. Doopify operates the store.** See the [architecture](docs/architecture/env-only-commerce.md) and [measured acceptance report](docs/performance/env-only-acceptance.md).
+
 ## What it does
 
 - Protected admin with role-based team management (Owner, Admin, Staff)
@@ -46,7 +48,9 @@ Doopify is a real commerce application built with Next.js 16, Prisma, PostgreSQL
   - Deployed production first-owner bootstrap: required.
   - `/create-owner` requires a token only when `SETUP_TOKEN` is set (and production enforces that it must be set).
 - `/create-owner` closes permanently after the first active `OWNER` account exists.
-- For private beta onboarding, configure Stripe and email from **Settings -> Payments** and **Settings -> Email** (do not rely on placeholder env values).
+- Use Node.js 22.18 or later. Configure Stripe, email, shipping, storage and runner secrets in environment variables; set `EMAIL_PROVIDER` and the two shipping provider selectors explicitly.
+- **System -> Developer** shows safe configuration states and explicit connection tests. Business settings remain in the admin.
+- Existing installations: follow the [environment-only migration runbook](docs/ENV_ONLY_MIGRATION_RUNBOOK.md). Rename `ENCRYPTION_KEY` to `DATA_ENCRYPTION_KEY` without changing its effective value.
 
 ---
 

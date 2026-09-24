@@ -4,12 +4,13 @@ import crypto from 'node:crypto'
 import process from 'node:process'
 
 import dotenv from 'dotenv'
+import { parseEnvironmentSubset, storageEnvironmentSchema } from '../src/lib/env-schema.ts'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '@prisma/client'
-import { Client as MinioClient } from 'minio'
+import { createS3Client } from '../src/server/media/s3-client-factory.ts'
 
-dotenv.config({ path: '.env.local' })
-dotenv.config({ path: '.env' })
+dotenv.config({ path: '.env.local', quiet: true })
+dotenv.config({ path: '.env', quiet: true })
 
 const args = new Set(process.argv.slice(2))
 const argValues = new Map(
@@ -25,7 +26,7 @@ const argValues = new Map(
 const isDryRun = args.has('--dry-run')
 const clearData = args.has('--clear-data')
 const limit = Math.max(1, Math.min(500, Number(argValues.get('limit') || 50)))
-const provider = process.env.MEDIA_STORAGE_PROVIDER?.trim().toLowerCase()
+let environment
 
 function usage() {
   console.log(`Usage:
@@ -49,7 +50,7 @@ Notes:
 }
 
 function requiredEnv(name) {
-  const value = process.env[name]?.trim()
+  const value = environment[name]
   if (!value) throw new Error(`${name} is required`)
   return value
 }
@@ -98,39 +99,13 @@ function buildPublicUrl(publicBaseUrl, key) {
   return `${base}/${encodedKey}`
 }
 
-function buildObjectClient(config) {
-  const endpoint = config.endpoint?.trim()
-  if (!endpoint) {
-    return new MinioClient({
-      endPoint: 's3.amazonaws.com',
-      useSSL: true,
-      region: config.region,
-      accessKey: config.accessKeyId,
-      secretKey: config.secretAccessKey,
-      pathStyle: false,
-    })
-  }
-
-  const normalizedEndpoint = endpoint.includes('://') ? endpoint : `https://${endpoint}`
-  const parsed = new URL(normalizedEndpoint)
-
-  return new MinioClient({
-    endPoint: parsed.hostname,
-    useSSL: parsed.protocol === 'https:',
-    port: parsed.port ? Number(parsed.port) : undefined,
-    region: config.region,
-    accessKey: config.accessKeyId,
-    secretKey: config.secretAccessKey,
-    pathStyle: true,
-  })
-}
-
 async function main() {
   if (args.has('--help') || args.has('-h')) {
     usage()
     return
   }
 
+  environment = parseEnvironmentSubset(storageEnvironmentSchema, process.env)
   const databaseUrl = requiredEnv('DATABASE_URL')
   const adapter = new PrismaPg({ connectionString: normalizePgConnectionString(databaseUrl) })
   const prisma = new PrismaClient({ adapter, log: ['error', 'warn'] })
@@ -161,19 +136,19 @@ async function main() {
       return
     }
 
-    if (provider !== 's3') {
+    if (environment.MEDIA_STORAGE_PROVIDER !== 's3') {
       throw new Error('MEDIA_STORAGE_PROVIDER=s3 is required for object-storage migration writes')
     }
 
     const config = {
-      endpoint: process.env.MEDIA_S3_ENDPOINT?.trim() || undefined,
+      endpoint: environment.MEDIA_S3_ENDPOINT,
       region: requiredEnv('MEDIA_S3_REGION'),
       bucket: requiredEnv('MEDIA_S3_BUCKET'),
       accessKeyId: requiredEnv('MEDIA_S3_ACCESS_KEY_ID'),
       secretAccessKey: requiredEnv('MEDIA_S3_SECRET_ACCESS_KEY'),
-      publicBaseUrl: process.env.MEDIA_PUBLIC_BASE_URL?.trim() || undefined,
+      publicBaseUrl: environment.MEDIA_PUBLIC_BASE_URL,
     }
-    const objectClient = buildObjectClient(config)
+    const objectClient = createS3Client(config)
 
     let migrated = 0
     let failed = 0

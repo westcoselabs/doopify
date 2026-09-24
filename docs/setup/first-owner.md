@@ -45,7 +45,7 @@ SETUP_TOKEN=some-random-32-char-token
 ## After owner creation
 
 1. Log in at `/login`.
-2. Configure Stripe in **Settings -> Payments**.
+2. Configure Stripe in **System -> Developer**.
 3. Configure shipping in **Settings -> Shipping & delivery**.
 4. Create products in **Products**.
 5. Run a paid test checkout.

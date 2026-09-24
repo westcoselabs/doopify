@@ -25,14 +25,14 @@ Confirm before starting validation:
 - [ ] `DATABASE_URL` configured with `sslmode=verify-full` (for Neon production branch)
 - [ ] `DIRECT_URL` configured for Prisma tooling
 - [ ] `JWT_SECRET` — at least 32 characters, high entropy
-- [ ] `ENCRYPTION_KEY` — set for encrypted integration secrets
+- [ ] `DATA_ENCRYPTION_KEY` — set for encrypted integration secrets
 - [ ] `NEXT_PUBLIC_STORE_URL` — points to your deployed storefront
 - [ ] `STRIPE_SECRET_KEY` — test mode secret key (`sk_test_...`)
 - [ ] `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` — test mode publishable key (`pk_test_...`)
 - [ ] `STRIPE_WEBHOOK_SECRET` — signing secret from Stripe test webhook endpoint
 - [ ] `WEBHOOK_RETRY_SECRET` — protects internal retry routes
 
-Open Settings → Setup in the admin. The **Launch readiness** panel should show all required items as Ready or Skipped.
+Open System → Developer in the admin. The **Launch readiness** panel should show all required items as Ready or Skipped.
 
 ---
 
@@ -43,7 +43,7 @@ Open Settings → Setup in the admin. The **Launch readiness** panel should show
 - [ ] Stripe webhook endpoint registered: `https://<your-domain>/api/webhooks/stripe`
 - [ ] Subscribed events: `payment_intent.succeeded`, `payment_intent.payment_failed`
 - [ ] `STRIPE_WEBHOOK_SECRET` matches the signing secret from Stripe dashboard
-- [ ] In admin: Settings → Payments → Stripe → credentials saved and verified
+- [ ] In admin: System → Developer → Stripe configured; explicit connection test and verified webhook receipt checked
 
 ### Email (optional for private beta)
 
@@ -223,7 +223,7 @@ Expected: `200 OK` with a JSON body. No 401/403.
 
 ## 13. Outbound Webhook Delivery / Retry Visibility
 
-If outbound merchant webhooks are configured (Settings → Webhooks):
+If outbound merchant webhooks are configured (developer configuration in `src/server/config/outbound-webhooks.ts`):
 
 1. Confirm at least one event subscription is active.
 2. Place or update an order and confirm an outbound delivery attempt is visible in admin → Webhooks → Outbound.

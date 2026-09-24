@@ -10,12 +10,13 @@ import {
 
 const SettingsContext = createContext(null);
 
-export function SettingsProvider({ children }) {
-  const [settings, setSettings] = useState(SETTINGS_DEFAULTS);
-  const [loading, setLoading] = useState(true);
+export function SettingsProvider({ children, initialStore = null }) {
+  const [settings, setSettings] = useState(() => initialStore ? transformStore(initialStore) : SETTINGS_DEFAULTS);
+  const [loading, setLoading] = useState(!initialStore);
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    if (initialStore) return;
     async function fetchSettings() {
       try {
         const res = await fetch('/api/settings');
@@ -30,7 +31,7 @@ export function SettingsProvider({ children }) {
     }
 
     fetchSettings();
-  }, []);
+  }, [initialStore]);
 
   const updateSettings = useCallback(async patch => {
     try {
@@ -53,8 +54,8 @@ export function SettingsProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ settings, updateSettings, setSettings, loading, error }),
-    [settings, loading, error, updateSettings]
+    () => ({ settings: initialStore ? transformStore(initialStore) : settings, updateSettings, setSettings, loading, error }),
+    [initialStore, settings, loading, error, updateSettings]
   );
 
   return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;

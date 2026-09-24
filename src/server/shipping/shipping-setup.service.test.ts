@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const selection = vi.hoisted(() => ({ rate: null as 'SHIPPO' | 'EASYPOST' | null, label: null as 'SHIPPO' | 'EASYPOST' | null }))
+vi.mock('@/server/shipping/shipping-provider-selection', () => ({ resolveActiveRateProvider: () => selection.rate, resolveLabelProvider: () => selection.label }))
+
 const mocks = vi.hoisted(() => ({
   prisma: {
     store: {
@@ -7,16 +10,12 @@ const mocks = vi.hoisted(() => ({
     },
   },
   getShippingProviderConnectionStatus: vi.fn(),
-  getProviderStatus: vi.fn(),
 }))
 
 vi.mock('@/lib/prisma', () => ({ prisma: mocks.prisma }))
 
 vi.mock('@/server/shipping/shipping-provider.service', () => ({
   getShippingProviderConnectionStatus: mocks.getShippingProviderConnectionStatus,
-}))
-vi.mock('@/server/services/provider-connection.service', () => ({
-  getProviderStatus: mocks.getProviderStatus,
 }))
 
 import { buildShippingSetupStatus } from './shipping-setup.service'
@@ -28,10 +27,6 @@ function storeFixture(overrides: Record<string, unknown> = {}) {
     supportEmail: 'support@example.com',
     phone: '555-000-0000',
     shippingMode: 'MANUAL',
-    shippingLiveProvider: null,
-    shippingProviderUsage: 'LIVE_AND_LABELS',
-    activeRateProvider: 'NONE',
-    labelProvider: 'NONE',
     shippingFallbackEnabled: true,
     shippingOriginAddress1: '10 Origin St',
     shippingOriginCity: 'Austin',
@@ -89,15 +84,11 @@ function storeFixture(overrides: Record<string, unknown> = {}) {
 describe('buildShippingSetupStatus', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    selection.rate = null
+    selection.label = null
     mocks.getShippingProviderConnectionStatus.mockResolvedValue({
       provider: 'EASYPOST',
       connected: false,
-    })
-    mocks.getProviderStatus.mockResolvedValue({
-      provider: 'EASYPOST',
-      state: 'CREDENTIALS_SAVED',
-      lastVerifiedAt: null,
-      lastError: null,
     })
   })
 
@@ -133,11 +124,9 @@ describe('buildShippingSetupStatus', () => {
   })
 
   it('reports canBuyLabels: false when provider is not connected', async () => {
+    selection.rate = 'EASYPOST'
+    selection.label = 'EASYPOST'
     const store = storeFixture({
-      shippingLiveProvider: 'EASYPOST',
-      shippingProviderUsage: 'LIVE_AND_LABELS',
-      activeRateProvider: 'EASYPOST',
-      labelProvider: 'EASYPOST',
     })
     mocks.getShippingProviderConnectionStatus.mockResolvedValue({
       provider: 'EASYPOST',
@@ -152,12 +141,10 @@ describe('buildShippingSetupStatus', () => {
   })
 
   it('reports canBuyLabels: true when location, package, and provider are all ready', async () => {
+    selection.rate = 'EASYPOST'
+    selection.label = 'EASYPOST'
     const store = storeFixture({
       shippingMode: 'LIVE_RATES',
-      shippingLiveProvider: 'EASYPOST',
-      shippingProviderUsage: 'LIVE_AND_LABELS',
-      activeRateProvider: 'EASYPOST',
-      labelProvider: 'EASYPOST',
     })
     mocks.getShippingProviderConnectionStatus.mockResolvedValue({
       provider: 'EASYPOST',
@@ -174,11 +161,10 @@ describe('buildShippingSetupStatus', () => {
   })
 
   it('reports canUseLiveRates: false in MANUAL mode even when provider is connected', async () => {
+    selection.rate = 'EASYPOST'
+    selection.label = 'EASYPOST'
     const store = storeFixture({
       shippingMode: 'MANUAL',
-      shippingLiveProvider: 'EASYPOST',
-      activeRateProvider: 'EASYPOST',
-      labelProvider: 'EASYPOST',
     })
     mocks.getShippingProviderConnectionStatus.mockResolvedValue({
       provider: 'EASYPOST',
@@ -192,13 +178,11 @@ describe('buildShippingSetupStatus', () => {
     expect(status.canBuyLabels).toBe(true)
   })
 
-  it('treats LABELS_ONLY usage as label-ready but not live-rate-ready', async () => {
+  it('treats a label-only environment selection as label-ready but not live-rate-ready', async () => {
+    selection.rate = null
+    selection.label = 'SHIPPO'
     const store = storeFixture({
       shippingMode: 'HYBRID',
-      shippingLiveProvider: 'SHIPPO',
-      shippingProviderUsage: 'LABELS_ONLY',
-      activeRateProvider: 'NONE',
-      labelProvider: 'SHIPPO',
     })
     mocks.getShippingProviderConnectionStatus.mockResolvedValue({
       provider: 'SHIPPO',
@@ -215,10 +199,10 @@ describe('buildShippingSetupStatus', () => {
   })
 
   it('treats Shippo seller phone as present when store phone fallback exists', async () => {
+    selection.rate = null
+    selection.label = 'SHIPPO'
     const store = storeFixture({
       shippingMode: 'MANUAL',
-      activeRateProvider: 'NONE',
-      labelProvider: 'SHIPPO',
       shippingLocations: [
         {
           id: 'loc_1',
@@ -250,10 +234,10 @@ describe('buildShippingSetupStatus', () => {
   })
 
   it('warns when Shippo seller phone is missing across location and store fallbacks', async () => {
+    selection.rate = null
+    selection.label = 'SHIPPO'
     const store = storeFixture({
       shippingMode: 'MANUAL',
-      activeRateProvider: 'NONE',
-      labelProvider: 'SHIPPO',
       shippingLocations: [
         {
           id: 'loc_1',
@@ -285,11 +269,10 @@ describe('buildShippingSetupStatus', () => {
   })
 
   it('reports correct nextSteps when provider is selected but not connected', async () => {
+    selection.rate = 'SHIPPO'
+    selection.label = 'SHIPPO'
     const store = storeFixture({
       shippingMode: 'LIVE_RATES',
-      shippingLiveProvider: 'SHIPPO',
-      activeRateProvider: 'SHIPPO',
-      labelProvider: 'SHIPPO',
     })
     mocks.getShippingProviderConnectionStatus.mockResolvedValue({
       provider: 'SHIPPO',
@@ -325,117 +308,4 @@ describe('buildShippingSetupStatus', () => {
     expect(status.nextSteps).toContain('Shipping setup looks complete.')
   })
 
-  it('marks provider verification as configured for MANUAL mode with no live provider selected', async () => {
-    const store = storeFixture({
-      shippingMode: 'MANUAL',
-      shippingLiveProvider: null,
-      activeRateProvider: 'NONE',
-      labelProvider: 'NONE',
-    })
-
-    const status = await buildShippingSetupStatus(store)
-    expect(status.providerVerificationStatus).toBe('configured')
-  })
-
-  it('marks provider verification as configured when live provider is connected but never verified', async () => {
-    const store = storeFixture({
-      shippingMode: 'LIVE_RATES',
-      shippingLiveProvider: 'EASYPOST',
-      activeRateProvider: 'EASYPOST',
-      labelProvider: 'EASYPOST',
-    })
-    mocks.getShippingProviderConnectionStatus.mockResolvedValue({
-      provider: 'EASYPOST',
-      connected: true,
-    })
-    mocks.getProviderStatus.mockResolvedValue({
-      provider: 'EASYPOST',
-      state: 'CREDENTIALS_SAVED',
-      lastVerifiedAt: null,
-      lastError: null,
-    })
-
-    const status = await buildShippingSetupStatus(store)
-    expect(status.providerVerificationStatus).toBe('configured')
-  })
-
-  it('marks provider verification as verified when lastVerifiedAt exists', async () => {
-    const store = storeFixture({
-      shippingMode: 'LIVE_RATES',
-      shippingLiveProvider: 'EASYPOST',
-      activeRateProvider: 'EASYPOST',
-      labelProvider: 'EASYPOST',
-    })
-    mocks.getShippingProviderConnectionStatus.mockResolvedValue({
-      provider: 'EASYPOST',
-      connected: true,
-    })
-    mocks.getProviderStatus.mockResolvedValue({
-      provider: 'EASYPOST',
-      state: 'VERIFIED',
-      lastVerifiedAt: '2026-05-15T12:00:00.000Z',
-      lastError: null,
-    })
-
-    const status = await buildShippingSetupStatus(store)
-    expect(status.providerVerificationStatus).toBe('verified')
-    expect(status.providerLastVerifiedAt).toBe('2026-05-15T12:00:00.000Z')
-  })
-
-  it('marks provider verification as needs_attention when last verification failed', async () => {
-    const store = storeFixture({
-      shippingMode: 'LIVE_RATES',
-      shippingLiveProvider: 'EASYPOST',
-      activeRateProvider: 'EASYPOST',
-      labelProvider: 'EASYPOST',
-    })
-    mocks.getShippingProviderConnectionStatus.mockResolvedValue({
-      provider: 'EASYPOST',
-      connected: true,
-    })
-    mocks.getProviderStatus.mockResolvedValue({
-      provider: 'EASYPOST',
-      state: 'ERROR',
-      lastVerifiedAt: null,
-      lastError: 'invalid api key',
-    })
-
-    const status = await buildShippingSetupStatus(store)
-    expect(status.providerVerificationStatus).toBe('needs_attention')
-    expect(status.providerLastError).toBe('invalid api key')
-  })
-
-  it('marks provider verification as needs_setup when live mode has no provider selected', async () => {
-    const store = storeFixture({
-      shippingMode: 'LIVE_RATES',
-      shippingLiveProvider: null,
-      activeRateProvider: 'NONE',
-      labelProvider: 'NONE',
-    })
-
-    const status = await buildShippingSetupStatus(store)
-    expect(status.providerVerificationStatus).toBe('needs_setup')
-  })
-
-  it('marks provider verification as verification_unavailable for unrecognized provider state', async () => {
-    const store = storeFixture({
-      shippingMode: 'LIVE_RATES',
-      shippingLiveProvider: 'EASYPOST',
-      activeRateProvider: 'EASYPOST',
-      labelProvider: 'EASYPOST',
-    })
-    mocks.getShippingProviderConnectionStatus.mockResolvedValue({
-      provider: 'EASYPOST',
-      connected: true,
-    })
-    mocks.getProviderStatus.mockResolvedValue({
-      provider: 'EASYPOST',
-      state: 'UNKNOWN_STATE',
-      lastVerifiedAt: null,
-      lastError: null,
-    })
-
-    const status = await buildShippingSetupStatus(store)
-    expect(status.providerVerificationStatus).toBe('verification_unavailable')
-  })
 })

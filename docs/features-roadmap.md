@@ -2,8 +2,8 @@
 
 > Single source of truth for what is shipped, what is next, and what is intentionally deferred.
 >
-> Documentation refresh: May 5, 2026
-> Last repo verification recorded in active docs: May 5, 2026
+> Documentation refresh: September 24, 2026
+> Latest local verification: September 24, 2026; see performance/env-only-acceptance.md
 > Strategy: current app first, commerce loop first, platform second
 
 ## Planning Surface
@@ -22,6 +22,18 @@ Active planning docs:
 - `quickstart.md` for setup onboarding path
 
 Historical planning docs are intentionally omitted from this active handoff pack. Do not use old `CLAUDE.md`, stale Phase 3 kickoff docs, or legacy phase-completion ledgers as current repo status.
+
+## Current implementation and sequence
+
+The remediation branch, including all 28 Smart Promotions commits, was fast-forwarded to master at `06c8336c`. The subsequent environment-only simplification is implemented on `codex/env-only-commerce-simplification`; production migration is pending.
+
+1. Preserve checkout, promotions, session, encryption and migration guarantees from merged master.
+2. Replace credential resolution/UI with typed environment configuration, small adapters and focused server settings pages.
+3. Bound catalog reads, aggregate complete analytics, and fence jobs/webhook/email processing under concurrency.
+4. Verify production-build measurements and regression suites; see [acceptance](performance/env-only-acceptance.md).
+5. Rehearse against a restored installation, drain and cut over application/worker together, validate, retain rollback tables, then explicitly contract through the [runbook](ENV_ONLY_MIGRATION_RUNBOOK.md).
+
+A transactional outbox for the remaining post-commit event crash window is an explicit follow-up. Runtime plugins and platform extraction remain deferred.
 
 ## Snapshot
 
@@ -44,22 +56,22 @@ Historical planning docs are intentionally omitted from this active handoff pack
 - Checkout-native code discounts through the centralized pricing service
 - Configurable shipping zones/rates and jurisdiction-aware tax rules consumed by server-owned checkout pricing
 - Shipping settings Phase 1 foundation: `/api/settings/shipping` cents-safe admin API plus admin workspace at `/admin/settings/shipping` for shipping mode, manual flat rates, free-shipping threshold, zone/rate editing, and manual rate preview
-- Shipping setup Phase 2 foundation: setup wizard workspace at `/admin/settings/shipping/setup`, persisted origin/default-package/fallback fields on `Store`, setup-status derivation API, and admin test-rates route
-- Shipping setup Phase 3 foundation: provider connect/disconnect/test APIs for EasyPost/Shippo with encrypted integration-secret credential storage and setup-wizard provider actions
+- Shipping business setup retains origin, package, fallback and rate preview in the focused Shipping page.
+- Shipping provider selection and credentials now live only in environment variables, with owner-only explicit connection tests.
 - Shipping setup Phase 4 foundation: normalized shipping-rate service for manual/live/hybrid modes with provider adapters and hybrid manual fallback behavior
 - Shipping setup Phase 5 foundation: public checkout shipping-rate quote API (`POST /api/checkout/shipping-rates`), checkout shipping-option selection UX, and server-side selected-rate revalidation before payment intent creation
 - Shipping setup Phase 6 foundation: admin manual-fulfillment API (`POST /api/orders/[orderNumber]/manual-fulfillment`) with paid-order gating, over-fulfillment protection, fulfillment-item persistence, and fulfillment-status progression
 - Shipping setup Phase 7 foundation: `ShippingLabel` model plus admin order label-rates and label-purchase APIs (`POST /api/orders/[orderNumber]/shipping-rates`, `POST /api/orders/[orderNumber]/shipping-labels`), provider-backed label purchase, fulfillment linkage, and label print/download UX entry point on order detail
 - Shipping setup Phase 8 expansion: fulfillment lifecycle jobs (`SYNC_SHIPPING_TRACKING`, `SEND_FULFILLMENT_EMAIL`) queued from `fulfillment.created`, provider-backed tracking polling and provider-webhook ingestion (`/api/webhooks/shipping-provider`) to drive `Fulfillment.deliveredAt`, tracked shipping-update email delivery records, and safe tracking backfill/promote hooks for pending fulfillments
-- Shipping delivery functional expansion: persisted shipping mode plus explicit active-rate-provider vs label-provider settings, fallback behavior modes, package/location/manual-rate/fallback-rate management, compact provider-first Settings -> Shipping & delivery drawers (including manual fulfillment/local delivery/pickup/packing slip settings), checkout mode-aware live/manual/hybrid rate resolution with fallback-only-on-live-failure semantics, and order-level selected shipping method snapshot persistence
+- Shipping delivery functional expansion: persisted shipping mode plus explicit environment rate-provider and label-provider selectors, fallback behavior modes, package/location/manual-rate/fallback-rate management, compact provider-first Settings -> Shipping & delivery drawers (including manual fulfillment/local delivery/pickup/packing slip settings), checkout mode-aware live/manual/hybrid rate resolution with fallback-only-on-live-failure semantics, and order-level selected shipping method snapshot persistence
 - Order detail lifecycle Phase 8 expansion: admin notes route (`PATCH /api/orders/[orderNumber]/notes`) with customer-visible note timeline entries and optional tracked note emails, discount snapshot visibility in order detail, and guarded payment/fulfillment status quick actions wired to existing status invariants
-- owner-only provider setup gateways for Payments/Shipping/Email with encrypted credential persistence and explicit verify/disconnect actions (`/api/settings/providers/*`)
-- verified DB-backed Stripe runtime selection for checkout/webhook paths with env fallback, plus owner-safe runtime status (`/api/settings/payments/stripe/runtime-status`) and public publishable-key config (`/api/checkout/stripe-config`)
-- Payments settings UX rebuilt to compact provider rows with provider-specific drawers (Stripe/PayPal/Manual) so secrets remain hidden from the main page while setup actions stay in Settings -> Payments; Stripe reload states distinguish saved, unreadable, verification-unavailable, and verified credentials
+- Owner-only System -> Developer replaces credential setup gateways with safe environment presence and explicit diagnostics.
+- One environment-only Stripe runtime serves checkout, refunds and webhook verification; the public checkout config exposes only the publishable key and mode.
+- Credential drawers and database verification metadata are removed.
 - Smart Promotion catalog pickers hydrate variant choices from the product-list response, avoiding per-product follow-up requests in create and edit flows
-- Settings -> Webhooks UX rebuilt to a compact outbound endpoint manager with drawer-based create/manage flows, friendly event groups, and encrypted signing-secret handling
-- Settings -> Email UX shifted to customer-message-first sections with provider credentials hidden behind Manage drawers
-- Settings now defaults to a General tab; Brand Kit is no longer the first/default settings tab
+- Outbound destinations and event subscriptions are defined in typed developer configuration with env secret references.
+- Settings -> Email owns sender identity and templates; EMAIL_PROVIDER explicitly chooses real Resend or SMTP delivery.
+- Settings redirects to a focused General Server Component page; legacy bookmarks retain redirects.
 - Checkout pricing snapshots that persist shipping/tax resolution decisions into checkout payloads
 - Durable inbound Stripe webhook delivery logging with provider event id, type, status, attempts, processed timestamp, last error, payload hash, verified stored payloads, retry metadata, local-payload replay, diagnostics, cron-compatible retry tooling, and admin visibility
 - Internal typed event dispatcher plus a static integration registry
@@ -78,8 +90,8 @@ Historical planning docs are intentionally omitted from this active handoff pack
 - Storefront collection browsing and collection publish/unpublish semantics
 - Refund service with pending persistence, Stripe idempotency, item validation, payment/order status updates, restocking, and return linkage
 - Return service with validated state machine, admin workflow controls, and close-with-refund path
-- Outbound merchant webhook subscriptions, timestamped HMAC signing, retry/backoff, exhausted/dead-letter visibility, manual retry API, settings UI, admin delivery visibility, and delivery-claim hardening
-- Integration edit hardening that preserves signing secrets unless explicitly cleared and deduplicates event subscriptions
+- Outbound merchant webhook subscriptions, timestamped HMAC signing, retry/backoff, exhausted/dead-letter visibility, manual retry API, developer configuration, admin delivery visibility, and delivery-claim hardening
+- Outbound destinations preserve stable IDs, HMAC keys and historical destination snapshots through migration.
 - Vitest fast test harness covering pricing, checkout, discount math, checkout creation, webhook logging/replay/retry/diagnostics, collections, refund/return services, outbound webhook services, and outbound webhook APIs
 - `DATABASE_URL_TEST`-gated integration specs for checkout/inventory/idempotency/race scenarios and refund/return lifecycle coverage
 
@@ -132,7 +144,7 @@ Code generation can help later with scaffolding, but the current admin is produc
 
 ### 6. Setup Automation Belongs In A CLI Plus Safe Status APIs
 
-The Settings -> Setup tab should verify setup state and guide next actions. Local file writes, provider CLI/API calls, Prisma commands, and Vercel/Neon/Stripe automation should run from a local CLI, not from browser-executed shell commands.
+System -> Developer reports configuration presence and saved readiness; live tests require explicit action. Local file writes, provider CLI/API calls, Prisma commands, and Vercel/Neon/Stripe automation should run from a local CLI, not from browser-executed shell commands.
 
 ## Phase Plan
 
@@ -227,11 +239,11 @@ Status: active; refund/return, outbound webhook, transactional email observabili
 
 #### Outbound Merchant Webhooks
 
-- Prisma-backed integration, event subscription, secret, and outbound delivery models
-- integration settings APIs and admin UI
-- encrypted signing secrets and encrypted custom header secrets
-- signing-secret preservation on integration edit unless explicitly cleared
-- deduplicated event subscriptions plus a unique integration/event constraint
+- Prisma-backed outbound delivery history with destination snapshots; typed file-based destinations/events.
+- Developer-only destination configuration; admin delivery monitoring and retries.
+- Signing secrets and custom header values referenced from deployment environment variables.
+- Stable destination IDs and effective signing keys preserved on upgrade.
+- Typed event subscriptions in the existing static event architecture.
 - typed-event-based delivery queueing
 - timestamped HMAC signatures
 - response-code/body recording
@@ -240,7 +252,7 @@ Status: active; refund/return, outbound webhook, transactional email observabili
 - cron-compatible due retry processing through the existing retry runner
 - manual retry API and admin retry button
 - inbound/outbound delivery visibility in `/admin/webhooks`
-- `/admin/webhooks` is user-labeled as **System -> Delivery logs** for monitoring; setup/config remains in `Settings -> Webhooks` and provider settings
+- `/admin/webhooks` is user-labeled **System -> Delivery logs**; safe configuration status lives under System -> Developer.
 - fast service and API coverage for queueing, signing, delivery, retry, exhaustion, listing, manual retry, and claim behavior
 
 #### Analytics Event Fan-Out
@@ -295,27 +307,27 @@ Target work:
 - integration secrets never appear unencrypted at rest — foundation shipped with real-DB update-flow preservation coverage
 - a bounced order confirmation email surfaces in the admin and can be resent without duplicating side effects — foundation shipped with real-DB resend/provider-transition coverage
 
-## Phase 5 - Setup Wizard, CLI, And Launch Operations
+## Phase 5 - Local Setup, CLI, And Launch Operations
 
-Status: active foundation with `doopify doctor`, setup status API, Setup tab, interactive `doopify setup`, and deployment automation commands shipped
+Status: local `doopify doctor`/`setup` and deployment commands remain; environment-only configuration and System -> Developer replace the browser setup wizard.
 
-See `SETUP_AND_CLI_PLAN.md`.
+See [environment-only architecture](architecture/env-only-commerce.md).
 
 ### Goals
 
 - add `doopify doctor` for read-only local setup diagnostics — shipped
-- add setup status service and `/api/setup/status` — shipped
-- add Settings -> Setup checklist tab — shipped foundation
-- keep Settings tab ownership clear: Setup=foundation, Payments/Shipping/Email=provider onboarding, Webhooks=outbound developer webhooks — shipped foundation
+- Reuse the pure environment parser for CLI diagnostics and safe `/api/system/integrations` status.
+- Persist genuine business readiness checks and run them only on explicit request.
+- Keep infrastructure in env and operational business settings in focused admin routes.
 - add interactive `doopify setup` — shipped foundation
 - add optional deployment automation commands: `doopify env push`, `doopify stripe webhook`, `doopify db check`, `doopify deploy` — shipped foundation
 - later harden non-interactive/dry-run and deeper provider provisioning flows
-- keep sensitive provider tokens out of long-lived app storage unless scoped lifecycle is designed
+- Keep all infrastructure credentials out of long-lived application storage.
 
 ### Acceptance Checks
 
 - `doopify doctor` identifies missing setup pieces and exits non-zero for required failures
-- Settings -> Setup shows setup health without running shell commands from the browser
+- System -> Developer reports safe configuration states without automatic provider calls.
 - `doopify setup` can generate/update local env, run database setup, and bootstrap owner/store
 - setup automation redacts secrets and never commits generated secrets
 - setup checks are testable and reusable between CLI and app status API
@@ -396,8 +408,8 @@ Goals:
 
 Recent hardening delivered within this phase:
 
-- canonical provider credential resolution and retry-safe verification state
-- owner-only provider secret operations and masked, server-owned status DTOs
+- Single typed environment authority with no credential DB resolution or fallback.
+- Owner-only explicit diagnostics and safe status DTOs; no browser secret mutation APIs.
 - checkout capability-token URL removal, idempotency, rate limits, and a documented legacy reconciliation window
 - staged session-token compatibility and versioned encrypted-secret envelopes with previous-key reads
 

@@ -274,10 +274,6 @@ model Store {
   shippingDomesticRateCents Int   @default(999)
   shippingInternationalRateCents Int @default(1999)
   shippingMode      ShippingMode @default(MANUAL)
-  shippingLiveProvider ShippingLiveProvider?
-  shippingProviderUsage ShippingProviderUsage @default(LIVE_AND_LABELS)
-  activeRateProvider ShippingProviderSelection @default(NONE)
-  labelProvider      ShippingProviderSelection @default(NONE)
   fallbackBehavior   ShippingFallbackBehavior @default(SHOW_FALLBACK)
   shippingOriginName String?
   shippingOriginPhone String?
@@ -1041,6 +1037,8 @@ model WebhookDelivery {
   rawPayload      String?               @db.Text
   nextRetryAt     DateTime?
   lastRetriedAt   DateTime?
+  claimToken      String?
+  leaseExpiresAt  DateTime?
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
@@ -1048,6 +1046,7 @@ model WebhookDelivery {
   @@index([provider, eventType])
   @@index([status, createdAt])
   @@index([status, nextRetryAt])
+  @@index([status, leaseExpiresAt])
   @@map("webhook_deliveries")
 }
 
@@ -1329,6 +1328,7 @@ model EmailDelivery {
   lastError         String?
   nextRetryAt       DateTime?
   sentAt            DateTime?
+  sendStartedAt     DateTime?
   bouncedAt         DateTime?
   complainedAt      DateTime?
   orderId           String?
@@ -1355,6 +1355,8 @@ model Job {
   runAt       DateTime  @default(now())
   lockedAt    DateTime?
   lockedBy    String?
+  claimToken  String?
+  leaseExpiresAt DateTime?
   processedAt DateTime?
   lastError   String?   @db.Text
   createdAt   DateTime  @default(now())
@@ -1363,6 +1365,7 @@ model Job {
   @@index([status, runAt])
   @@index([type, status])
   @@index([lockedAt])
+  @@index([status, leaseExpiresAt])
   @@map("jobs")
 }
 
@@ -1412,54 +1415,11 @@ model AnalyticsEvent {
   @@map("analytics_events")
 }
 
-model Integration {
-  id            String             @id @default(cuid())
-  providerKey   String?            @unique
-  name          String
-  type          String             @default("CUSTOM")
-  webhookUrl    String?
-  webhookSecret String?
-  status        IntegrationStatus  @default(ACTIVE)
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-
-  events        IntegrationEvent[]
-  secrets       IntegrationSecret[]
-  deliveries    OutboundWebhookDelivery[]
-
-  @@map("integrations")
-}
-
-enum IntegrationStatus {
-  ACTIVE
-  INACTIVE
-}
-
-model IntegrationEvent {
-  id            String      @id @default(cuid())
-  integrationId String
-  event         String
-  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
-
-  @@unique([integrationId, event])
-  @@index([integrationId])
-  @@map("integration_events")
-}
-
-model IntegrationSecret {
-  id            String      @id @default(cuid())
-  integrationId String
-  key           String
-  value         String      @db.Text
-  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
-
-  @@unique([integrationId, key])
-  @@map("integration_secrets")
-}
-
 model OutboundWebhookDelivery {
   id            String                @id @default(cuid())
   integrationId String
+  destinationName String?
+  destinationUrl String?
   event         String
   payload       String                @db.Text
   status        OutboundDeliveryStatus @default(PENDING)
@@ -1467,16 +1427,17 @@ model OutboundWebhookDelivery {
   responseBody  String?               @db.Text
   attempts      Int                   @default(0)
   lastRetriedAt DateTime?
+  claimToken    String?
+  leaseExpiresAt DateTime?
   nextRetryAt   DateTime?
   processedAt   DateTime?
   lastError     String?
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
 
-  integration   Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
-
   @@index([integrationId, status])
   @@index([status, nextRetryAt])
+  @@index([status, leaseExpiresAt])
   @@map("outbound_webhook_deliveries")
 }
 

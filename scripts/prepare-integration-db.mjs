@@ -36,8 +36,10 @@ function runPrismaPush(environment) {
 }
 
 async function main() {
+  const explicitEnvironment = { ...process.env }
   loadEnv({ path: '.env', quiet: true })
   loadEnv({ path: '.env.local', override: true, quiet: true })
+  Object.assign(process.env, explicitEnvironment)
   const reset = await resetIntegrationSchema({ environment: process.env })
   if (!reset.ok) throw new Error(`Refusing to reset integration database: ${reset.reason}`)
 
