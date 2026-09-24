@@ -2556,6 +2556,10 @@ describe('checkout service', () => {
   })
 
   it('returns only redacted reconciliation state for a legacy pre-token checkout', async () => {
+    const previousCutoff = process.env.CHECKOUT_LEGACY_STATUS_CUTOFF
+    process.env.CHECKOUT_LEGACY_STATUS_CUTOFF = '2026-08-10T00:00:00.000Z'
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-07-10T00:00:00.000Z'))
     mocks.prisma.checkoutSession.findFirst.mockResolvedValueOnce({
       status: 'COMPLETED',
       failureReason: null,
@@ -2563,11 +2567,17 @@ describe('checkout service', () => {
       statusTokenHash: null,
     })
 
-    const status = await getCheckoutStatus('pi_legacy_paid', null)
+    try {
+      const status = await getCheckoutStatus('pi_legacy_paid', null)
 
-    expect(status).toEqual({ status: 'paid', checkoutStatus: 'COMPLETED', legacy: true })
-    expect(mocks.getOrderByPaymentIntentId).not.toHaveBeenCalled()
-    expect(mocks.getBuyerDigitalDownloadAvailabilityForPaidOrder).not.toHaveBeenCalled()
+      expect(status).toEqual({ status: 'paid', checkoutStatus: 'COMPLETED', legacy: true })
+      expect(mocks.getOrderByPaymentIntentId).not.toHaveBeenCalled()
+      expect(mocks.getBuyerDigitalDownloadAvailabilityForPaidOrder).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+      if (previousCutoff === undefined) delete process.env.CHECKOUT_LEGACY_STATUS_CUTOFF
+      else process.env.CHECKOUT_LEGACY_STATUS_CUTOFF = previousCutoff
+    }
   })
 
   it('allows redacted legacy access immediately before the configured cutoff', async () => {
