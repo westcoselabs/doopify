@@ -95,7 +95,8 @@ export default function Sidebar({ role }) {
           <section className={styles.navSection} key={group.id}>
             <p className={`font-headline tracking-widest ${styles.sectionLabel}`}>{group.label}</p>
             <div className={styles.sectionItems}>
-              {group.items.filter((item) => !item.ownerOnly || !role || role === "OWNER").map((item) => {
+              {group.items.map((item) => {
+                if (item.ownerOnly && role && role !== 'OWNER') return null;
                 const isActive =
                   item.exact
                     ? activePathname === item.href

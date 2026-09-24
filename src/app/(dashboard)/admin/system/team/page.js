@@ -7,7 +7,7 @@ import TeamSettingsPanel from '@/components/settings/TeamSettingsPanel';
 
 export default async function TeamSettingsPage() {
   const user = await requirePageRole(['OWNER']);
-  const [users,invites] = await Promise.all([listTeamUsers(),listPendingInvites()]);
-  const store = await getAdminSettings();
+  // Authorization must finish before any team data is loaded.
+  const [users, invites, store] = await Promise.all([listTeamUsers(), listPendingInvites(), getAdminSettings()]);
   return <SettingsRouteShell store={store} role={user.role} area="system"><div className={styles.configStack}><h1>Team</h1><TeamSettingsPanel currentUserRole={user.role} currentUserId={user.id} initialUsers={users} initialInvites={invites} /></div></SettingsRouteShell>;
 }

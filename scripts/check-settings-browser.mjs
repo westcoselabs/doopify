@@ -72,7 +72,7 @@ try {
       await subject.fill('Unsaved customer message')
       await page.route('**/api/email-templates/order_confirmation', request => request.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ success: false, error: 'Template save unavailable' }) }))
       await page.getByRole('button', { name: 'Save template', exact: true }).first().click()
-      await page.getByRole('alert').waitFor()
+      await page.locator('form').filter({ has: subject }).getByRole('alert').waitFor()
       assert.equal(await subject.inputValue(), 'Unsaved customer message')
     }
     if (route === 'general') {

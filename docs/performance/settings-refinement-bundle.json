@@ -1,7 +1,7 @@
 {
-  "git": "fedadd058a056ffaaa122499c5a9ea9824cdfaa3",
+  "git": "f1c1a09eed46f2449a0e837f798c36e8b9538ca8",
   "workingTree": "refinement working tree, based on git above",
-  "builtAt": "2026-09-24T19:12:29.841Z",
+  "builtAt": "2026-09-24T19:19:07.738Z",
   "next": "16.2.10",
   "node": "v24.11.1",
   "route": "/admin/settings/general",
@@ -22,9 +22,9 @@
       "gzip": 4415
     },
     {
-      "file": "/_next/static/chunks/1xqhy9ddz5msf.js",
-      "raw": 34964,
-      "gzip": 9727
+      "file": "/_next/static/chunks/3ezrzrbifx6wn.js",
+      "raw": 34966,
+      "gzip": 9725
     },
     {
       "file": "/_next/static/chunks/1ixvjl55_3q48.js",
@@ -33,8 +33,8 @@
     }
   ],
   "totals": {
-    "raw": 111895,
-    "gzip": 30894
+    "raw": 111897,
+    "gzip": 30892
   },
   "pageOnly": [
     {
@@ -49,9 +49,9 @@
   },
   "routeSpecific": [
     {
-      "file": "/_next/static/chunks/1xqhy9ddz5msf.js",
-      "raw": 34964,
-      "gzip": 9727
+      "file": "/_next/static/chunks/3ezrzrbifx6wn.js",
+      "raw": 34966,
+      "gzip": 9725
     },
     {
       "file": "/_next/static/chunks/1ixvjl55_3q48.js",
@@ -60,8 +60,8 @@
     }
   ],
   "routeSpecificTotals": {
-    "raw": 40905,
-    "gzip": 12085
+    "raw": 40907,
+    "gzip": 12083
   },
   "measurement": "Static production client-reference manifest, unique referenced JS chunks gzip-compressed independently; excludes common root runtime, CSS, HTML/RSC, browser transfer and hydration CPU."
 }
