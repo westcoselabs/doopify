@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import Image from 'next/image';
+import { getPublicStorefrontSettings } from '@/server/services/settings.service';
 import { Component as EtheralShadow } from '@/components/ui/etheral-shadow';
 import { getStorefrontProducts } from '@/server/services/product.service';
 import { getStorefrontCollectionSummaries } from '@/server/services/collection.service';
@@ -11,24 +13,14 @@ export const metadata = {
 };
 
 export default async function LandingPage() {
-  let featured = [];
-  let featuredCollections = [];
-
-  try {
-    const result = await getStorefrontProducts({ pageSize: 3 });
-    featured = result.products || [];
-  } catch {}
-
-  try {
-    const result = await getStorefrontCollectionSummaries();
-    featuredCollections = (result || []).slice(0, 3);
-  } catch {}
-
-  let store = null;
-  try {
-    const { getPublicStorefrontSettings } = await import('@/server/services/settings.service');
-    store = await getPublicStorefrontSettings();
-  } catch {}
+  const [productsResult, collectionsResult, settingsResult] = await Promise.allSettled([
+    getStorefrontProducts({ pageSize: 3 }),
+    getStorefrontCollectionSummaries({ pageSize: 3 }),
+    getPublicStorefrontSettings(),
+  ]);
+  const featured = productsResult.status === 'fulfilled' ? productsResult.value.products : [];
+  const featuredCollections = collectionsResult.status === 'fulfilled' ? collectionsResult.value.collections : [];
+  const store = settingsResult.status === 'fulfilled' ? settingsResult.value : null;
 
   return (
     <>
@@ -590,7 +582,7 @@ export default async function LandingPage() {
                     <div className="card-img">
                       <div className="card-img-inner">
                         {image ? (
-                          <img alt={product.title} src={image} />
+                          <Image alt={product.title} src={image} width={800} height={800} sizes="(max-width: 600px) 100vw, (max-width: 900px) 50vw, 33vw" />
                         ) : (
                           <div className="card-placeholder">
                             <span className="placeholder-icon">[]</span>

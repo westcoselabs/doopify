@@ -21,7 +21,7 @@ const ROLE_OPTIONS = [
 ];
 
 const ROLE_DESCRIPTIONS = {
-  OWNER: 'Full access including payment credentials, team management, and dangerous settings.',
+  OWNER: 'Full access including environment diagnostics, team management, and store settings.',
   ADMIN: 'Products, orders, customers, discounts, media, shipping, and email templates.',
   STAFF: 'Orders, fulfillment, customers, and notes. Limited product view.',
   VIEWER: 'Read-only access to the admin.',
@@ -37,7 +37,7 @@ function roleChipTone(role) {
 function formatDate(dateStr) {
   if (!dateStr) return '—';
   try {
-    return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return `${new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })} UTC`;
   } catch {
     return '—';
   }
@@ -79,12 +79,12 @@ function parseTeamApiError(response, payload, fallbackMessage) {
   return `${fallbackMessage} (HTTP ${response.status})`;
 }
 
-export default function TeamSettingsPanel({ currentUserRole, currentUserId }) {
+export default function TeamSettingsPanel({ currentUserRole, currentUserId, initialUsers = null, initialInvites = null }) {
   const isOwner = isOwnerRole(currentUserRole);
   const isKnownNonOwner = isKnownNonOwnerRole(currentUserRole);
 
-  const [users, setUsers] = useState([]);
-  const [invites, setInvites] = useState([]);
+  const [users, setUsers] = useState(initialUsers || []);
+  const [invites, setInvites] = useState(initialInvites || []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [accessNotice, setAccessNotice] = useState('');
@@ -163,9 +163,10 @@ export default function TeamSettingsPanel({ currentUserRole, currentUserId }) {
   }, [currentUserRole, isOwner]);
 
   useEffect(() => {
+    if (initialUsers && initialInvites) return;
 // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional effect-driven state sync for existing async/load flow
     loadTeam();
-  }, [loadTeam]);
+  }, [loadTeam, initialUsers, initialInvites]);
 
   const openInviteDrawer = () => {
     setDrawerMode('invite');
@@ -449,7 +450,7 @@ export default function TeamSettingsPanel({ currentUserRole, currentUserId }) {
         <div className={styles.sectionHeading}>
           <h3>Team</h3>
           <p className={styles.cardSubtext}>
-            Manage who has access to your Doopify admin. Only the Owner can manage team accounts and payment credentials.
+            Manage who has access to your Doopify admin. Only the Owner can manage team accounts.
           </p>
         </div>
 

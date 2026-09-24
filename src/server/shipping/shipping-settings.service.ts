@@ -1,9 +1,6 @@
 import {
   type ShippingFallbackBehavior,
-  type ShippingLiveProvider,
   type ShippingMode,
-  type ShippingProviderSelection,
-  type ShippingProviderUsage,
 } from '@prisma/client'
 
 import { prisma } from '@/lib/prisma'
@@ -11,10 +8,6 @@ import { findPrimaryStore } from '@/server/services/primary-store.service'
 
 type ShippingSettingsUpdate = Partial<{
   shippingMode: ShippingMode
-  shippingLiveProvider: ShippingLiveProvider | null
-  shippingProviderUsage: ShippingProviderUsage
-  activeRateProvider: ShippingProviderSelection
-  labelProvider: ShippingProviderSelection
   fallbackBehavior: ShippingFallbackBehavior
   shippingThresholdCents: number | null
   shippingDomesticRateCents: number

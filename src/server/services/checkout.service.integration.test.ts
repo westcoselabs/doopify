@@ -25,8 +25,8 @@ import {
   getDueWebhookDeliveriesForRetry,
   markWebhookDeliveryFailed,
   markWebhookDeliveryProcessed,
-  recordWebhookDeliveryAttempt,
-  storeVerifiedWebhookPayload,
+  recordVerifiedWebhookDelivery,
+  claimWebhookDelivery,
 } from './webhook-delivery.service'
 import { integrationRegistry } from '@/server/integrations/registry'
 
@@ -1425,20 +1425,17 @@ runIntegration('checkout service integration', () => {
       },
     })
 
-    const delivery = await recordWebhookDeliveryAttempt({
+    const delivery = await recordVerifiedWebhookDelivery({
       provider: 'stripe',
       providerEventId: 'evt_retry_payload',
       eventType: 'payment_intent.succeeded',
       payload: rawPayload,
     })
-    await storeVerifiedWebhookPayload({
-      provider: 'stripe',
-      providerEventId: delivery.providerEventId,
-      rawPayload,
-    })
+    const firstClaim = await claimWebhookDelivery(delivery.id)
     await markWebhookDeliveryFailed({
       provider: 'stripe',
       providerEventId: delivery.providerEventId,
+      claimToken: firstClaim!.claimToken!,
       error: 'Transient database timeout',
       retryable: true,
     })
@@ -1462,6 +1459,7 @@ runIntegration('checkout service integration', () => {
     await markWebhookDeliveryProcessed({
       provider: claimedDelivery!.provider,
       providerEventId: claimedDelivery!.providerEventId,
+      claimToken: claimedDelivery!.claimToken!,
     })
     await processStripeWebhookEvent(event)
 

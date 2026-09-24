@@ -1,10 +1,11 @@
 import type { EmailDeliveryStatus as PrismaEmailDeliveryStatus, Prisma } from '@prisma/client'
 
+import { env } from '@/lib/env'
 import { centsToDollars, dollarsToCents } from '@/lib/money'
 import { prisma } from '@/lib/prisma'
 import { emitInternalEvent } from '@/server/events/dispatcher'
-import { sendTransactionalEmail } from '@/server/email/provider'
-import { enqueueJob } from '@/server/jobs/job.service'
+import { isTransactionalEmailConfigured, sendTransactionalEmail } from '@/server/email/provider'
+import { assertJobClaim, enqueueJob, JobClaimLostError, PermanentJobError, type JobClaim } from '@/server/jobs/job.service'
 import { getBuyerDigitalDownloadAvailabilityForPaidOrder } from '@/server/services/digital-download-delivery.service'
 import {
   buildFulfillmentTrackingEmailMessage,
@@ -45,6 +46,7 @@ const emailDeliveryListSelect = {
   lastError: true,
   nextRetryAt: true,
   sentAt: true,
+  sendStartedAt: true,
   bouncedAt: true,
   complainedAt: true,
   orderId: true,
@@ -140,11 +142,76 @@ export type ApplyEmailProviderWebhookEventResult = {
 }
 
 function normalizeError(error: unknown) {
-  return error instanceof Error ? error.message : 'Email delivery failed'
+  return error instanceof Error ? error.message : typeof error === 'string' ? error : 'Email delivery failed'
 }
 
 function emailDeliveryClient() {
-  return (prisma as any).emailDelivery
+  return prisma.emailDelivery
+}
+
+const UNCERTAIN_SEND = 'Email send outcome is uncertain. Review provider delivery logs before explicitly resending.'
+
+const TERMINAL_EMAIL_STATUSES = ['SENT', 'BOUNCED', 'COMPLAINED'] as const
+
+async function updateDelivery(id: string, data: Prisma.EmailDeliveryUpdateInput, claim?: JobClaim, preserveTerminal = false) {
+  const update = async (client: Pick<Prisma.TransactionClient, 'emailDelivery'>) => {
+    try {
+      return await client.emailDelivery.update({ where: { id, ...(preserveTerminal ? { status: { notIn: [...TERMINAL_EMAIL_STATUSES] } } : {}) }, data })
+    } catch (error) {
+      if (!preserveTerminal || !error || typeof error !== 'object' || !('code' in error) || error.code !== 'P2025') throw error
+      const existing = await client.emailDelivery.findUnique({ where: { id } })
+      if (!existing || !TERMINAL_EMAIL_STATUSES.includes(existing.status as typeof TERMINAL_EMAIL_STATUSES[number])) throw error
+      return existing
+    }
+  }
+  if (!claim) return update(prisma)
+  return prisma.$transaction(async (tx) => {
+    await assertJobClaim(claim, tx)
+    return update(tx)
+  })
+}
+
+async function claimEmailSend(deliveryId: string, claim: JobClaim) {
+  const started = await prisma.$transaction(async (tx) => {
+    await assertJobClaim(claim, tx)
+    return tx.emailDelivery.updateMany({
+      where: { id: deliveryId, sendStartedAt: null, status: { in: ['PENDING', 'RETRYING'] } },
+      data: { sendStartedAt: new Date(), nextRetryAt: null },
+    })
+  })
+  if (started.count !== 1) throw new PermanentJobError(UNCERTAIN_SEND)
+}
+
+async function sendQueuedEmail(deliveryId: string, message: { from: string; to: string[]; subject: string; html: string }, claim: JobClaim) {
+  if (env.EMAIL_PROVIDER !== 'preview' && !isTransactionalEmailConfigured()) {
+    await markEmailDeliveryFailed({ deliveryId, error: 'Transactional email is not configured. Set EMAIL_PROVIDER and its environment credentials.', claim })
+    throw new PermanentJobError('Transactional email is not configured')
+  }
+  await claimEmailSend(deliveryId, claim)
+  try {
+    await assertJobClaim(claim)
+    const result = await sendTransactionalEmail(message)
+    if (result.provider === 'preview') {
+      await markEmailDeliveryFailed({ deliveryId, error: 'Email preview is enabled; no message was sent.', claim })
+      return
+    }
+    await markEmailDeliverySent({ deliveryId, provider: result.provider, providerMessageId: result.providerMessageId, claim })
+  } catch (error) {
+    if (error instanceof JobClaimLostError) throw error
+    await markEmailDeliveryFailed({ deliveryId, error: UNCERTAIN_SEND, claim })
+    throw new PermanentJobError(UNCERTAIN_SEND)
+  }
+}
+
+async function ensureQueuedEmailRunnable(delivery: { id: string; status: EmailDeliveryStatus; sendStartedAt: Date | null } | null, claim: JobClaim) {
+  await assertJobClaim(claim)
+  if (!delivery || ['SENT', 'BOUNCED', 'COMPLAINED'].includes(delivery.status)) return false
+  if (delivery.sendStartedAt) {
+    await markEmailDeliveryFailed({ deliveryId: delivery.id, error: UNCERTAIN_SEND, claim })
+    throw new PermanentJobError(UNCERTAIN_SEND)
+  }
+  if (delivery.status === 'FAILED') throw new PermanentJobError('Failed email delivery requires explicit operator resend')
+  return true
 }
 
 function parseTimestamp(value: string | undefined) {
@@ -175,14 +242,14 @@ function resendPolicyBlockers(delivery: Pick<EmailDeliveryListRecord, 'status' |
   return blockers
 }
 
-export async function createEmailDelivery(input: CreateEmailDeliveryInput) {
-  return emailDeliveryClient().create({
+export async function createEmailDelivery(input: CreateEmailDeliveryInput, client: Pick<Prisma.TransactionClient, 'emailDelivery'> = prisma) {
+  return client.emailDelivery.create({
     data: {
       event: input.event,
       template: input.template,
       recipientEmail: input.recipientEmail,
       subject: input.subject,
-      provider: input.provider ?? 'resend',
+      provider: env.EMAIL_PROVIDER,
       status: 'PENDING',
       orderId: input.orderId,
       customerId: input.customerId,
@@ -196,19 +263,18 @@ export async function markEmailDeliverySent(input: {
   deliveryId: string
   provider: string
   providerMessageId?: string
+  claim?: JobClaim
 }) {
-  const delivery = await emailDeliveryClient().update({
-    where: { id: input.deliveryId },
-    data: {
+  const delivery = await updateDelivery(input.deliveryId, {
       status: 'SENT',
       provider: input.provider,
       providerMessageId: input.providerMessageId,
       sentAt: new Date(),
       lastError: null,
       attempts: { increment: 1 },
-    },
-  })
+    }, input.claim, true)
 
+  if (delivery.status !== 'SENT') return delivery
   await emitInternalEvent('email.sent', {
     deliveryId: delivery.id,
     event: delivery.event,
@@ -220,7 +286,7 @@ export async function markEmailDeliverySent(input: {
     customerId: delivery.customerId,
     refundId: delivery.refundId,
     returnId: delivery.returnId,
-  })
+  }).catch(() => console.error('[email-delivery] Could not dispatch sent notification', { deliveryId: delivery.id }))
 
   return delivery
 }
@@ -229,17 +295,16 @@ export async function markEmailDeliveryFailed(input: {
   deliveryId: string
   error: unknown
   retryable?: boolean
+  claim?: JobClaim
 }) {
-  const delivery = await emailDeliveryClient().update({
-    where: { id: input.deliveryId },
-    data: {
+  const delivery = await updateDelivery(input.deliveryId, {
       status: input.retryable ? 'RETRYING' : 'FAILED',
       lastError: normalizeError(input.error),
       attempts: { increment: 1 },
       nextRetryAt: input.retryable ? new Date(Date.now() + 1000 * 60 * 5) : null,
-    },
-  })
+    }, input.claim, true)
 
+  if (delivery.status !== 'FAILED' && delivery.status !== 'RETRYING') return delivery
   await emitInternalEvent('email.failed', {
     deliveryId: delivery.id,
     event: delivery.event,
@@ -252,7 +317,7 @@ export async function markEmailDeliveryFailed(input: {
     customerId: delivery.customerId,
     refundId: delivery.refundId,
     returnId: delivery.returnId,
-  })
+  }).catch(() => console.error('[email-delivery] Could not dispatch failed notification', { deliveryId: delivery.id }))
 
   return delivery
 }
@@ -336,6 +401,7 @@ export async function sendTrackedEmail(input: SendTrackedEmailInput) {
     returnId: input.returnId,
   })
 
+  await updateDelivery(delivery.id, { sendStartedAt: new Date() })
   try {
     const result = await sendTransactionalEmail({
       from: input.from,
@@ -344,6 +410,7 @@ export async function sendTrackedEmail(input: SendTrackedEmailInput) {
       html: input.html,
     })
 
+    if (result.provider === 'preview') return markEmailDeliveryFailed({ deliveryId: delivery.id, error: 'Email preview is enabled; no message was sent.' })
     return markEmailDeliverySent({
       deliveryId: delivery.id,
       provider: result.provider,
@@ -391,31 +458,34 @@ export async function getEmailDeliveries(input: {
 }
 
 export async function queueOrderConfirmationEmailDelivery(input: QueueOrderConfirmationEmailInput) {
-  const delivery = await createEmailDelivery({
-    event: 'order.paid',
-    template: 'order_confirmation',
-    recipientEmail: input.email,
-    subject: `Order #${input.orderNumber} confirmation`,
-    provider: input.provider,
-    orderId: input.orderId,
-  })
-
-  const job = await enqueueJob(
-    'SEND_ORDER_CONFIRMATION_EMAIL',
-    {
-      deliveryId: delivery.id,
+  return prisma.$transaction(async (tx) => {
+    const delivery = await createEmailDelivery({
+      event: 'order.paid',
+      template: 'order_confirmation',
+      recipientEmail: input.email,
+      subject: `Order #${input.orderNumber} confirmation`,
+      provider: input.provider,
       orderId: input.orderId,
-    },
-    {
-      runAt: new Date(),
-      maxAttempts: 5,
-    }
-  )
+    }, tx)
 
-  return {
-    delivery,
-    job,
-  }
+    const job = await enqueueJob(
+      'SEND_ORDER_CONFIRMATION_EMAIL',
+      {
+        deliveryId: delivery.id,
+        orderId: input.orderId,
+      },
+      {
+        runAt: new Date(),
+        maxAttempts: 5,
+      },
+      tx
+    )
+
+    return {
+      delivery,
+      job,
+    }
+  })
 }
 
 export async function queueFulfillmentTrackingEmailDelivery(input: QueueFulfillmentTrackingEmailInput) {
@@ -428,36 +498,41 @@ export async function queueFulfillmentTrackingEmailDelivery(input: QueueFulfillm
     }
   }
 
-  const delivery = await createEmailDelivery({
-    event: 'fulfillment.created',
-    template: 'fulfillment_tracking',
-    recipientEmail: order.email,
-    subject: `Order #${order.orderNumber} shipping update`,
-    provider: input.provider,
-    orderId: input.orderId,
-  })
-
-  const job = await enqueueJob(
-    'SEND_FULFILLMENT_EMAIL',
-    {
-      deliveryId: delivery.id,
+  const recipientEmail = order.email
+  return prisma.$transaction(async (tx) => {
+    const delivery = await createEmailDelivery({
+      event: 'fulfillment.created',
+      template: 'fulfillment_tracking',
+      recipientEmail,
+      subject: `Order #${order.orderNumber} shipping update`,
+      provider: input.provider,
       orderId: input.orderId,
-      fulfillmentId: input.fulfillmentId,
-    },
-    {
-      runAt: new Date(),
-      maxAttempts: 5,
-    }
-  )
+    }, tx)
 
-  return {
-    delivery,
-    job,
-    skippedReason: null,
-  }
+    const job = await enqueueJob(
+      'SEND_FULFILLMENT_EMAIL',
+      {
+        deliveryId: delivery.id,
+        orderId: input.orderId,
+        fulfillmentId: input.fulfillmentId,
+      },
+      {
+        runAt: new Date(),
+        maxAttempts: 5,
+      },
+      tx
+    )
+
+    return {
+      delivery,
+      job,
+      skippedReason: null,
+    }
+  })
 }
 
-export async function processOrderConfirmationEmailDeliveryJob(input: { deliveryId: string; orderId?: string }) {
+
+export async function processOrderConfirmationEmailDeliveryJob(input: { deliveryId: string; orderId?: string }, claim: JobClaim) {
   const delivery = await emailDeliveryClient().findUnique({
     where: { id: input.deliveryId },
     select: {
@@ -467,6 +542,7 @@ export async function processOrderConfirmationEmailDeliveryJob(input: { delivery
       recipientEmail: true,
       subject: true,
       status: true,
+      sendStartedAt: true,
       provider: true,
       orderId: true,
       customerId: true,
@@ -475,9 +551,7 @@ export async function processOrderConfirmationEmailDeliveryJob(input: { delivery
     },
   })
 
-  if (!delivery || delivery.status === 'SENT') {
-    return
-  }
+  if (!await ensureQueuedEmailRunnable(delivery, claim) || !delivery) return
 
   const orderId = input.orderId ?? delivery.orderId
   if (!orderId) {
@@ -531,49 +605,24 @@ export async function processOrderConfirmationEmailDeliveryJob(input: { delivery
       deliveryId: delivery.id,
       error: new Error('Order confirmation email template is disabled. Enable it in Settings → Email.'),
       retryable: false,
+      claim,
     })
     return
   }
 
-  try {
-    const result = await sendTransactionalEmail({
-      from: message.from,
-      to: [delivery.recipientEmail],
-      subject: message.subject,
-      html: message.html,
-    })
-
-    // Provider in 'preview' mode means no real API key is configured.
-    // Surface this as a failure so it appears in delivery logs.
-    if (result.provider === 'preview') {
-      await markEmailDeliveryFailed({
-        deliveryId: delivery.id,
-        error: new Error('No email provider configured. Set up Resend in Settings → Email to send real emails.'),
-        retryable: false,
-      })
-      return
-    }
-
-    await markEmailDeliverySent({
-      deliveryId: delivery.id,
-      provider: result.provider,
-      providerMessageId: result.providerMessageId,
-    })
-  } catch (error) {
-    await markEmailDeliveryFailed({
-      deliveryId: delivery.id,
-      error,
-      retryable: true,
-    })
-    throw error
-  }
+  await sendQueuedEmail(delivery.id, {
+    from: message.from,
+    to: [delivery.recipientEmail],
+    subject: message.subject,
+    html: message.html,
+  }, claim)
 }
 
 export async function processFulfillmentTrackingEmailDeliveryJob(input: {
   deliveryId: string
   fulfillmentId: string
   orderId?: string
-}) {
+}, claim: JobClaim) {
   const delivery = await emailDeliveryClient().findUnique({
     where: { id: input.deliveryId },
     select: {
@@ -583,6 +632,7 @@ export async function processFulfillmentTrackingEmailDeliveryJob(input: {
       recipientEmail: true,
       subject: true,
       status: true,
+      sendStartedAt: true,
       provider: true,
       orderId: true,
       customerId: true,
@@ -591,9 +641,7 @@ export async function processFulfillmentTrackingEmailDeliveryJob(input: {
     },
   })
 
-  if (!delivery || delivery.status === 'SENT') {
-    return
-  }
+  if (!await ensureQueuedEmailRunnable(delivery, claim) || !delivery) return
 
   const orderId = input.orderId ?? delivery.orderId
   if (!orderId) {
@@ -647,42 +695,17 @@ export async function processFulfillmentTrackingEmailDeliveryJob(input: {
       deliveryId: delivery.id,
       error: new Error('Shipping confirmation email template is disabled. Enable it in Settings → Email.'),
       retryable: false,
+      claim,
     })
     return
   }
 
-  try {
-    const result = await sendTransactionalEmail({
-      from: message.from,
-      to: [delivery.recipientEmail],
-      subject: message.subject,
-      html: message.html,
-    })
-
-    // Provider in 'preview' mode means no real API key is configured.
-    // Surface this as a failure so it appears in delivery logs.
-    if (result.provider === 'preview') {
-      await markEmailDeliveryFailed({
-        deliveryId: delivery.id,
-        error: new Error('No email provider configured. Set up Resend in Settings → Email to send real emails.'),
-        retryable: false,
-      })
-      return
-    }
-
-    await markEmailDeliverySent({
-      deliveryId: delivery.id,
-      provider: result.provider,
-      providerMessageId: result.providerMessageId,
-    })
-  } catch (error) {
-    await markEmailDeliveryFailed({
-      deliveryId: delivery.id,
-      error,
-      retryable: true,
-    })
-    throw error
-  }
+  await sendQueuedEmail(delivery.id, {
+    from: message.from,
+    to: [delivery.recipientEmail],
+    subject: message.subject,
+    html: message.html,
+  }, claim)
 }
 
 export async function getEmailDeliveryById(id: string): Promise<EmailDeliveryDiagnostics | null> {

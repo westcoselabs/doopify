@@ -2,7 +2,7 @@
 
 > Doopify is a developer-first, self-hostable commerce engine with a real admin, real storefront, Prisma/Postgres as the source of truth, Stripe-backed checkout architecture, and typed server-side extension seams.
 
-Documentation refresh: April 28, 2026
+Documentation refresh: September 24, 2026
 
 ## The One-Sentence Intent
 
@@ -71,9 +71,11 @@ Build and harden:
 
 Then extract platform pieces.
 
-### 2. Prisma/Postgres As The Source Of Truth
+### 2. Prisma/Postgres As The Source Of Commerce Truth
 
-Prisma owns the commerce schema. PostgreSQL owns persistence.
+Prisma owns the commerce schema. PostgreSQL owns commerce persistence. Developers configure infrastructure through a pure typed environment parser and a server-only runtime entry point. Provider adapters consume it directly; infrastructure credentials never come from database rows.
+
+Developers configure infrastructure. Doopify operates the store.
 
 Rules:
 
@@ -109,12 +111,13 @@ Current model:
 - static integration registry
 - first-party consumers for logging and confirmation email
 
-Future model:
+Current extension delivery:
 
-- outbound merchant webhooks
-- integration settings and secrets
-- retry and replay tooling
-- versioned plugin manifest only when the event contract is stable
+- developer-configured outbound webhooks with durable snapshots, signing and retries
+- environment-owned infrastructure credentials
+- operational delivery monitoring and guarded replay
+
+A versioned plugin manifest remains deferred until the event contract is stable.
 
 ### 5. Handcrafted Admin Until Generation Is Earned
 
@@ -232,7 +235,7 @@ Allowed now:
 - first-party integrations
 - static registry
 - outbound webhook foundation
-- explicit settings/secrets management
+- database business settings and environment-only infrastructure secrets
 
 Deferred:
 

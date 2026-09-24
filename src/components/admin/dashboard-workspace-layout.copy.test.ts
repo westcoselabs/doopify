@@ -30,7 +30,7 @@ describe('AdminDashboardWorkspace layout and empty-state contract', () => {
     expect(source).toContain('No activity yet')
     expect(source).toContain('Create your first product, then run setup checks before placing a test checkout.')
     expect(source).toContain('Add product')
-    expect(source).toContain('Open setup')
+    expect(source).toContain('Open Developer')
   })
 
   it('keeps main grid focused on activity + side rail and removes guide grid area', () => {
@@ -54,13 +54,13 @@ describe('AdminDashboardWorkspace layout and empty-state contract', () => {
     expect(source).not.toContain('Launch checklist')
   })
 
-  it('loads setup wizard data lazily only when dashboard setup guidance is needed', () => {
+  it('links to explicit developer diagnostics without a setup fetch', () => {
     const sourcePath = path.resolve(process.cwd(), 'src/components/admin/AdminDashboardWorkspace.js')
     const source = fs.readFileSync(sourcePath, 'utf8')
 
-    expect(source).toContain('shouldLoadSetupWizard')
-    expect(source).toContain('setTimeout(loadSetupWizard, 250)')
-    expect(source).toContain('/api/setup/wizard')
+    expect(source).toContain('/admin/system/developer')
+    expect(source).not.toContain('/api/setup/wizard')
+    expect(source).not.toContain('loadSetupWizard')
   })
 })
 

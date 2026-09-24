@@ -20,6 +20,7 @@ export type JobType = (typeof JOB_TYPES)[number]
 
 export type JobHandlerContext = {
   jobId: string
+  claimToken: string
 }
 
 export type JobHandler = (payload: unknown, context: JobHandlerContext) => Promise<void>
@@ -49,13 +50,13 @@ const recordAnalyticsEventPayloadSchema = z.object({
 })
 
 const handlers: Record<JobType, JobHandler> = {
-  SEND_ORDER_CONFIRMATION_EMAIL: async (payload) => {
+  SEND_ORDER_CONFIRMATION_EMAIL: async (payload, context) => {
     const parsed = sendOrderConfirmationEmailPayloadSchema.parse(payload)
-    await processOrderConfirmationEmailDeliveryJob(parsed)
+    await processOrderConfirmationEmailDeliveryJob(parsed, context)
   },
-  SEND_FULFILLMENT_EMAIL: async (payload) => {
+  SEND_FULFILLMENT_EMAIL: async (payload, context) => {
     const parsed = sendFulfillmentEmailPayloadSchema.parse(payload)
-    await processFulfillmentTrackingEmailDeliveryJob(parsed)
+    await processFulfillmentTrackingEmailDeliveryJob(parsed, context)
   },
   SYNC_SHIPPING_TRACKING: async (payload, context) => {
     const parsed = syncShippingTrackingPayloadSchema.parse(payload)

@@ -1,3 +1,4 @@
+vi.mock('@/lib/env', () => ({ env: new Proxy({}, { get: (_, name) => name === 'MEDIA_STORAGE_PROVIDER' ? process.env.MEDIA_STORAGE_PROVIDER || 'postgres' : process.env[String(name)] }) }))
 import { mkdtemp, mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'

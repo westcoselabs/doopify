@@ -1,7 +1,8 @@
+vi.mock('@/lib/env', () => ({ env: new Proxy({}, { get: (_, name) => name === 'MEDIA_STORAGE_PROVIDER' ? process.env.MEDIA_STORAGE_PROVIDER || 'postgres' : process.env[String(name)] }) }))
 import { mkdtemp, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   deriveDigitalAssetTitle,
@@ -36,11 +37,16 @@ describe('digital-asset-upload.service', () => {
     expect(validation.ok).toBe(false)
   })
 
-  it('sanitizes display file name and derives fallback title', () => {
-    const fileName = sanitizeDigitalAssetFileName(' ..\\My\nSecret\tBook.pdf ')
+  it.each([
+    ' ..\\My\nSecret\tBook.pdf ',
+    '../My\nSecret\tBook.pdf ',
+    'C:\\fakepath\\My\nSecret\tBook.pdf ',
+    '\\\\server\\share\\My\nSecret\tBook.pdf ',
+  ])('sanitizes client path %j and derives fallback title on every server OS', (clientPath) => {
+    const fileName = sanitizeDigitalAssetFileName(clientPath)
     const title = deriveDigitalAssetTitle(fileName)
 
-    expect(fileName).toContain('MySecretBook.pdf')
+    expect(fileName).toBe('MySecretBook.pdf')
     expect(title).toBe('MySecretBook')
   })
 

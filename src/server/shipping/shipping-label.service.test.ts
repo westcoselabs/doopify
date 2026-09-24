@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const selection = vi.hoisted(() => ({ label: 'EASYPOST' as 'SHIPPO' | 'EASYPOST' | null }))
+vi.mock('@/server/shipping/shipping-provider-selection', () => ({ resolveLabelProvider: () => selection.label }))
+
 const mocks = vi.hoisted(() => ({
   prisma: {
     order: {
@@ -23,7 +26,7 @@ const mocks = vi.hoisted(() => ({
   getShippingProviderApiKey: vi.fn(),
   getShippingProviderLiveRates: vi.fn(),
   purchaseShippingProviderLabel: vi.fn(),
-  getRuntimeProviderConnection: vi.fn(),
+  isTransactionalEmailConfigured: vi.fn(),
   emitInternalEvent: vi.fn(),
 }))
 
@@ -46,8 +49,8 @@ vi.mock('@/server/events/dispatcher', () => ({
   emitInternalEvent: mocks.emitInternalEvent,
 }))
 
-vi.mock('@/server/services/provider-connection.service', () => ({
-  getRuntimeProviderConnection: mocks.getRuntimeProviderConnection,
+vi.mock('@/server/email/provider', () => ({
+  isTransactionalEmailConfigured: mocks.isTransactionalEmailConfigured,
 }))
 
 import { buyOrderShippingLabel, getOrderShippingRatesForLabel } from './shipping-label.service'
@@ -88,8 +91,6 @@ const baseStore = {
   email: 'store@example.com',
   supportEmail: 'support@example.com',
   currency: 'USD',
-  shippingLiveProvider: 'EASYPOST',
-  shippingProviderUsage: 'LIVE_AND_LABELS',
   shippingOriginName: 'Doopify Warehouse',
   shippingOriginPhone: '555-000-0000',
   shippingOriginAddress1: '10 Origin St',
@@ -137,6 +138,7 @@ const baseStore = {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  selection.label = 'EASYPOST'
 
   mocks.prisma.$transaction.mockImplementation(
     async (fn: (tx: typeof mocks.prisma) => Promise<unknown>) => fn(mocks.prisma)
@@ -148,10 +150,7 @@ beforeEach(() => {
     connected: true,
   })
   mocks.getShippingProviderApiKey.mockResolvedValue('ep_test_key')
-  mocks.getRuntimeProviderConnection.mockResolvedValue({
-    source: 'runtime',
-    credentials: { API_KEY: 're_test_key' },
-  })
+  mocks.isTransactionalEmailConfigured.mockReturnValue(true)
   mocks.getShippingProviderLiveRates.mockResolvedValue([
     {
       id: 'rate_1',
@@ -441,7 +440,8 @@ describe('buyOrderShippingLabel', () => {
     expect(mocks.purchaseShippingProviderLabel).not.toHaveBeenCalled()
   })
 
-  it('uses requested provider override when both providers are connected', async () => {
+  it('uses the configured provider when both providers have credentials', async () => {
+    selection.label = 'SHIPPO'
     mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
     mocks.getShippingProviderConnectionStatus.mockImplementation(async (provider: string) => ({
       provider,
@@ -524,10 +524,7 @@ describe('buyOrderShippingLabel', () => {
 
   it('does not rollback label purchase when email provider is unavailable', async () => {
     mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
-    mocks.getRuntimeProviderConnection.mockResolvedValue({
-      source: 'none',
-      credentials: null,
-    })
+    mocks.isTransactionalEmailConfigured.mockReturnValue(false)
     mocks.purchaseShippingProviderLabel.mockResolvedValue({
       providerShipmentId: 'shp_1',
       providerRateId: 'rate_1',
@@ -564,6 +561,7 @@ describe('buyOrderShippingLabel', () => {
   })
 
   it('Shippo rate request uses shipping location email when present', async () => {
+    selection.label = 'SHIPPO'
     mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
     mocks.getShippingProviderConnectionStatus.mockImplementation(async (provider: string) => ({
       provider,
@@ -600,6 +598,7 @@ describe('buyOrderShippingLabel', () => {
   })
 
   it('Shippo rate request falls back to support/store email when location email is missing', async () => {
+    selection.label = 'SHIPPO'
     mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
     mocks.getShippingProviderConnectionStatus.mockImplementation(async (provider: string) => ({
       provider,
@@ -638,6 +637,7 @@ describe('buyOrderShippingLabel', () => {
   })
 
   it('Shippo rate request falls back to store profile phone when location phone is missing', async () => {
+    selection.label = 'SHIPPO'
     mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
     mocks.getShippingProviderConnectionStatus.mockImplementation(async (provider: string) => ({
       provider,
@@ -676,6 +676,7 @@ describe('buyOrderShippingLabel', () => {
   })
 
   it('blocks Shippo label flow before provider call when ship-from email is missing everywhere', async () => {
+    selection.label = 'SHIPPO'
     mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
     mocks.getShippingProviderConnectionStatus.mockImplementation(async (provider: string) => ({
       provider,
@@ -709,6 +710,7 @@ describe('buyOrderShippingLabel', () => {
   })
 
   it('blocks Shippo rate lookup before provider call when ship-from phone is missing everywhere', async () => {
+    selection.label = 'SHIPPO'
     mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
     mocks.getShippingProviderConnectionStatus.mockImplementation(async (provider: string) => ({
       provider,
@@ -743,6 +745,7 @@ describe('buyOrderShippingLabel', () => {
   })
 
   it('Shippo label purchase falls back to store profile phone when location phone is missing', async () => {
+    selection.label = 'SHIPPO'
     mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
     mocks.getShippingProviderConnectionStatus.mockImplementation(async (provider: string) => ({
       provider,
@@ -796,6 +799,7 @@ describe('buyOrderShippingLabel', () => {
   })
 
   it('blocks Shippo label purchase before provider call when ship-from phone is missing everywhere', async () => {
+    selection.label = 'SHIPPO'
     mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
     mocks.getShippingProviderConnectionStatus.mockImplementation(async (provider: string) => ({
       provider,
@@ -831,6 +835,7 @@ describe('buyOrderShippingLabel', () => {
   })
 
   it('blocks Shippo label purchase before provider call when ship-from email is missing everywhere', async () => {
+    selection.label = 'SHIPPO'
     mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
     mocks.getShippingProviderConnectionStatus.mockImplementation(async (provider: string) => ({
       provider,
@@ -984,50 +989,13 @@ describe('buyOrderShippingLabel', () => {
     )
   })
 
-  it('uses labelProvider by default, with explicit override taking precedence', async () => {
-    mocks.prisma.order.findUnique.mockResolvedValue(baseOrder)
-    mocks.getStoreSettings.mockResolvedValue({
-      ...baseStore,
-      activeRateProvider: 'EASYPOST',
-      labelProvider: 'SHIPPO',
-    })
-    mocks.getShippingProviderConnectionStatus.mockImplementation(async (provider: string) => ({
-      provider,
-      connected: provider === 'SHIPPO' || provider === 'EASYPOST',
-    }))
-    mocks.getShippingProviderApiKey.mockImplementation(async (provider: string) =>
-      provider === 'SHIPPO' ? 'shippo_test_key' : 'ep_test_key'
-    )
-
-    await getOrderShippingRatesForLabel({
-      orderNumber: 1001,
+  it('rejects a request for a provider different from the environment selection', async () => {
+    selection.label = 'SHIPPO'
+    await expect(getOrderShippingRatesForLabel({
+      orderNumber: 1001, provider: 'EASYPOST',
       items: [{ orderItemId: 'oi_1', quantity: 1 }],
       parcel: { weightOz: 12, lengthIn: 10, widthIn: 8, heightIn: 4 },
-    })
-
-    expect(mocks.getShippingProviderLiveRates).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        provider: 'SHIPPO',
-        request: expect.objectContaining({
-          apiKey: 'shippo_test_key',
-        }),
-      })
-    )
-
-    await getOrderShippingRatesForLabel({
-      orderNumber: 1001,
-      provider: 'EASYPOST',
-      items: [{ orderItemId: 'oi_1', quantity: 1 }],
-      parcel: { weightOz: 12, lengthIn: 10, widthIn: 8, heightIn: 4 },
-    })
-
-    expect(mocks.getShippingProviderLiveRates).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        provider: 'EASYPOST',
-        request: expect.objectContaining({
-          apiKey: 'ep_test_key',
-        }),
-      })
-    )
+    })).rejects.toThrow('Requested label provider must match SHIPPING_LABEL_PROVIDER')
+    expect(mocks.getShippingProviderLiveRates).not.toHaveBeenCalled()
   })
 })

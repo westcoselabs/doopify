@@ -3,21 +3,38 @@ name: integration-tests
 on:
   workflow_dispatch:
   push:
-    branches:
-      - master
-      - main
   pull_request:
 
 permissions:
   contents: read
 
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   integration:
-    if: ${{ secrets.DATABASE_URL_TEST != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
-      DATABASE_URL_TEST: ${{ secrets.DATABASE_URL_TEST }}
+      # CI owns this disposable database; never reset a shared deployment DB.
+      DATABASE_URL_TEST: postgresql://doopify_test:ci_only@127.0.0.1:5432/doopify_test?schema=integration
+      DATABASE_URL: postgresql://unused:unused@127.0.0.1:1/unused
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: doopify_test
+          POSTGRES_PASSWORD: ci_only
+          POSTGRES_DB: doopify_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U doopify_test -d doopify_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout

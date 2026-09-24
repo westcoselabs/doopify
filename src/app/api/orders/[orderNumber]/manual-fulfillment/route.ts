@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { err, ok, parseBody, unprocessable } from '@/lib/api'
 import { prisma } from '@/lib/prisma'
 import { requireAdmin } from '@/server/auth/require-auth'
-import { getRuntimeProviderConnection } from '@/server/services/provider-connection.service'
+import { isTransactionalEmailConfigured } from '@/server/email/provider'
 import { auditActorFromUser, recordAuditLogBestEffort } from '@/server/services/audit-log.service'
 import { createManualFulfillment } from '@/server/services/order.service'
 
@@ -64,10 +64,7 @@ export async function POST(req: Request, { params }: Params) {
   try {
     const trackingEmailRequested = Boolean(parsed.data.sendTrackingEmail)
     const hasCustomerEmail = Boolean(order.email)
-    const emailRuntime = await getRuntimeProviderConnection('RESEND')
-    const emailProviderConfigured = Boolean(
-      emailRuntime.source !== 'none' && emailRuntime.credentials?.API_KEY
-    )
+    const emailProviderConfigured = isTransactionalEmailConfigured()
     const queueTrackingEmail =
       trackingEmailRequested && hasCustomerEmail && emailProviderConfigured
 

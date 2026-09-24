@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
   prisma: {
+    $transaction: vi.fn(),
     emailDelivery: {
       create: vi.fn(),
       update: vi.fn(),
@@ -18,6 +19,7 @@ const mocks = vi.hoisted(() => ({
     },
   },
   enqueueJob: vi.fn(),
+  assertJobClaim: vi.fn(),
   sendTransactionalEmail: vi.fn(),
   getOrderById: vi.fn(),
   getBuyerDigitalDownloadAvailabilityForPaidOrder: vi.fn(),
@@ -27,8 +29,9 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/prisma', () => ({ prisma: mocks.prisma }))
-vi.mock('@/server/email/provider', () => ({ sendTransactionalEmail: mocks.sendTransactionalEmail }))
-vi.mock('@/server/jobs/job.service', () => ({ enqueueJob: mocks.enqueueJob }))
+vi.mock('@/server/email/provider', () => ({ sendTransactionalEmail: mocks.sendTransactionalEmail, isTransactionalEmailConfigured: () => true }))
+vi.mock('@/server/jobs/job.service', () => ({ enqueueJob: mocks.enqueueJob, assertJobClaim: mocks.assertJobClaim, JobClaimLostError: class JobClaimLostError extends Error {}, PermanentJobError: class PermanentJobError extends Error {} }))
+vi.mock('@/lib/env', () => ({ env: { EMAIL_PROVIDER: 'resend' } }))
 vi.mock('@/server/services/order.service', () => ({ getOrderById: mocks.getOrderById }))
 vi.mock('@/server/services/digital-download-delivery.service', () => ({
   getBuyerDigitalDownloadAvailabilityForPaidOrder: mocks.getBuyerDigitalDownloadAvailabilityForPaidOrder,
@@ -53,13 +56,19 @@ import {
   processOrderConfirmationEmailDeliveryJob,
   processFulfillmentTrackingEmailDeliveryJob,
   queueFulfillmentTrackingEmailDelivery,
+  queueOrderConfirmationEmailDelivery,
   resendEmailDelivery,
   sendTrackedEmail,
 } from './email-delivery.service'
 
+const claim = { jobId: 'job-1', claimToken: 'claim-1' }
+
 describe('email delivery service', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
+    mocks.prisma.$transaction.mockImplementation(async (callback) => callback(mocks.prisma))
+    mocks.assertJobClaim.mockResolvedValue(undefined)
+    mocks.emitInternalEvent.mockResolvedValue(undefined)
     vi.useRealTimers()
     mocks.prisma.emailDelivery.create.mockResolvedValue({ id: 'email-1', status: 'PENDING' })
     mocks.prisma.emailDelivery.update.mockResolvedValue({ id: 'email-1', status: 'SENT' })
@@ -114,7 +123,7 @@ describe('email delivery service', () => {
     await markEmailDeliverySent({ deliveryId: 'email-1', provider: 'resend', providerMessageId: 'resend-1' })
 
     expect(mocks.prisma.emailDelivery.update).toHaveBeenCalledWith({
-      where: { id: 'email-1' },
+      where: { id: 'email-1', status: { notIn: ['SENT', 'BOUNCED', 'COMPLAINED'] } },
       data: expect.objectContaining({
         status: 'SENT',
         provider: 'resend',
@@ -130,7 +139,7 @@ describe('email delivery service', () => {
     await markEmailDeliveryFailed({ deliveryId: 'email-1', error: new Error('Provider unavailable') })
 
     expect(mocks.prisma.emailDelivery.update).toHaveBeenCalledWith({
-      where: { id: 'email-1' },
+      where: { id: 'email-1', status: { notIn: ['SENT', 'BOUNCED', 'COMPLAINED'] } },
       data: expect.objectContaining({
         status: 'FAILED',
         lastError: 'Provider unavailable',
@@ -223,7 +232,8 @@ describe('email delivery service', () => {
         orderId: 'order-1',
         fulfillmentId: 'ful-1',
       }),
-      expect.objectContaining({ maxAttempts: 5 })
+      expect.objectContaining({ maxAttempts: 5 }),
+      mocks.prisma
     )
   })
 
@@ -273,7 +283,7 @@ describe('email delivery service', () => {
       deliveryId: 'email-fulfillment-1',
       fulfillmentId: 'ful-1',
       orderId: 'order-1',
-    })
+    }, claim)
 
     expect(mocks.buildFulfillmentTrackingEmailMessage).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -289,7 +299,7 @@ describe('email delivery service', () => {
     })
     expect(mocks.prisma.emailDelivery.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'email-fulfillment-1' },
+        where: { id: 'email-fulfillment-1' , status: { notIn: ['SENT', 'BOUNCED', 'COMPLAINED'] } },
         data: expect.objectContaining({
           status: 'SENT',
           providerMessageId: 'resend-fulfillment-1',
@@ -557,7 +567,7 @@ describe('email delivery service', () => {
     await processOrderConfirmationEmailDeliveryJob({
       deliveryId: 'email-oc-digital',
       orderId: 'order-digital-1',
-    })
+    }, claim)
 
     expect(mocks.buildOrderConfirmationEmailMessage).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -601,12 +611,12 @@ describe('email delivery service', () => {
     mocks.buildOrderConfirmationEmailMessage.mockResolvedValue(null)
     mocks.prisma.emailDelivery.update.mockResolvedValue({ id: 'email-oc-1', status: 'FAILED' })
 
-    await processOrderConfirmationEmailDeliveryJob({ deliveryId: 'email-oc-1', orderId: 'order-1' })
+    await processOrderConfirmationEmailDeliveryJob({ deliveryId: 'email-oc-1', orderId: 'order-1' }, claim)
 
     // Must mark FAILED, not leave PENDING
     expect(mocks.prisma.emailDelivery.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'email-oc-1' },
+        where: { id: 'email-oc-1' , status: { notIn: ['SENT', 'BOUNCED', 'COMPLAINED'] } },
         data: expect.objectContaining({
           status: 'FAILED',
           lastError: expect.stringContaining('disabled'),
@@ -617,7 +627,7 @@ describe('email delivery service', () => {
     expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled()
   })
 
-  it('marks order confirmation delivery FAILED when provider is preview (no API key configured)', async () => {
+  it('marks order confirmation delivery FAILED when provider is explicit preview', async () => {
     mocks.prisma.emailDelivery.findUnique.mockResolvedValue({
       id: 'email-oc-2',
       event: 'order.paid',
@@ -646,18 +656,18 @@ describe('email delivery service', () => {
       subject: 'Order #1001 confirmation',
       html: '<p>Confirmed</p>',
     })
-    // Provider returns preview (no real API key)
+    // Provider explicitly returns preview
     mocks.sendTransactionalEmail.mockResolvedValue({ provider: 'preview', providerMessageId: undefined })
     mocks.prisma.emailDelivery.update.mockResolvedValue({ id: 'email-oc-2', status: 'FAILED' })
 
-    await processOrderConfirmationEmailDeliveryJob({ deliveryId: 'email-oc-2', orderId: 'order-1' })
+    await processOrderConfirmationEmailDeliveryJob({ deliveryId: 'email-oc-2', orderId: 'order-1' }, claim)
 
     expect(mocks.prisma.emailDelivery.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'email-oc-2' },
+        where: { id: 'email-oc-2' , status: { notIn: ['SENT', 'BOUNCED', 'COMPLAINED'] } },
         data: expect.objectContaining({
           status: 'FAILED',
-          lastError: expect.stringContaining('No email provider'),
+          lastError: expect.stringContaining('preview'),
         }),
       })
     )
@@ -704,11 +714,11 @@ describe('email delivery service', () => {
       deliveryId: 'email-ful-1',
       fulfillmentId: 'ful-1',
       orderId: 'order-1',
-    })
+    }, claim)
 
     expect(mocks.prisma.emailDelivery.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'email-ful-1' },
+        where: { id: 'email-ful-1' , status: { notIn: ['SENT', 'BOUNCED', 'COMPLAINED'] } },
         data: expect.objectContaining({
           status: 'FAILED',
           lastError: expect.stringContaining('disabled'),
@@ -718,7 +728,7 @@ describe('email delivery service', () => {
     expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled()
   })
 
-  it('marks fulfillment tracking delivery FAILED when provider is preview (no API key configured)', async () => {
+  it('marks fulfillment tracking delivery FAILED when provider is explicit preview', async () => {
     mocks.prisma.emailDelivery.findUnique.mockResolvedValue({
       id: 'email-ful-2',
       event: 'fulfillment.created',
@@ -762,14 +772,14 @@ describe('email delivery service', () => {
       deliveryId: 'email-ful-2',
       fulfillmentId: 'ful-2',
       orderId: 'order-1',
-    })
+    }, claim)
 
     expect(mocks.prisma.emailDelivery.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { id: 'email-ful-2' },
+        where: { id: 'email-ful-2' , status: { notIn: ['SENT', 'BOUNCED', 'COMPLAINED'] } },
         data: expect.objectContaining({
           status: 'FAILED',
-          lastError: expect.stringContaining('No email provider'),
+          lastError: expect.stringContaining('preview'),
         }),
       })
     )
@@ -860,4 +870,59 @@ describe('email delivery service', () => {
     // Contract: only failed, bounced, and complained deliveries may be resent
     expect(EMAIL_DELIVERY_RESEND_ELIGIBLE_STATUSES).toEqual(['FAILED', 'BOUNCED', 'COMPLAINED'])
   })
+  it('creates confirmation delivery and job in the same transaction', async () => {
+    await queueOrderConfirmationEmailDelivery({ orderId: 'order-1', orderNumber: 1001, email: 'buyer@example.com' })
+    expect(mocks.prisma.$transaction).toHaveBeenCalledOnce()
+    expect(mocks.enqueueJob).toHaveBeenCalledWith('SEND_ORDER_CONFIRMATION_EMAIL', expect.objectContaining({ deliveryId: 'email-1' }), expect.any(Object), mocks.prisma)
+  })
+
+  it('never sends when an earlier attempt has an uncertain outcome', async () => {
+    mocks.prisma.emailDelivery.findUnique.mockResolvedValue({ id: 'email-1', status: 'PENDING', sendStartedAt: new Date(), orderId: 'order-1' })
+    await expect(processOrderConfirmationEmailDeliveryJob({ deliveryId: 'email-1' }, claim)).rejects.toThrow('outcome is uncertain')
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled()
+    expect(mocks.prisma.emailDelivery.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED', nextRetryAt: null, lastError: expect.stringContaining('explicitly resending') }) }))
+  })
+
+  it('never sends or writes when job ownership has changed', async () => {
+    mocks.prisma.emailDelivery.findUnique.mockResolvedValue({ id: 'email-1', status: 'PENDING', sendStartedAt: null })
+    mocks.assertJobClaim.mockRejectedValue(new Error('Job claim expired'))
+    await expect(processOrderConfirmationEmailDeliveryJob({ deliveryId: 'email-1' }, claim)).rejects.toThrow('Job claim expired')
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled()
+    expect(mocks.prisma.emailDelivery.update).not.toHaveBeenCalled()
+  })
+
+  it('leaves message preparation failures retryable before the send boundary', async () => {
+    mocks.prisma.emailDelivery.findUnique.mockResolvedValue({ id: 'email-1', status: 'PENDING', sendStartedAt: null, orderId: 'order-1' })
+    mocks.getOrderById.mockRejectedValue(new Error('temporary database outage'))
+    await expect(processOrderConfirmationEmailDeliveryJob({ deliveryId: 'email-1' }, claim)).rejects.toThrow('temporary database outage')
+    expect(mocks.prisma.emailDelivery.updateMany).not.toHaveBeenCalled()
+    expect(mocks.sendTransactionalEmail).not.toHaveBeenCalled()
+  })
+
+  it('stops a provider timeout permanently instead of sending again on retry', async () => {
+    mocks.prisma.emailDelivery.findUnique.mockResolvedValue({ id: 'email-1', status: 'PENDING', sendStartedAt: null, orderId: 'order-1', recipientEmail: 'buyer@example.com' })
+    mocks.getOrderById.mockResolvedValue({ id: 'order-1', orderNumber: 1001, currency: 'USD', totalCents: 100, items: [], addresses: [] })
+    mocks.sendTransactionalEmail.mockRejectedValue(new Error('SMTP connection timed out'))
+    await expect(processOrderConfirmationEmailDeliveryJob({ deliveryId: 'email-1' }, claim)).rejects.toThrow('outcome is uncertain')
+    expect(mocks.prisma.emailDelivery.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ sendStartedAt: null }), data: expect.objectContaining({ sendStartedAt: expect.any(Date) }) }))
+    expect(mocks.prisma.emailDelivery.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'FAILED', nextRetryAt: null }) }))
+  })
+
+  it('never downgrades a sent delivery when notification fan-out fails', async () => {
+    mocks.sendTransactionalEmail.mockResolvedValue({ provider: 'smtp', providerMessageId: 'msg_1' })
+    mocks.emitInternalEvent.mockRejectedValue(new Error('event fan-out unavailable'))
+    const result = await sendTrackedEmail({ event: 'order.paid', template: 'order_confirmation', recipientEmail: 'buyer@example.com', subject: 'Order', from: 'orders@example.com', html: '<p>Order</p>' })
+    expect(result.status).toBe('SENT')
+    expect(mocks.prisma.emailDelivery.update.mock.calls.some(([arg]) => arg.data.status === 'FAILED')).toBe(false)
+  })
+
+  it('preserves terminal provider state when a stale failure write loses the race', async () => {
+    mocks.prisma.emailDelivery.update.mockRejectedValue({ code: 'P2025' })
+    mocks.prisma.emailDelivery.findUnique.mockResolvedValue({ id: 'email-1', status: 'SENT' })
+    const result = await markEmailDeliveryFailed({ deliveryId: 'email-1', error: 'uncertain attempt', claim })
+    expect(result.status).toBe('SENT')
+    expect(mocks.emitInternalEvent).not.toHaveBeenCalled()
+    expect(mocks.prisma.emailDelivery.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'email-1', status: { notIn: ['SENT', 'BOUNCED', 'COMPLAINED'] } } }))
+  })
+
 })

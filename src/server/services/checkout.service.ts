@@ -30,7 +30,6 @@ import {
   hashCheckoutStatusAccessToken,
 } from '@/server/checkout/checkout-status-access'
 import { emitInternalEvent } from '@/server/events/dispatcher'
-import { getStripeRuntimeConnection } from '@/server/payments/stripe-runtime.service'
 import {
   getShippingRatesForCheckout,
 } from '@/server/shipping/shipping-rate.service'
@@ -412,6 +411,7 @@ function subtotalFromLineItems(lineItems: Array<{ priceCents: number; quantity: 
 async function resolveSelectedShippingQuote(input: {
   shippingMode?: string | null
   storeId?: string
+  store?: NonNullable<Awaited<ReturnType<typeof getStoreSettings>>>
   lineItems: Array<{ variantId: string; priceCents: number; weightOz?: number; quantity: number }>
   shippingAddress: CheckoutAddress
   selectedShippingQuoteId?: string
@@ -478,6 +478,7 @@ async function resolveSelectedShippingQuote(input: {
 
   const quotes = await getShippingRatesForCheckout({
     storeId: input.storeId,
+    store: input.store,
     subtotalCents: subtotalFromLineItems(input.lineItems),
     totalWeightOz,
     shippingAddress: toShippingRateAddress(input.shippingAddress),
@@ -641,6 +642,7 @@ export async function createCheckoutPaymentIntent(input: {
     ? await resolveSelectedShippingQuote({
         shippingMode: store?.shippingMode,
         storeId: store?.id,
+        store: store ?? undefined,
         lineItems,
         shippingAddress: shippingAddress as CheckoutAddress,
         selectedShippingQuoteId: input.selectedShippingQuoteId,
@@ -756,17 +758,6 @@ export async function createCheckoutPaymentIntent(input: {
     : []
 
   const customer = await getCustomerByEmail(normalizedEmail)
-  const stripeRuntime = await getStripeRuntimeConnection()
-  if (!stripeRuntime.secretKey) {
-    throw new Error(
-      'Stripe checkout is not configured. Save and verify Stripe credentials in Settings -> Payments or set STRIPE_SECRET_KEY.'
-    )
-  }
-
-  console.info(
-    `[checkout] Stripe runtime source: ${stripeRuntime.source}; mode: ${stripeRuntime.mode ?? 'unknown'}`
-  )
-
   let paymentIntent: StripePaymentIntent
   try {
     paymentIntent = await createStripePaymentIntent({
@@ -776,15 +767,13 @@ export async function createCheckoutPaymentIntent(input: {
       metadata: {
         checkoutEmail: normalizedEmail,
       },
-      secretKey: stripeRuntime.secretKey,
       ...(input.checkoutAttemptId ? { idempotencyKey: `checkout:${input.checkoutAttemptId}` } : {}),
     })
   } catch (stripeError) {
     const msg = stripeError instanceof Error ? stripeError.message : String(stripeError)
     if (msg.toLowerCase().includes('invalid api key') || msg.toLowerCase().includes('no such api key')) {
       throw new Error(
-        `Stripe rejected the API key (source: ${stripeRuntime.source}, mode: ${stripeRuntime.mode ?? 'unknown'}). ` +
-        'Verify the secret key in Settings → Payments and re-save to update.'
+        'Stripe rejected STRIPE_SECRET_KEY. Update it in the deployment environment.'
       )
     }
     throw stripeError
@@ -943,6 +932,7 @@ export async function getCheckoutShippingRates(input: {
 
   const quotes = await getShippingRatesForCheckout({
     storeId: store?.id,
+    store: store ?? undefined,
     subtotalCents: subtotalFromLineItems(lineItems),
     totalWeightOz,
     shippingAddress: toShippingRateAddress(shippingAddress),

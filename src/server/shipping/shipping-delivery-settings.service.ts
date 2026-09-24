@@ -2,12 +2,9 @@ import type {
   Prisma,
   ShippingFallbackBehavior,
   ShippingDimensionUnit,
-  ShippingLiveProvider,
   ShippingManualRateType,
   ShippingMode,
   ShippingPackageType,
-  ShippingProviderSelection,
-  ShippingProviderUsage,
   ShippingWeightUnit,
 } from '@prisma/client'
 
@@ -37,10 +34,6 @@ type ShippingStoreWithConfig = Prisma.StoreGetPayload<{
 
 type ShippingSettingsPatch = Partial<{
   shippingMode: ShippingMode
-  shippingLiveProvider: ShippingLiveProvider | null
-  shippingProviderUsage: ShippingProviderUsage
-  activeRateProvider: ShippingProviderSelection
-  labelProvider: ShippingProviderSelection
   fallbackBehavior: ShippingFallbackBehavior
   shippingThresholdCents: number | null
   shippingDomesticRateCents: number

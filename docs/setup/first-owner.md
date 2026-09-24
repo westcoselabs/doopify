@@ -45,12 +45,12 @@ SETUP_TOKEN=some-random-32-char-token
 ## After owner creation
 
 1. Log in at `/login`.
-2. Configure Stripe in **Settings -> Payments**.
+2. Configure Stripe in **System -> Developer**.
 3. Configure shipping in **Settings -> Shipping & delivery**.
 4. Create products in **Products**.
 5. Run a paid test checkout.
 
-Email is optional for private beta and can be configured later in **Settings -> Email**.
+Email transport is configured in deployment environment variables. See [email setup](email.md); customer message content is edited in Settings → Customer emails.
 
 ---
 

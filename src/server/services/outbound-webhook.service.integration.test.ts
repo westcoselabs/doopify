@@ -2,7 +2,8 @@ import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { prisma } from '@/lib/prisma'
 import { queueOutboundWebhooks, processDueOutboundDeliveries, retryOutboundWebhookDelivery } from './outbound-webhook.service'
-import { encrypt } from '@/server/utils/crypto'
+vi.mock('@/server/config/outbound-webhooks', () => ({ outboundDestinations: [{ id: 'test-destination', name: 'Webhook Worker Test', url: 'https://merchant.example/webhook', events: ['order.paid'], secretEnv: 'OUTBOUND_WEBHOOK_TEST' }] }))
+vi.mock('@/lib/env', async (importOriginal) => ({ ...await importOriginal<object>(), getEnvironmentSecret: () => 'inert-signing-key' }))
 
 const runIntegration =
   process.env.DATABASE_URL_TEST && process.env.DATABASE_URL === process.env.DATABASE_URL_TEST
@@ -12,9 +13,6 @@ const runIntegration =
 async function cleanTestData() {
   await prisma.analyticsEvent.deleteMany()
   await prisma.outboundWebhookDelivery.deleteMany()
-  await prisma.integrationSecret.deleteMany()
-  await prisma.integrationEvent.deleteMany()
-  await prisma.integration.deleteMany()
 }
 
 function orderPaidPayload() {
@@ -46,22 +44,6 @@ runIntegration('outbound webhook integration', () => {
   }, 60_000)
 
   it('processes due outbound deliveries idempotently across concurrent workers', async () => {
-    await prisma.integration.create({
-      data: {
-        name: 'Webhook Worker Test',
-        type: 'CUSTOM',
-        webhookUrl: 'https://merchant.example/webhook',
-        webhookSecret: encrypt('super-secret'),
-        status: 'ACTIVE',
-        events: {
-          create: [{ event: 'order.paid' }],
-        },
-        secrets: {
-          create: [{ key: 'HEADER_X-Test', value: encrypt('header-value') }],
-        },
-      },
-    })
-
     await queueOutboundWebhooks('order.paid', orderPaidPayload())
 
     const fetchSpy = vi
@@ -82,19 +64,11 @@ runIntegration('outbound webhook integration', () => {
   })
 
   it('keeps manual retry idempotent under concurrent retry requests', async () => {
-    const integration = await prisma.integration.create({
-      data: {
-        name: 'Manual Retry Test',
-        type: 'CUSTOM',
-        webhookUrl: 'https://merchant.example/webhook',
-        webhookSecret: encrypt('super-secret'),
-        status: 'ACTIVE',
-      },
-    })
-
     const delivery = await prisma.outboundWebhookDelivery.create({
       data: {
-        integrationId: integration.id,
+        integrationId: 'test-destination',
+        destinationName: 'Webhook Worker Test',
+        destinationUrl: 'https://merchant.example/webhook',
         event: 'order.paid',
         payload: JSON.stringify({
           event: 'order.paid',

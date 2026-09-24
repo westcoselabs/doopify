@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   requireAdmin: vi.fn(),
 }))
 
-vi.mock('@/server/services/order.service', () => ({
+vi.mock('@/server/services/analytics.service', () => ({
   getAnalytics: mocks.getAnalytics,
 }))
 

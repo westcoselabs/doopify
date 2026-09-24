@@ -1,133 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-const mocks = vi.hoisted(() => ({
-  claimWebhookDeliveryForRetry: vi.fn(),
-  getDueWebhookDeliveriesForRetry: vi.fn(),
-  markWebhookDeliveryProcessed: vi.fn(),
-  markWebhookDeliveryFailed: vi.fn(),
-  processStripeWebhookEvent: vi.fn(),
-  processDueOutboundDeliveries: vi.fn(),
-}))
-
-vi.mock('@/lib/env', () => ({
-  env: {
-    WEBHOOK_RETRY_SECRET: 'retry-secret-value',
-  },
-}))
-
-vi.mock('@/server/services/webhook-delivery.service', () => ({
-  claimWebhookDeliveryForRetry: mocks.claimWebhookDeliveryForRetry,
-  getDueWebhookDeliveriesForRetry: mocks.getDueWebhookDeliveriesForRetry,
-  markWebhookDeliveryProcessed: mocks.markWebhookDeliveryProcessed,
-  markWebhookDeliveryFailed: mocks.markWebhookDeliveryFailed,
-}))
-
-vi.mock('@/server/services/stripe-webhook.service', () => ({
-  parseStripeWebhookEventPayload: (payload: string) => {
-    try {
-      return JSON.parse(payload)
-    } catch {
-      return null
-    }
-  },
-  processStripeWebhookEvent: mocks.processStripeWebhookEvent,
-}))
-
-vi.mock('@/server/services/outbound-webhook.service', () => ({
-  processDueOutboundDeliveries: mocks.processDueOutboundDeliveries,
-}))
-
-import { POST } from './route'
-
-describe('POST /api/webhook-retries/run', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mocks.processDueOutboundDeliveries.mockResolvedValue({
-      processed: 0,
-      results: [],
-    })
-    mocks.getDueWebhookDeliveriesForRetry.mockResolvedValue([
-      {
-        id: 'delivery_1',
-        provider: 'stripe',
-        providerEventId: 'evt_1',
-      },
-    ])
-    mocks.claimWebhookDeliveryForRetry.mockResolvedValue({
-      id: 'delivery_1',
-      provider: 'stripe',
-      providerEventId: 'evt_1',
-      rawPayload: JSON.stringify({
-        id: 'evt_1',
-        type: 'payment_intent.succeeded',
-        data: {
-          object: {
-            id: 'pi_1',
-            amount: 5999,
-            currency: 'usd',
-            status: 'succeeded',
-          },
-        },
-      }),
-    })
-  })
-
-  it('rejects requests without the retry secret', async () => {
-    const response = await POST(new Request('http://localhost/api/webhook-retries/run', { method: 'POST' }))
-
-    expect(response.status).toBe(401)
-    expect(mocks.getDueWebhookDeliveriesForRetry).not.toHaveBeenCalled()
-    expect(mocks.processDueOutboundDeliveries).not.toHaveBeenCalled()
-  })
-
-  it('processes due retries from verified local payloads', async () => {
-    const response = await POST(
-      new Request('http://localhost/api/webhook-retries/run?limit=5', {
-        method: 'POST',
-        headers: {
-          authorization: 'Bearer retry-secret-value',
-        },
-      })
-    )
-
-    expect(response.status).toBe(200)
-    expect(mocks.getDueWebhookDeliveriesForRetry).toHaveBeenCalledWith(5)
-    expect(mocks.claimWebhookDeliveryForRetry).toHaveBeenCalledWith('delivery_1')
-    expect(mocks.processStripeWebhookEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: 'evt_1',
-      })
-    )
-    expect(mocks.markWebhookDeliveryProcessed).toHaveBeenCalledWith({
-      provider: 'stripe',
-      providerEventId: 'evt_1',
-    })
-    expect(mocks.processDueOutboundDeliveries).toHaveBeenCalled()
-  })
-
-  it('reschedules processing failures through the delivery service', async () => {
-    mocks.processStripeWebhookEvent.mockRejectedValue(new Error('Order finalization failed'))
-    mocks.markWebhookDeliveryFailed.mockResolvedValue({
-      status: 'RETRY_PENDING',
-      nextRetryAt: new Date('2026-04-28T12:01:00.000Z'),
-    })
-
-    const response = await POST(
-      new Request('http://localhost/api/webhook-retries/run', {
-        method: 'POST',
-        headers: {
-          'x-webhook-retry-secret': 'retry-secret-value',
-        },
-      })
-    )
-
-    expect(response.status).toBe(200)
-    expect(mocks.markWebhookDeliveryFailed).toHaveBeenCalledWith({
-      provider: 'stripe',
-      providerEventId: 'evt_1',
-      error: 'Order finalization failed',
-      retryable: true,
-    })
-    expect(mocks.processDueOutboundDeliveries).toHaveBeenCalled()
-  })
+import {beforeEach,describe,expect,it,vi} from 'vitest'
+const mocks=vi.hoisted(()=>({env:{WEBHOOK_RETRY_SECRET:'retry-test-secret'},getDue:vi.fn(),process:vi.fn(),outbound:vi.fn()}))
+vi.mock('@/lib/env',()=>({env:mocks.env}))
+vi.mock('@/server/services/webhook-delivery.service',()=>({getDueWebhookDeliveriesForRetry:mocks.getDue}))
+vi.mock('@/server/services/inbound-webhook-processing.service',()=>({processInboundWebhook:mocks.process}))
+vi.mock('@/server/services/outbound-webhook.service',()=>({processDueOutboundDeliveries:mocks.outbound}))
+import {POST} from './route'
+const request=(headers:Record<string,string>={},limit=5)=>new Request(`http://localhost/api/webhook-retries/run?limit=${limit}`,{method:'POST',headers})
+describe('webhook retry runner',()=>{
+ beforeEach(()=>{vi.resetAllMocks();mocks.env.WEBHOOK_RETRY_SECRET='retry-test-secret';mocks.getDue.mockResolvedValue([{id:'first'},{id:'second'}]);mocks.process.mockResolvedValue({status:'PROCESSED'});mocks.outbound.mockResolvedValue({processed:0,results:[]})})
+ it('rejects callers before reading or processing deliveries',async()=>{expect((await POST(request())).status).toBe(401);expect(mocks.getDue).not.toHaveBeenCalled();expect(mocks.outbound).not.toHaveBeenCalled()})
+ it('fails closed with missing runner config',async()=>{mocks.env.WEBHOOK_RETRY_SECRET='';expect((await POST(request())).status).toBe(503);expect(mocks.getDue).not.toHaveBeenCalled()})
+ it.each<Record<string,string>>([{authorization:'Bearer retry-test-secret'},{'x-webhook-retry-secret':'retry-test-secret'}])('accepts the configured runner secret and dispatches claimed processing',async(headers)=>{const response=await POST(request(headers));expect(response.status).toBe(200);expect(mocks.getDue).toHaveBeenCalledWith(5);expect(mocks.process).toHaveBeenCalledWith('first');expect(mocks.process).toHaveBeenCalledWith('second');expect(mocks.outbound).toHaveBeenCalledOnce()})
+ it('bounds requested batch size',async()=>{await POST(request({authorization:'Bearer retry-test-secret'},500));expect(mocks.getDue).toHaveBeenCalledWith(50)})
+ it('keeps independent retries running when one worker fails unexpectedly',async()=>{mocks.process.mockRejectedValueOnce(new Error('unexpected private error')).mockResolvedValueOnce({status:'PROCESSED'});const response=await POST(request({authorization:'Bearer retry-test-secret'}));const data=(await response.json()).data;expect(response.status).toBe(200);expect(data.results).toEqual([{status:'FAILED',error:'Webhook retry failed'},{status:'PROCESSED'}]);expect(JSON.stringify(data)).not.toContain('unexpected private error');expect(mocks.outbound).toHaveBeenCalledOnce()})
 })

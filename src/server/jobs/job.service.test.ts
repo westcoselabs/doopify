@@ -12,6 +12,8 @@ type JobRecord = {
   runAt: Date
   lockedAt: Date | null
   lockedBy: string | null
+  claimToken: string | null
+  leaseExpiresAt: Date | null
   processedAt: Date | null
   lastError: string | null
   createdAt: Date
@@ -40,6 +42,12 @@ function cloneJob(job: JobRecord) {
 
 function matchesWhere(job: JobRecord, where: Record<string, any> | undefined): boolean {
   if (!where) return true
+  if (where.OR && !where.OR.some((clause: any) => matchesWhere(job, clause))) return false
+  if (where.claimToken !== undefined && where.claimToken !== job.claimToken) return false
+  if (where.leaseExpiresAt === null && job.leaseExpiresAt !== null) return false
+  if (where.leaseExpiresAt?.lte && (!job.leaseExpiresAt || job.leaseExpiresAt > where.leaseExpiresAt.lte)) return false
+  if (where.leaseExpiresAt?.gt && (!job.leaseExpiresAt || job.leaseExpiresAt <= where.leaseExpiresAt.gt)) return false
+  if (where.lockedAt?.lte && (!job.lockedAt || job.lockedAt > where.lockedAt.lte)) return false
 
   if (where.id && job.id !== where.id) return false
   if (where.type && job.type !== where.type) return false
@@ -56,6 +64,8 @@ function matchesWhere(job: JobRecord, where: Record<string, any> | undefined): b
 }
 
 function applyJobUpdate(job: JobRecord, data: Record<string, any>) {
+  if (Object.hasOwn(data, 'claimToken')) job.claimToken = data.claimToken
+  if (Object.hasOwn(data, 'leaseExpiresAt')) job.leaseExpiresAt = data.leaseExpiresAt
   if (data.status !== undefined) job.status = data.status
   if (data.payload !== undefined) job.payload = data.payload
   if (data.type !== undefined) job.type = data.type
@@ -83,6 +93,8 @@ const prismaMock = vi.hoisted(() => ({
         runAt: data.runAt ?? nowDate(),
         lockedAt: null,
         lockedBy: null,
+        claimToken: null,
+        leaseExpiresAt: null,
         processedAt: null,
         lastError: null,
         createdAt: nowDate(),
@@ -99,6 +111,15 @@ const prismaMock = vi.hoisted(() => ({
         return paged.map((job) => ({ id: job.id }))
       }
       return paged.map(cloneJob)
+    }),
+    findFirst: vi.fn(async ({ where }: { where: any }) => {
+      const job = state.jobs.find((candidate) => matchesWhere(candidate, where))
+      return job ? cloneJob(job) : null
+    }),
+    updateManyAndReturn: vi.fn(async ({ where, data }: { where: any; data: any }) => {
+      const jobs = state.jobs.filter((job) => matchesWhere(job, where))
+      jobs.forEach((job) => applyJobUpdate(job, data))
+      return jobs.map(cloneJob)
     }),
     updateMany: vi.fn(async ({ where, data }: { where?: any; data: any }) => {
       let count = 0
@@ -149,6 +170,8 @@ import {
   enqueueJob,
   getJob,
   runDueJobs,
+  markJobSuccess,
+  cancelJob,
 } from './job.service'
 
 describe('job service', () => {
@@ -250,4 +273,23 @@ describe('job service', () => {
     expect(job?.status).toBe('EXHAUSTED')
     expect(job?.lastError).toContain('Invalid payload')
   })
+  it('reclaims an expired worker while fencing its late completion', async () => {
+    await enqueueJob('TEST_JOB', {})
+    const [first] = await claimDueJobs(1)
+    state.jobs[0].leaseExpiresAt = new Date(Date.now() - 1)
+    const [second] = await claimDueJobs(1)
+    expect(second.claimToken).not.toBe(first.claimToken)
+    await expect(markJobSuccess(first.id, first.claimToken!)).rejects.toThrow('ownership changed')
+    expect((await markJobSuccess(second.id, second.claimToken!)).status).toBe('SUCCESS')
+    expect(second.attempts).toBe(2)
+  })
+
+  it('does not cancel an active job or expose its ownership token', async () => {
+    const job = await enqueueJob('TEST_JOB', { secret: 'private' })
+    await claimDueJobs(1)
+    expect(await cancelJob(job.id)).toBeNull()
+    expect(await getJob(job.id)).not.toHaveProperty('claimToken')
+    expect((await getJob(job.id))?.payload).toEqual({ secret: '[REDACTED]' })
+  })
+
 })

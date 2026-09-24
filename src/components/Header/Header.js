@@ -5,6 +5,10 @@ import { usePathname } from 'next/navigation';
 import styles from './Header.module.css';
 
 export const PAGE_META = [
+  { match: '/admin/settings', label: 'Settings', icon: 'settings' },
+  { match: '/admin/system/developer', label: 'Developer', icon: 'code' },
+  { match: '/admin/system/team', label: 'Team', icon: 'group' },
+  { match: '/admin/account', label: 'My account', icon: 'account_circle' },
   { match: '/admin/webhooks', label: 'Delivery logs', icon: 'sync_problem' },
   { match: '/admin/collections', label: 'Collections', icon: 'dashboard_customize' },
   { match: '/admin/abandoned-checkouts', label: 'Abandoned', icon: 'mark_email_unread' },

@@ -46,8 +46,10 @@ async function main() {
   // Next.js auto-loads .env / .env.local at runtime, but a plain node script
   // does not. Load them here so the opt-in integration command can read its
   // dedicated target without inheriting provider credentials in child tests.
+  const explicitEnvironment = { ...process.env }
   loadEnv({ path: '.env', quiet: true })
   loadEnv({ path: '.env.local', override: true, quiet: true })
+  Object.assign(process.env, explicitEnvironment)
 
   if (!process.env.DATABASE_URL_TEST) {
     console.log('Skipping integration tests: DATABASE_URL_TEST is not configured.')

@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client'
 
 import { env } from '@/lib/env'
 
-function normalizePgConnectionString(connectionString: string) {
+export function normalizePgConnectionString(connectionString: string, schema?: string) {
   try {
     const url = new URL(connectionString)
     const sslmode = url.searchParams.get('sslmode')
@@ -12,8 +12,16 @@ function normalizePgConnectionString(connectionString: string) {
     // Normalize the URL explicitly so builds and SSR don't emit noisy warnings.
     if (sslmode && ['prefer', 'require', 'verify-ca'].includes(sslmode)) {
       url.searchParams.set('sslmode', 'verify-full')
-      return url.toString()
     }
+    if (schema) {
+      // Prisma qualifies ORM queries; raw SQL must resolve against the same schema.
+      // PostgreSQL splits startup options on whitespace and uses backslash escapes.
+      const identifier = `"${schema.replaceAll('"', '""')}"`
+      const optionValue = identifier.replace(/\\/g, '\\\\').replace(/\s/g, '\\$&')
+      const existing = url.searchParams.get('options') || ''
+      url.searchParams.set('options', `${existing}${existing ? ' ' : ''}-c search_path=${optionValue}`)
+    }
+    return url.toString()
   } catch {
     // Fall through to the original string if the URL cannot be parsed.
   }
@@ -27,8 +35,8 @@ function getPrismaSchemaOverride() {
 }
 
 function getPrismaAdapter() {
-  const connectionString = normalizePgConnectionString(env.DATABASE_URL)
   const schema = getPrismaSchemaOverride()
+  const connectionString = normalizePgConnectionString(env.DATABASE_URL, schema)
 
   return (
     globalForPrisma.prismaAdapter ??

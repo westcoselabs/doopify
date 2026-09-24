@@ -1,87 +1,27 @@
-# Email Setup
+# Email setup
 
-Configure transactional email delivery for order confirmations and shipping notifications.
+Select the email adapter explicitly in environment variables. `EMAIL_PROVIDER=none` is the default and disables sends. `EMAIL_PROVIDER=preview` is development-only and never records a message as sent. No email-provider API keys are entered in admin.
 
-Email is **optional for private beta**. Without a provider, the system operates in preview mode — emails are logged but not sent. The launch readiness panel marks email as optional, not a blocker.
+## Resend
 
----
+Set `EMAIL_PROVIDER=resend` and `RESEND_API_KEY`. Verify your sending domain with the provider and configure sender/support identity in **Settings → General** and **Settings → Brand**.
 
-## Supported providers
+For delivery feedback, register `https://<store-domain>/api/webhooks/email-provider`, subscribe to the delivery/bounce/complaint events you use, and set `RESEND_WEBHOOK_SECRET`. Restart or redeploy after changing the environment.
 
-- **Resend** (recommended)
-- **SMTP** (any provider)
+The Developer connection test reads provider domain status; it does not send a message. A restricted send-only key may send successfully while lacking diagnostic read permission. Use a saved-template test to validate the actual email path.
 
----
+## SMTP
 
-## Resend setup
+Set `EMAIL_PROVIDER=smtp` together with `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USERNAME`, `SMTP_PASSWORD` and `SMTP_FROM_EMAIL`. Port defaults to 587 and secure defaults to false. The Developer test verifies the configured SMTP connection without sending.
 
-**1. Create API key**
+## Merchant workflow
 
-In the Resend dashboard, create an API key with send permissions.
+**Settings → Customer emails** edits order-confirmation/shipping-update templates, enablement and reply-to addresses. Store contact identity is managed in General. Save a template before using **Send saved template test**. Brand settings own logos and support identity. These business fields remain in Postgres.
 
-Set:
-```
-RESEND_API_KEY=re_...
-```
+**System → Delivery logs** shows safe delivery status and provider metadata. Missing configuration, explicit preview and real provider failure are reported without a false sent confirmation. A failure does not roll back a paid order or repeat inventory changes.
 
-**2. Verify sending domain**
+## Unknown send outcomes
 
-Add and verify your sending domain in Resend. Confirm SPF/DKIM/DMARC records are valid before public launch.
+An external provider can accept mail just before a worker crashes or times out. Persisted send-attempt state prevents an automatic duplicate retry in that case. Review the provider's delivery log and the matching Doopify record before explicitly resending an eligible failed message. Do not claim exactly-once delivery across SMTP/provider boundaries.
 
-**3. Configure in admin**
-
-Go to **Settings → Email** in the admin. Open the Resend drawer and save your API key.
-
-**4. Register bounce/complaint webhook (recommended)**
-
-Register the email provider webhook endpoint:
-- URL: `https://<your-domain>/api/webhooks/email-provider`
-- Events: `email.bounced`, `email.complained`
-
-Set:
-```
-RESEND_WEBHOOK_SECRET=whsec_...
-```
-
-This enables bounce and complaint tracking in the admin delivery log.
-
----
-
-## SMTP setup
-
-Set these environment variables:
-
-```
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USERNAME=your-smtp-user
-SMTP_PASSWORD=your-smtp-password
-SMTP_FROM_EMAIL=noreply@example.com
-```
-
----
-
-## Transactional email flows
-
-| Template | Trigger | Delivery logged |
-|---|---|---|
-| Order confirmation | `payment_intent.succeeded` webhook | Yes |
-| Shipping confirmation | Manual fulfillment with tracking | Yes |
-
----
-
-## Delivery observability
-
-Go to **System → Delivery logs** → Email tab in the admin to see:
-- Delivery status (`SENT`, `FAILED`, `BOUNCED`, `COMPLAINED`)
-- Provider metadata
-- Resend controls for failed/bounced deliveries
-
-Failed order confirmations can be resent without duplicating commerce side effects (no re-decrement of inventory, no re-creation of orders).
-
----
-
-## Preview mode (no provider configured)
-
-If no email provider is set, delivery records are created and marked `FAILED` with the reason `"No email provider configured"`. This lets you verify the email flow in development without a live provider.
+Configure the job runner for order/fulfillment email. See [worker deployment](../deployment/worker.md) and the [migration runbook](../ENV_ONLY_MIGRATION_RUNBOOK.md).

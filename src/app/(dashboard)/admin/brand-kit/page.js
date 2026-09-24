@@ -6,5 +6,5 @@ export const metadata = {
 };
 
 export default function BrandKitPage() {
-  redirect('/settings?section=brand-kit');
+  redirect('/admin/settings/brand');
 }

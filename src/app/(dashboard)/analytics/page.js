@@ -1,12 +1,9 @@
-"use client";
-
 import AnalyticsWorkspace from '@/components/analytics/AnalyticsWorkspace';
-import DashboardRouteProviders from '@/components/dashboard/DashboardRouteProviders';
+import { requirePageRole } from '@/server/auth/page-auth';
+import { getAnalytics } from '@/server/services/analytics.service';
 
-export default function AnalyticsPage() {
-  return (
-    <DashboardRouteProviders customers discounts orders products>
-      <AnalyticsWorkspace />
-    </DashboardRouteProviders>
-  );
+export default async function AnalyticsPage() {
+  await requirePageRole();
+  const metrics = await getAnalytics();
+  return <AnalyticsWorkspace metrics={metrics} />;
 }

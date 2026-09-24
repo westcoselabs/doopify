@@ -168,9 +168,6 @@ export async function updateStoreSettings(
     shippingThresholdCents: number
     shippingDomesticRateCents: number
     shippingInternationalRateCents: number
-    shippingProviderUsage: 'LIVE_AND_LABELS' | 'LABELS_ONLY' | 'LIVE_RATES_ONLY'
-    activeRateProvider: 'NONE' | 'EASYPOST' | 'SHIPPO'
-    labelProvider: 'NONE' | 'EASYPOST' | 'SHIPPO'
     fallbackBehavior: 'SHOW_FALLBACK' | 'HIDE_SHIPPING' | 'MANUAL_QUOTE'
     manualFulfillmentInstructions: string | null
     manualTrackingBehavior: string | null

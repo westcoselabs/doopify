@@ -1,25 +1,19 @@
+import 'server-only'
 import Stripe from 'stripe'
-
 import { env } from '@/lib/env'
 
-function normalizeSecretKey(value: string | null | undefined) {
-  if (!value) return null
-  const normalized = value.trim()
-  return normalized || null
+let stripeClient: Stripe | undefined
+
+export function getStripeSdkClient() {
+  if (!env.STRIPE_SECRET_KEY) throw new Error('STRIPE_SECRET_KEY is not configured')
+  stripeClient ??= new Stripe(env.STRIPE_SECRET_KEY, { timeout: 15_000, maxNetworkRetries: 1 })
+  return stripeClient
 }
 
-function resolveStripeSecretKey(secretKeyOverride?: string | null) {
-  const override = normalizeSecretKey(secretKeyOverride)
-  if (override) return override
-
-  if (!env.STRIPE_SECRET_KEY) {
-    throw new Error('STRIPE_SECRET_KEY is not configured')
+export function getStripePublicConfig() {
+  const mode = env.STRIPE_SECRET_KEY?.match(/^(?:sk|rk)_(test|live)_/)?.[1]
+  return {
+    publishableKey: env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? null,
+    mode: mode === 'test' || mode === 'live' ? mode : null,
   }
-
-  return env.STRIPE_SECRET_KEY
-}
-
-export function getStripeSdkClient(secretKeyOverride?: string | null) {
-  const secretKey = resolveStripeSecretKey(secretKeyOverride)
-  return new Stripe(secretKey)
 }

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { cache } from 'react'
 
 import { centsToDollars, dollarsToCents } from '@/lib/money'
 import { prisma } from '@/lib/prisma'
@@ -7,23 +8,11 @@ import {
   getProductAvailabilityBadge,
   resolveEffectiveSalesMode,
 } from '@/server/services/product-availability.service'
-import type { Prisma } from '@prisma/client'
+import { Prisma } from '@prisma/client'
+import { catalogMediaSelect, catalogPagination, storefrontVisibleProductWhere } from './catalog-read'
 
-const storefrontVisibleProductWhere: Prisma.ProductWhereInput = {
-  status: 'ACTIVE',
-}
-
-const storefrontVisibleCollectionWhere: Prisma.CollectionWhereInput = {
-  isPublished: true,
-  products: {
-    some: {
-      product: storefrontVisibleProductWhere,
-    },
-  },
-}
-
-const storefrontVisibleCollectionProductWhere: Prisma.CollectionProductWhereInput = {
-  product: storefrontVisibleProductWhere,
+function storefrontVisibleCollectionWhere(now = new Date()): Prisma.CollectionWhereInput {
+  return { isPublished: true, products: { some: { product: storefrontVisibleProductWhere(now) } } }
 }
 
 const collectionAdminSummarySelect = {
@@ -61,7 +50,7 @@ const collectionAdminDetailInclude = {
           vendor: true,
           media: {
             include: {
-              asset: true,
+              asset: { select: catalogMediaSelect },
             },
             orderBy: {
               position: 'asc' as const,
@@ -83,7 +72,6 @@ const storefrontCollectionSummarySelect = {
   sortOrder: true,
   updatedAt: true,
   products: {
-    where: storefrontVisibleCollectionProductWhere,
     orderBy: {
       position: 'asc' as const,
     },
@@ -93,7 +81,7 @@ const storefrontCollectionSummarySelect = {
         select: {
           media: {
             include: {
-              asset: true,
+              asset: { select: catalogMediaSelect },
             },
             orderBy: {
               position: 'asc' as const,
@@ -108,7 +96,6 @@ const storefrontCollectionSummarySelect = {
 
 const storefrontCollectionDetailInclude = {
   products: {
-    where: storefrontVisibleCollectionProductWhere,
     orderBy: {
       position: 'asc' as const,
     },
@@ -132,17 +119,13 @@ const storefrontCollectionDetailInclude = {
           createdAt: true,
           media: {
             include: {
-              asset: true,
+              asset: { select: catalogMediaSelect },
             },
-            orderBy: {
-              position: 'asc' as const,
-            },
+            orderBy: [{ position: 'asc' as const }, { id: 'asc' as const }],
             take: 2,
           },
           variants: {
-            orderBy: {
-              position: 'asc' as const,
-            },
+            orderBy: [{ position: 'asc' as const }, { id: 'asc' as const }],
             select: {
               id: true,
               title: true,
@@ -341,59 +324,7 @@ function toStorefrontProduct(product: any) {
   }
 }
 
-function compareBySortOrder(a: any, b: any, sortOrder: string) {
-  if (sortOrder === 'NEWEST') {
-    return new Date(b.product.createdAt).getTime() - new Date(a.product.createdAt).getTime()
-  }
-
-  if (sortOrder === 'TITLE_ASC') {
-    return a.product.title.localeCompare(b.product.title)
-  }
-
-  if (sortOrder === 'PRICE_ASC') {
-    return Number(
-      a.product.variants?.[0]?.priceCents ??
-        dollarsToCents(a.product.variants?.[0]?.price ?? 0)
-    ) - Number(
-      b.product.variants?.[0]?.priceCents ??
-        dollarsToCents(b.product.variants?.[0]?.price ?? 0)
-    )
-  }
-
-  if (sortOrder === 'PRICE_DESC') {
-    return Number(
-      b.product.variants?.[0]?.priceCents ??
-        dollarsToCents(b.product.variants?.[0]?.price ?? 0)
-    ) - Number(
-      a.product.variants?.[0]?.priceCents ??
-        dollarsToCents(a.product.variants?.[0]?.price ?? 0)
-    )
-  }
-
-  return Number(a.position ?? 0) - Number(b.position ?? 0)
-}
-
-function toStorefrontCollection(collection: any) {
-  const sortedProducts = [...(collection.products || [])].sort((a, b) =>
-    compareBySortOrder(a, b, collection.sortOrder)
-  )
-
-  const products = sortedProducts.map((item) => toStorefrontProduct(item.product))
-  const coverImage = collection.imageUrl || products[0]?.media?.[0]?.url || null
-
-  return {
-    id: collection.id,
-    title: collection.title,
-    handle: collection.handle,
-    description: collection.description,
-    imageUrl: coverImage,
-    sortOrder: collection.sortOrder,
-    productCount: products.length,
-    products,
-  }
-}
-
-async function getVisibleCollectionProductCounts(collectionIds: string[]) {
+async function getVisibleCollectionProductCounts(collectionIds: string[], now: Date) {
   if (!collectionIds.length) {
     return new Map<string, number>()
   }
@@ -404,7 +335,7 @@ async function getVisibleCollectionProductCounts(collectionIds: string[]) {
       collectionId: {
         in: collectionIds,
       },
-      product: storefrontVisibleProductWhere,
+      product: storefrontVisibleProductWhere(now),
     },
     _count: {
       _all: true,
@@ -637,32 +568,89 @@ export async function deleteCollection(id: string) {
   })
 }
 
-export async function getStorefrontCollectionSummaries() {
-  const collections = await prisma.collection.findMany({
-    where: storefrontVisibleCollectionWhere,
-    select: storefrontCollectionSummarySelect,
-    orderBy: {
-      updatedAt: 'desc',
-    },
-  })
-
-  const countsByCollectionId = await getVisibleCollectionProductCounts(
-    collections.map((collection) => collection.id)
-  )
-
-  return collections.map((collection) =>
-    toStorefrontCollectionSummary(collection, countsByCollectionId.get(collection.id) ?? 0)
-  )
+export async function getStorefrontCollectionSummaries(params: { page?: number; pageSize?: number; excludeHandle?: string } = {}) {
+  const { page, pageSize } = catalogPagination(params)
+  const now = new Date()
+  const where: Prisma.CollectionWhereInput = {
+    ...storefrontVisibleCollectionWhere(now),
+    ...(params.excludeHandle ? { handle: { not: params.excludeHandle } } : {}),
+  }
+  const [collections, total] = await Promise.all([
+    prisma.collection.findMany({
+      where,
+      select: {
+        ...storefrontCollectionSummarySelect,
+        products: {
+          ...storefrontCollectionSummarySelect.products,
+          where: { product: storefrontVisibleProductWhere(now) },
+        },
+      },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+      skip: (page - 1) * pageSize,
+      take: pageSize,
+    }),
+    prisma.collection.count({ where }),
+  ])
+  const counts = await getVisibleCollectionProductCounts(collections.map((collection) => collection.id), now)
+  return {
+    collections: collections.map((collection) => toStorefrontCollectionSummary(collection, counts.get(collection.id) ?? 0)),
+    pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+  }
 }
 
-export async function getStorefrontCollectionByHandle(handle: string) {
-  const collection = await prisma.collection.findFirst({
-    where: {
-      handle,
-      ...storefrontVisibleCollectionWhere,
-    },
-    include: storefrontCollectionDetailInclude,
+export const getStorefrontCollectionMetadata = cache(async (handle: string) => {
+  return prisma.collection.findFirst({
+    where: { handle, ...storefrontVisibleCollectionWhere() },
+    select: { id: true, title: true, handle: true, description: true, imageUrl: true, sortOrder: true },
   })
+})
 
-  return collection ? toStorefrontCollection(collection) : null
+export async function getStorefrontCollectionByHandle(handle: string, params: { page?: number; pageSize?: number } = {}) {
+  const collection = await getStorefrontCollectionMetadata(handle)
+  if (!collection) return null
+  const { page, pageSize } = catalogPagination(params)
+  const now = new Date()
+  const where: Prisma.CollectionProductWhereInput = { collectionId: collection.id, product: storefrontVisibleProductWhere(now) }
+  const orderBy: Prisma.CollectionProductOrderByWithRelationInput[] = collection.sortOrder === 'NEWEST'
+    ? [{ product: { createdAt: 'desc' } }, { productId: 'asc' }]
+    : collection.sortOrder === 'TITLE_ASC'
+      ? [{ product: { title: 'asc' } }, { productId: 'asc' }]
+      : [{ position: 'asc' }, { productId: 'asc' }]
+
+  async function loadPage() {
+    if (collection!.sortOrder !== 'PRICE_ASC' && collection!.sortOrder !== 'PRICE_DESC') {
+      return prisma.collectionProduct.findMany({ where, include: storefrontCollectionDetailInclude.products.include, orderBy, skip: (page - 1) * pageSize, take: pageSize })
+    }
+    // Match the established primary-variant price semantics, sorting before hydration.
+    const direction = collection!.sortOrder === 'PRICE_DESC' ? Prisma.sql`DESC` : Prisma.sql`ASC`
+    const ids = await prisma.$queryRaw<Array<{ productId: string }>>(Prisma.sql`
+      SELECT cp."productId" FROM "collection_products" cp
+      JOIN "products" p ON p."id" = cp."productId"
+      LEFT JOIN LATERAL (
+        SELECT v."priceCents" FROM "product_variants" v WHERE v."productId" = p."id"
+        ORDER BY v."position" ASC, v."id" ASC LIMIT 1
+      ) primary_variant ON TRUE
+      WHERE cp."collectionId" = ${collection!.id} AND p."status" = 'ACTIVE'
+        AND (p."publishedAt" IS NULL OR p."publishedAt" <= ${now})
+      ORDER BY COALESCE(primary_variant."priceCents", 0) ${direction}, cp."productId" ASC
+      LIMIT ${pageSize} OFFSET ${(page - 1) * pageSize}
+    `)
+    if (!ids.length) return []
+    const rows = await prisma.collectionProduct.findMany({ where: { ...where, productId: { in: ids.map((row) => row.productId) } }, include: storefrontCollectionDetailInclude.products.include })
+    const positions = new Map(ids.map((row, index) => [row.productId, index]))
+    return rows.sort((left, right) => positions.get(left.productId)! - positions.get(right.productId)!)
+  }
+  const [rows, total] = await Promise.all([loadPage(), prisma.collectionProduct.count({ where })])
+  const products = rows.map((row) => toStorefrontProduct(row.product))
+  return {
+    id: collection.id,
+    title: collection.title,
+    handle: collection.handle,
+    description: collection.description,
+    sortOrder: collection.sortOrder,
+    imageUrl: collection.imageUrl || products[0]?.media?.[0]?.url || null,
+    productCount: total,
+    products,
+    pagination: { page, pageSize, total, totalPages: Math.ceil(total / pageSize) },
+  }
 }

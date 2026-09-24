@@ -6,8 +6,8 @@ import { decrypt, decryptWithCurrentEncryptionKey, encrypt, getEncryptionRotatio
 const testEncryptionKey = 'D9g_7eQx3mF5aP1vK8rT2yW6cN4hJ0sL9bU5zX1qR7M'
 
 afterEach(() => {
-  process.env.ENCRYPTION_KEY = testEncryptionKey
-  delete process.env.ENCRYPTION_KEY_PREVIOUS
+  process.env.DATA_ENCRYPTION_KEY = testEncryptionKey
+  delete process.env.DATA_ENCRYPTION_KEY_PREVIOUS
 })
 
 function encryptLegacy(value: string, keySecret: string) {
@@ -21,7 +21,7 @@ function encryptLegacy(value: string, keySecret: string) {
 
 describe('crypto', () => {
   it('round-trips encrypted values with a configured key', () => {
-    process.env.ENCRYPTION_KEY = testEncryptionKey
+    process.env.DATA_ENCRYPTION_KEY = testEncryptionKey
 
     const encrypted = encrypt('merchant-secret')
 
@@ -30,15 +30,15 @@ describe('crypto', () => {
     expect(decrypt(encrypted)).toBe('merchant-secret')
   })
 
-  it('fails closed when ENCRYPTION_KEY is missing', () => {
-    delete process.env.ENCRYPTION_KEY
+  it('fails closed when DATA_ENCRYPTION_KEY is missing', () => {
+    delete process.env.DATA_ENCRYPTION_KEY
 
-    expect(() => encrypt('merchant-secret')).toThrow(/ENCRYPTION_KEY must be a high-entropy/i)
-    expect(() => decrypt('legacy-value')).toThrow(/ENCRYPTION_KEY must be a high-entropy/i)
+    expect(() => encrypt('merchant-secret')).toThrow(/DATA_ENCRYPTION_KEY must be a high-entropy/i)
+    expect(() => decrypt('legacy-value')).toThrow(/DATA_ENCRYPTION_KEY must be a high-entropy/i)
   })
 
-  it('fails closed when ENCRYPTION_KEY is too short', () => {
-    process.env.ENCRYPTION_KEY = 'too-short'
+  it('fails closed when DATA_ENCRYPTION_KEY is too short', () => {
+    process.env.DATA_ENCRYPTION_KEY = 'too-short'
 
     expect(() => encrypt('merchant-secret')).toThrow(/at least 32 characters/i)
   })
@@ -51,13 +51,13 @@ describe('crypto', () => {
     expect(isCurrentEncryptionEnvelope(reEncryptToCurrent(legacy))).toBe(true)
   })
 
-  it('uses ENCRYPTION_KEY_PREVIOUS only for decryption during rotation', () => {
+  it('uses DATA_ENCRYPTION_KEY_PREVIOUS only for decryption during rotation', () => {
     const previousKey = 'mK3qV8zP1xR6tN4wC9fH2jL7sA5dG0yB8uE1iO6rT9W'
-    process.env.ENCRYPTION_KEY = previousKey
+    process.env.DATA_ENCRYPTION_KEY = previousKey
     const encryptedWithPrevious = encrypt('rotate-me')
 
-    process.env.ENCRYPTION_KEY = testEncryptionKey
-    process.env.ENCRYPTION_KEY_PREVIOUS = previousKey
+    process.env.DATA_ENCRYPTION_KEY = testEncryptionKey
+    process.env.DATA_ENCRYPTION_KEY_PREVIOUS = previousKey
 
     expect(decrypt(encryptedWithPrevious)).toBe('rotate-me')
     expect(getEncryptionRotationDecision(encryptedWithPrevious)).toEqual({ plaintext: 'rotate-me', needsRotation: true })
@@ -65,7 +65,7 @@ describe('crypto', () => {
     expect(decrypt(reencrypted)).toBe('rotate-me')
     expect(decryptWithCurrentEncryptionKey(reencrypted)).toBe('rotate-me')
 
-    delete process.env.ENCRYPTION_KEY_PREVIOUS
+    delete process.env.DATA_ENCRYPTION_KEY_PREVIOUS
     expect(decrypt(reencrypted)).toBe('rotate-me')
   })
 
@@ -75,7 +75,7 @@ describe('crypto', () => {
     ['replace_with_a_random_secret_at_least_32_chars', 'placeholder'],
     ['abcabcabcabcabcabcabcabcabcabcabcabcabcabc', 'low unique characters'],
   ])('rejects %s encryption key values', (key) => {
-    process.env.ENCRYPTION_KEY = key
+    process.env.DATA_ENCRYPTION_KEY = key
     expect(() => encrypt('merchant-secret')).toThrow(/high-entropy/i)
   })
 

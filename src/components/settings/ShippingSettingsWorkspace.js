@@ -1,44 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 
-import AppShell from "../AppShell";
+import Link from "next/link";
 import AdminButton from "../admin/ui/AdminButton";
-import AdminCard from "../admin/ui/AdminCard";
 import AdminDrawer from "../admin/ui/AdminDrawer";
-import AdminEmptyState from "../admin/ui/AdminEmptyState";
 import AdminField from "../admin/ui/AdminField";
 import AdminInput from "../admin/ui/AdminInput";
 import AdminSelect from "../admin/ui/AdminSelect";
 import AdminStatusChip from "../admin/ui/AdminStatusChip";
 import AdminTextarea from "../admin/ui/AdminTextarea";
-import AdminTooltip from "../admin/ui/AdminTooltip";
-import {
-  buildCheckoutMethodDraft,
-  buildCheckoutMethodPatch,
-  isCheckoutMethodEqual,
-  providerSelectionToLegacyUsage,
-} from "./shipping-checkout-method.helpers";
 import ShippingSettingsWorkspaceHeader from "./ShippingSettingsWorkspaceHeader";
 import ShippingSettingsWorkspaceSkeleton from "./ShippingSettingsWorkspaceSkeleton";
 import ShippingSettingsWorkspaceStatusStack from "./ShippingSettingsWorkspaceStatusStack";
-import { createProviderVerificationGuard } from "./shipping-provider-verification-guard";
 import styles from "./SettingsWorkspace.module.css";
-
-const PROVIDER_OPTIONS = [
-  { value: "NONE", label: "None" },
-  { value: "SHIPPO", label: "Shippo" },
-  { value: "EASYPOST", label: "EasyPost" },
-];
 
 const MODE_OPTIONS = [
   { value: "LIVE_RATES", label: "Live carrier rates" },
   { value: "MANUAL", label: "Manual rates" },
-  { value: "HYBRID", label: "Hybrid" },
+  { value: "HYBRID", label: "Live with fallback" },
 ];
 
 const MODE_CARD_DESCRIPTIONS = {
-  LIVE_RATES: "Customers see real-time rates from your selected provider.",
+  LIVE_RATES: "Customers see real-time rates from the carrier.",
   MANUAL: "Customers see your fixed manual rates at checkout.",
   HYBRID: "Doopify tries live rates first, then falls back to manual rates if allowed.",
 };
@@ -48,21 +32,6 @@ const FALLBACK_BEHAVIOR_OPTIONS = [
   { value: "HIDE_SHIPPING", label: "Hide shipping (show checkout error)" },
   { value: "MANUAL_QUOTE", label: "Show manual quote request" },
 ];
-
-const PROVIDER_USAGE_OPTIONS = [
-  { value: "LIVE_AND_LABELS", label: "Live rates and label buying" },
-  { value: "LABELS_ONLY", label: "Label buying only" },
-  { value: "LIVE_RATES_ONLY", label: "Live rates only" },
-];
-
-const PROVIDER_USAGE_HELPER_COPY = {
-  LIVE_AND_LABELS:
-    "Checkout uses live carrier rates and Doopify can also buy labels after orders are paid.",
-  LABELS_ONLY:
-    "Checkout does not request live carrier rates. Doopify can buy labels only after orders are paid.",
-  LIVE_RATES_ONLY:
-    "Checkout uses live carrier rates, but label purchase remains disabled for this provider.",
-};
 
 const DEFAULT_PACKAGE_FORM = {
   id: "",
@@ -121,11 +90,6 @@ const DEFAULT_FALLBACK_RATE_FORM = {
   isActive: true,
 };
 
-const DEFAULT_PROVIDER_FORM = {
-  provider: "NONE",
-  usage: "LIVE_AND_LABELS",
-  token: "",
-};
 
 const DEFAULT_MANUAL_FULFILLMENT_FORM = {
   manualFulfillmentInstructions: "",
@@ -233,52 +197,32 @@ function renderRateSummary(rate, currency) {
   return formatMoney(rate.amount, currency);
 }
 
-function formatShippingProviderName(provider) {
-  if (provider === "SHIPPO") return "Shippo";
-  if (provider === "EASYPOST") return "EasyPost";
-  return "Provider";
-}
-
-function isVerificationTemporarilyUnavailable(message) {
-  const normalized = String(message || "").trim().toLowerCase();
-  if (!normalized) return false;
-  return (
-    normalized.includes("timeout") ||
-    normalized.includes("timed out") ||
-    normalized.includes("network") ||
-    normalized.includes("temporarily unavailable")
-  );
+function businessDraft(defaults, settings) {
+  return Object.fromEntries(Object.entries(defaults).map(([key, fallback]) => {
+    const value = settings?.[key];
+    return [key, value == null ? fallback : typeof fallback === "string" ? String(value) : value];
+  }));
 }
 
 export default function ShippingSettingsWorkspace({
-  embedded = false,
-  onModeSaveStateChange,
-  onRegisterSaveAction,
+  initialSettings,
+  canViewDeveloper = false,
 } = {}) {
-  const [loading, setLoading] = useState(true);
-  const [setupStatusLoading, setSetupStatusLoading] = useState(false);
+  const [loading, setLoading] = useState(!initialSettings);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [modeSaveState, setModeSaveState] = useState("saved");
   const [modeSaveError, setModeSaveError] = useState("");
-  const saveCheckoutMethodRef = useRef(null);
   const loadRequestIdRef = useRef(0);
-  const [providerVerificationGuard] = useState(() => createProviderVerificationGuard());
 
-  const [settings, setSettings] = useState(null);
-  const [setupStatus, setSetupStatus] = useState(null);
+  const [settings, setSettings] = useState(initialSettings);
 
-  const [mode, setMode] = useState("MANUAL");
-  const [activeRateProvider, setActiveRateProvider] = useState("NONE");
-  const [labelProvider, setLabelProvider] = useState("NONE");
-  const [fallbackBehavior, setFallbackBehavior] = useState("SHOW_FALLBACK");
-
-  const [providerDrawerOpen, setProviderDrawerOpen] = useState(false);
-  const [providerForm, setProviderForm] = useState(DEFAULT_PROVIDER_FORM);
-  const [providerTestMessage, setProviderTestMessage] = useState("");
-  const [providerVerifyLoading, setProviderVerifyLoading] = useState(false);
-  const [showProviderAdvanced, setShowProviderAdvanced] = useState(false);
+  const [mode, setMode] = useState(initialSettings?.shippingMode || "MANUAL");
+  const activeRateProvider = settings?.activeRateProvider || "NONE";
+  const labelProvider = settings?.labelProvider || "NONE";
+  const shippoInUse = activeRateProvider === "SHIPPO" || labelProvider === "SHIPPO";
+  const [fallbackBehavior, setFallbackBehavior] = useState(initialSettings?.fallbackBehavior || "SHOW_FALLBACK");
 
   const [packageDrawerOpen, setPackageDrawerOpen] = useState(false);
   const [locationDrawerOpen, setLocationDrawerOpen] = useState(false);
@@ -291,18 +235,19 @@ export default function ShippingSettingsWorkspace({
 
   const [packageForm, setPackageForm] = useState(DEFAULT_PACKAGE_FORM);
   const [locationForm, setLocationForm] = useState(DEFAULT_LOCATION_FORM);
+  const resolvedShipFromEmail = normalizeOptional(locationForm.email) || normalizeOptional(settings?.supportEmail) || normalizeOptional(settings?.email);
+  const resolvedShipFromPhone = normalizeOptional(locationForm.phone) || normalizeOptional(settings?.supportPhone) || normalizeOptional(settings?.phone) || normalizeOptional(settings?.shippingOriginPhone);
   const [manualForm, setManualForm] = useState(DEFAULT_MANUAL_RATE_FORM);
   const [fallbackForm, setFallbackForm] = useState(DEFAULT_FALLBACK_RATE_FORM);
-  const [manualFulfillmentForm, setManualFulfillmentForm] = useState(DEFAULT_MANUAL_FULFILLMENT_FORM);
-  const [localDeliveryForm, setLocalDeliveryForm] = useState(DEFAULT_LOCAL_DELIVERY_FORM);
-  const [pickupForm, setPickupForm] = useState(DEFAULT_PICKUP_FORM);
-  const [packingSlipForm, setPackingSlipForm] = useState(DEFAULT_PACKING_SLIP_FORM);
-  const [locationValidationMessage, setLocationValidationMessage] = useState("");
+  const [manualFulfillmentForm, setManualFulfillmentForm] = useState(() => businessDraft(DEFAULT_MANUAL_FULFILLMENT_FORM, initialSettings));
+  const [localDeliveryForm, setLocalDeliveryForm] = useState(() => businessDraft(DEFAULT_LOCAL_DELIVERY_FORM, initialSettings));
+  const [pickupForm, setPickupForm] = useState(() => businessDraft(DEFAULT_PICKUP_FORM, initialSettings));
+  const [packingSlipForm, setPackingSlipForm] = useState(() => businessDraft(DEFAULT_PACKING_SLIP_FORM, initialSettings));
   const [locationDrawerError, setLocationDrawerError] = useState("");
   const [packageDrawerError, setPackageDrawerError] = useState("");
   const [manualDrawerError, setManualDrawerError] = useState("");
   const [savedCheckoutMethod, setSavedCheckoutMethod] = useState(
-    buildCheckoutMethodDraft("MANUAL", "NONE", "NONE", "SHOW_FALLBACK")
+    { mode: initialSettings?.shippingMode || "MANUAL", fallbackBehavior: initialSettings?.fallbackBehavior || "SHOW_FALLBACK" }
   );
 
   const packages = settings?.shippingPackages || [];
@@ -311,215 +256,22 @@ export default function ShippingSettingsWorkspace({
   const fallbackRates = settings?.shippingFallbackRates || [];
   const currency = settings?.currency || "USD";
 
-  const hasDefaultPackage = useMemo(
-    () => packages.some((entry) => entry.isDefault && entry.isActive),
-    [packages]
-  );
-  const hasDefaultLocation = useMemo(
-    () => locations.some((entry) => entry.isDefault && entry.isActive),
-    [locations]
-  );
-  const defaultLocationEntry = useMemo(
-    () => locations.find((entry) => entry.isDefault && entry.isActive) || locations[0] || null,
-    [locations]
-  );
-  const defaultPackageEntry = useMemo(
-    () => packages.find((entry) => entry.isDefault && entry.isActive) || packages[0] || null,
-    [packages]
-  );
-  const setupStatusPending = setupStatusLoading && !setupStatus;
-  const hasLabelProviderConnection = setupStatusPending
-    ? null
-    : Boolean(setupStatus?.labelProviderConnected ?? setupStatus?.providerConnected);
-  const hasFallbackRate = useMemo(
-    () => Boolean(setupStatus?.hasFallbackRate ?? fallbackRates.some((entry) => entry.isActive)),
-    [fallbackRates, setupStatus?.hasFallbackRate]
-  );
-  const shippingProviderConnections = setupStatus?.shippingProviderConnections || {};
-  const shippoConnection = shippingProviderConnections.SHIPPO || {};
-  const easypostConnection = shippingProviderConnections.EASYPOST || {};
-  const selectedLiveProviderConnection =
-    activeRateProvider !== "NONE" ? shippingProviderConnections[activeRateProvider] || null : null;
-  const selectedLiveProviderConnected = Boolean(selectedLiveProviderConnection?.connected);
-  const selectedLiveProviderHasCredentials = Boolean(selectedLiveProviderConnection?.hasCredentials);
-  const shippoInUse = activeRateProvider === "SHIPPO" || labelProvider === "SHIPPO";
-  const shippoConnectedButNotSelected =
-    !setupStatusPending && Boolean(shippoConnection.connected || shippoConnection.hasCredentials) && activeRateProvider !== "SHIPPO";
-  const liveRateProviderSelected = activeRateProvider !== "NONE";
-  const liveRateProviderUsageAllowsRates =
-    activeRateProvider !== "NONE" && providerSelectionToLegacyUsage(activeRateProvider, labelProvider) !== "LABELS_ONLY";
-  const manualFulfillmentConfigured = Boolean(
-    (manualFulfillmentForm.manualFulfillmentInstructions || "").trim() ||
-      (manualFulfillmentForm.manualTrackingBehavior || "").trim()
-  );
-  const missingLiveRateRequirements =
-    !setupStatusLoading &&
-    (mode === "LIVE_RATES" || mode === "HYBRID") &&
-    (!hasDefaultLocation || !hasDefaultPackage || !liveRateProviderSelected || !selectedLiveProviderConnected);
-  const resolvedShipFromEmail =
-    normalizeOptional(defaultLocationEntry?.email) ||
-    normalizeOptional(settings?.supportEmail) ||
-    normalizeOptional(settings?.email) ||
-    normalizeOptional(settings?.shippingOriginEmail);
-  const resolvedShipFromPhone =
-    normalizeOptional(defaultLocationEntry?.phone) ||
-    normalizeOptional(settings?.supportPhone) ||
-    normalizeOptional(settings?.phone) ||
-    normalizeOptional(settings?.shippingOriginPhone);
-  const missingShipFromEmailForShippo = shippoInUse && !resolvedShipFromEmail;
-  const missingShipFromPhoneForShippo = shippoInUse && !resolvedShipFromPhone;
-  const liveRatesReady =
-    (mode === "LIVE_RATES" || mode === "HYBRID") &&
-    liveRateProviderSelected &&
-    selectedLiveProviderConnected &&
-    liveRateProviderUsageAllowsRates &&
-    hasDefaultLocation &&
-    hasDefaultPackage &&
-    !(activeRateProvider === "SHIPPO" && !resolvedShipFromEmail);
-  const checkoutMethodDraft = useMemo(
-    () => buildCheckoutMethodDraft(mode, activeRateProvider, labelProvider, fallbackBehavior),
-    [mode, activeRateProvider, labelProvider, fallbackBehavior]
-  );
-  const checkoutMethodDirty = useMemo(
-    () => !isCheckoutMethodEqual(checkoutMethodDraft, savedCheckoutMethod),
-    [checkoutMethodDraft, savedCheckoutMethod]
-  );
-  const providerVerificationPresentation = useMemo(() => {
-    if (setupStatusPending) {
-      return {
-        tone: "neutral",
-        label: "Loading saved status...",
-        detail: "Loading saved verification state.",
-      };
-    }
-
-    const status = String(setupStatus?.providerVerificationStatus || "").trim().toLowerCase();
-    if (status === "verified") {
-      return {
-        tone: "success",
-        label: "Verified",
-        detail: "Live provider verification passed.",
-      };
-    }
-    if (status === "configured") {
-      return {
-        tone: "warning",
-        label: "Configured",
-        detail: "Saved config is ready. Run verification to confirm live connectivity.",
-      };
-    }
-    if (status === "verification_unavailable") {
-      return {
-        tone: "warning",
-        label: "Verification unavailable",
-        detail: "Saved configuration is present, but verification metadata is unavailable.",
-      };
-    }
-    if (status === "needs_attention" && isVerificationTemporarilyUnavailable(setupStatus?.providerLastError)) {
-      return {
-        tone: "warning",
-        label: "Verification unavailable",
-        detail: "Saved configuration is present, but live verification is temporarily unavailable.",
-      };
-    }
-    if (status === "needs_attention") {
-      return {
-        tone: "danger",
-        label: "Needs attention",
-        detail: setupStatus?.providerLastError || "Provider verification failed. Review credentials and retry.",
-      };
-    }
-    return {
-      tone: "warning",
-      label: "Needs setup",
-      detail: "Provider setup is incomplete for the selected checkout mode.",
-    };
-  }, [setupStatus?.providerLastError, setupStatus?.providerVerificationStatus, setupStatusPending]);
-  const drawerProviderConnectionState = useMemo(() => {
-    if (providerForm.provider === "NONE") {
-      return {
-        tone: "neutral",
-        label: "Not connected",
-        detail: "Select Shippo or EasyPost to connect credentials.",
-      };
-    }
-
-    const providerName = formatShippingProviderName(providerForm.provider);
-    const connection = shippingProviderConnections[providerForm.provider] || {};
-    const connected = Boolean(connection.connected);
-    const hasCredentials = Boolean(connection.hasCredentials);
-
-    if (setupStatusPending) {
-      return {
-        tone: "neutral",
-        label: "Loading saved status...",
-        detail: `${providerName} connection status is still loading.`,
-      };
-    }
-
-    if (connected) {
-      return {
-        tone: "success",
-        label: "Connected",
-        detail: `${providerName} is connected and available with your current shipping settings.`,
-      };
-    }
-
-    if (hasCredentials) {
-      return {
-        tone: "warning",
-        label: "Credentials saved",
-        detail: `${providerName} credentials are saved. Verify connection before using this provider for checkout live rates.`,
-      };
-    }
-
-    return {
-      tone: "warning",
-      label: "Not connected",
-      detail: `${providerName} is not connected. Save credentials and verify connection to use this provider.`,
-    };
-  }, [
-    providerForm.provider,
-    shippingProviderConnections,
-    setupStatusPending,
-  ]);
+  const checkoutMethodDirty = mode !== savedCheckoutMethod.mode || fallbackBehavior !== savedCheckoutMethod.fallbackBehavior;
 
   const load = useCallback(async () => {
     const requestId = ++loadRequestIdRef.current;
     setLoading(true);
     setError("");
-    setSetupStatusLoading(true);
     try {
       const shipping = await fetch("/api/settings/shipping", { cache: "no-store" }).then(parseApiJson);
       if (requestId !== loadRequestIdRef.current) return;
 
       setSettings(shipping);
       setMode(shipping.shippingMode || "MANUAL");
-      setActiveRateProvider(shipping.activeRateProvider || "NONE");
-      setLabelProvider(shipping.labelProvider || "NONE");
       setFallbackBehavior(shipping.fallbackBehavior || "SHOW_FALLBACK");
-      setSavedCheckoutMethod(
-        buildCheckoutMethodDraft(
-          shipping.shippingMode || "MANUAL",
-          shipping.activeRateProvider || "NONE",
-          shipping.labelProvider || "NONE",
-          shipping.fallbackBehavior || "SHOW_FALLBACK"
-        )
-      );
+      setSavedCheckoutMethod({mode:shipping.shippingMode || "MANUAL",fallbackBehavior:shipping.fallbackBehavior || "SHOW_FALLBACK"});
       setModeSaveState("saved");
       setModeSaveError("");
-      setProviderForm({
-        provider:
-          shipping.activeRateProvider && shipping.activeRateProvider !== "NONE"
-            ? shipping.activeRateProvider
-            : shipping.labelProvider && shipping.labelProvider !== "NONE"
-              ? shipping.labelProvider
-              : "NONE",
-        usage:
-          shipping.shippingProviderUsage ||
-          providerSelectionToLegacyUsage(shipping.activeRateProvider || "NONE", shipping.labelProvider || "NONE"),
-        token: "",
-      });
       setManualFulfillmentForm({
         manualFulfillmentInstructions: shipping.manualFulfillmentInstructions || "",
         manualTrackingBehavior: shipping.manualTrackingBehavior || "",
@@ -547,46 +299,13 @@ export default function ShippingSettingsWorkspace({
       });
       setLoading(false);
 
-      void (async () => {
-        try {
-          const setup = await fetch("/api/settings/shipping/setup-status", { cache: "no-store" }).then(parseApiJson);
-          if (requestId !== loadRequestIdRef.current) return;
-          setSetupStatus(setup);
-        } catch {
-          if (requestId !== loadRequestIdRef.current) return;
-          // Preserve the previous saved snapshot on transient load failures
-          // so the UI does not regress to setup-missing while status refreshes.
-        } finally {
-          if (requestId !== loadRequestIdRef.current) return;
-          setSetupStatusLoading(false);
-        }
-      })();
     } catch (loadError) {
       if (requestId !== loadRequestIdRef.current) return;
       setError(loadError instanceof Error ? loadError.message : "Failed to load shipping settings");
       setLoading(false);
-      setSetupStatusLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-// eslint-disable-next-line react-hooks/set-state-in-effect -- intentional effect-driven state sync for existing async/load flow
-    load();
-  }, [load]);
-
-  useEffect(() => {
-    if (modeSaveState === "saving" || modeSaveState === "error") return;
-// eslint-disable-next-line react-hooks/set-state-in-effect -- intentional effect-driven state sync for existing async/load flow
-    setModeSaveState(checkoutMethodDirty ? "dirty" : "saved");
-  }, [checkoutMethodDirty, modeSaveState]);
-
-  useEffect(() => {
-    if (typeof onModeSaveStateChange !== "function") return;
-    onModeSaveStateChange(modeSaveState, {
-      errorCopy: modeSaveState === "error" ? modeSaveError || "Save failed" : "",
-      dirty: checkoutMethodDirty,
-    });
-  }, [modeSaveState, modeSaveError, checkoutMethodDirty, onModeSaveStateChange]);
 
   async function persistSettings(patch, message) {
     setSaving(true);
@@ -632,24 +351,15 @@ export default function ShippingSettingsWorkspace({
     }
   }
 
-  const saveCheckoutMethod = useCallback(async () => {
-    if ((mode === "LIVE_RATES" || mode === "HYBRID") && activeRateProvider === "NONE" && labelProvider !== "NONE") {
-      const blockedMessage =
-        "Checkout is set to live/hybrid, but provider usage is currently label buying only. Enable live-rate usage in the provider drawer first.";
-      setError(blockedMessage);
-      setModeSaveState("error");
-      setModeSaveError(blockedMessage);
-      return { success: false, message: blockedMessage };
-    }
-
+  async function saveCheckoutMethod() {
     setModeSaveState("saving");
     setModeSaveError("");
     const result = await persistSettings(
-      buildCheckoutMethodPatch(mode, activeRateProvider, labelProvider, fallbackBehavior),
+      { shippingMode: mode, fallbackBehavior },
       "Checkout shipping method saved."
     );
     if (result.success) {
-      const persistedDraft = buildCheckoutMethodDraft(mode, activeRateProvider, labelProvider, fallbackBehavior);
+      const persistedDraft = { mode, fallbackBehavior };
       setSavedCheckoutMethod(persistedDraft);
       setModeSaveState("saved_just_now");
       setModeSaveError("");
@@ -658,178 +368,6 @@ export default function ShippingSettingsWorkspace({
       setModeSaveError(result.message || "Save failed");
     }
     return result;
-  }, [mode, activeRateProvider, labelProvider, fallbackBehavior]);
-
-  useEffect(() => {
-    saveCheckoutMethodRef.current = saveCheckoutMethod;
-  }, [saveCheckoutMethod]);
-
-  useEffect(() => {
-    if (typeof onRegisterSaveAction !== "function") return;
-    onRegisterSaveAction(() => saveCheckoutMethodRef.current?.());
-    return () => onRegisterSaveAction(null);
-  }, [onRegisterSaveAction]);
-
-  async function saveProviderSettings() {
-    const provider = providerForm.provider;
-    const usage = providerForm.usage;
-    if (provider === "NONE") {
-      setError("Select Shippo or EasyPost in provider setup.");
-      return;
-    }
-
-    const isLiveAllowed = usage !== "LABELS_ONLY";
-    const isLabelAllowed = usage !== "LIVE_RATES_ONLY";
-    const nextActive = isLiveAllowed ? provider : "NONE";
-    const nextLabel = isLabelAllowed ? provider : "NONE";
-
-    setSaving(true);
-    setError("");
-    setNotice("");
-    try {
-      if (providerForm.token.trim()) {
-        await fetch("/api/settings/shipping/connect-provider", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, apiKey: providerForm.token.trim() }),
-        }).then(parseApiJson);
-      }
-
-      await fetch("/api/settings/shipping", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          shippingLiveProvider: provider,
-          shippingProviderUsage: usage,
-          activeRateProvider: nextActive,
-          labelProvider: nextLabel,
-        }),
-      }).then(parseApiJson);
-
-      setProviderForm((current) => ({ ...current, token: "" }));
-      setNotice(
-        isLiveAllowed
-          ? `${formatShippingProviderName(provider)} connected. Live rates provider selected.`
-          : `${formatShippingProviderName(provider)} connected for labels. Live rates provider not selected.`
-      );
-      await load();
-    } catch (providerError) {
-      setError(providerError instanceof Error ? providerError.message : "Failed to save provider settings");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function verifyProvider() {
-    const provider = providerForm.provider;
-    if (provider === "NONE") {
-      setError("Select a provider before verification.");
-      return;
-    }
-
-    const verificationToken = providerVerificationGuard.begin();
-    setProviderVerifyLoading(true);
-    setError("");
-    try {
-      const candidateApiKey = providerForm.token.trim();
-      const data = await fetch("/api/settings/shipping/test-provider", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider,
-          ...(candidateApiKey ? { apiKey: candidateApiKey } : {}),
-        }),
-      }).then(parseApiJson);
-
-      if (!providerVerificationGuard.isCurrent(verificationToken)) return;
-      setProviderTestMessage(data?.result?.message || "Provider verification completed.");
-      await load();
-    } catch (providerError) {
-      if (!providerVerificationGuard.isCurrent(verificationToken)) return;
-      setError(providerError instanceof Error ? providerError.message : "Failed to verify provider");
-    } finally {
-      if (!providerVerificationGuard.isCurrent(verificationToken)) return;
-      setProviderVerifyLoading(false);
-    }
-  }
-
-  function resetProviderDrawerVerificationState() {
-    providerVerificationGuard.closeDrawer();
-    // Verification ownership is drawer-local. A close must leave no stale
-    // loading/error/message state that can disable the next drawer instance.
-    setProviderVerifyLoading(false);
-    setProviderTestMessage("");
-    setError("");
-  }
-
-  async function disconnectProvider() {
-    const provider = providerForm.provider;
-    if (provider === "NONE") {
-      setError("Select a provider to disconnect.");
-      return;
-    }
-    if (!window.confirm(`Disconnect ${formatShippingProviderName(provider)}? This removes its saved credentials from Doopify.`)) {
-      return;
-    }
-
-    setSaving(true);
-    setError("");
-    setNotice("");
-    try {
-      await fetch("/api/settings/shipping/disconnect-provider", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider }),
-      }).then(parseApiJson);
-
-      const nextActive = activeRateProvider === provider ? "NONE" : activeRateProvider;
-      const nextLabel = labelProvider === provider ? "NONE" : labelProvider;
-      const legacyUsage = providerSelectionToLegacyUsage(nextActive, nextLabel);
-      const legacyProvider = nextActive !== "NONE" ? nextActive : nextLabel !== "NONE" ? nextLabel : null;
-
-      await fetch("/api/settings/shipping", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          shippingLiveProvider: legacyProvider,
-          shippingProviderUsage: legacyUsage,
-          activeRateProvider: nextActive,
-          labelProvider: nextLabel,
-        }),
-      }).then(parseApiJson);
-
-      setProviderForm((current) => ({ ...current, token: "" }));
-      setNotice("Provider disconnected.");
-      await load();
-    } catch (providerError) {
-      setError(providerError instanceof Error ? providerError.message : "Failed to disconnect provider");
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function validateLocationAddress() {
-    setSaving(true);
-    setError("");
-    setLocationValidationMessage("");
-    try {
-      const data = await fetch("/api/settings/shipping/locations/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          address1: locationForm.address1,
-          city: locationForm.city,
-          stateProvince: normalizeOptional(locationForm.stateProvince),
-          postalCode: locationForm.postalCode,
-          country: normalizeCountry(locationForm.country),
-        }),
-      }).then(parseApiJson);
-      setLocationValidationMessage(data?.message || "Validation complete.");
-    } catch (validationError) {
-      setError(validationError instanceof Error ? validationError.message : "Address validation failed");
-    } finally {
-      setSaving(false);
-    }
   }
 
   function openPackageDrawer(entry) {
@@ -855,7 +393,6 @@ export default function ShippingSettingsWorkspace({
   }
 
   function openLocationDrawer(entry) {
-    setLocationValidationMessage("");
     setLocationDrawerError("");
     if (!entry) {
       setLocationForm({ ...DEFAULT_LOCATION_FORM });
@@ -974,36 +511,6 @@ export default function ShippingSettingsWorkspace({
     setFallbackDrawerOpen(true);
   }
 
-  function deriveUsageForProvider(provider) {
-    if (activeRateProvider === provider && labelProvider === provider) {
-      return "LIVE_AND_LABELS";
-    }
-    if (activeRateProvider === provider) {
-      return "LIVE_RATES_ONLY";
-    }
-    if (labelProvider === provider) {
-      return "LABELS_ONLY";
-    }
-    return "LIVE_AND_LABELS";
-  }
-
-  function openProviderDrawerFor(provider) {
-    providerVerificationGuard.openDrawer();
-    setProviderVerifyLoading(false);
-    setProviderTestMessage("");
-    setError("");
-    setProviderForm((current) => ({
-      ...current,
-      provider,
-      usage: deriveUsageForProvider(provider),
-      token: "",
-    }));
-    setProviderDrawerOpen(true);
-    // Canonical server status, not an old verification response, owns the
-    // reopened drawer's connection presentation.
-    void load();
-  }
-
   async function savePackage() {
     setPackageDrawerError("");
     const packageValidationError = validatePackageForm();
@@ -1044,7 +551,7 @@ export default function ShippingSettingsWorkspace({
       return;
     }
 
-    await persistEntity(
+    const result = await persistEntity(
       locationForm.id ? `/api/settings/shipping/locations/${locationForm.id}` : "/api/settings/shipping/locations",
       locationForm.id ? "PATCH" : "POST",
       {
@@ -1064,7 +571,8 @@ export default function ShippingSettingsWorkspace({
       },
       locationForm.id ? "Ship-from location updated." : "Ship-from location added."
     );
-    setLocationDrawerOpen(false);
+    if (result.success) setLocationDrawerOpen(false);
+    else setLocationDrawerError(result.message || "Failed to save location.");
   }
 
   async function saveManualRate() {
@@ -1100,7 +608,7 @@ export default function ShippingSettingsWorkspace({
   }
 
   async function saveFallbackRate() {
-    await persistEntity(
+    const result = await persistEntity(
       fallbackForm.id
         ? `/api/settings/shipping/fallback-rates/${fallbackForm.id}`
         : "/api/settings/shipping/fallback-rates",
@@ -1115,22 +623,22 @@ export default function ShippingSettingsWorkspace({
       },
       fallbackForm.id ? "Fallback rate updated." : "Fallback rate added."
     );
-    setFallbackDrawerOpen(false);
+    if (result.success) setFallbackDrawerOpen(false);
   }
 
   async function saveManualFulfillmentSettings() {
-    await persistSettings(
+    const result = await persistSettings(
       {
         manualFulfillmentInstructions: normalizeOptional(manualFulfillmentForm.manualFulfillmentInstructions),
         manualTrackingBehavior: normalizeOptional(manualFulfillmentForm.manualTrackingBehavior),
       },
       "Manual fulfillment settings saved."
     );
-    setManualFulfillmentDrawerOpen(false);
+    if (result.success) setManualFulfillmentDrawerOpen(false);
   }
 
   async function saveLocalDeliverySettings() {
-    await persistSettings(
+    const result = await persistSettings(
       {
         localDeliveryEnabled: Boolean(localDeliveryForm.localDeliveryEnabled),
         localDeliveryPrice:
@@ -1146,11 +654,11 @@ export default function ShippingSettingsWorkspace({
       },
       "Local delivery settings saved."
     );
-    setLocalDeliveryDrawerOpen(false);
+    if (result.success) setLocalDeliveryDrawerOpen(false);
   }
 
   async function savePickupSettings() {
-    await persistSettings(
+    const result = await persistSettings(
       {
         pickupEnabled: Boolean(pickupForm.pickupEnabled),
         pickupLocation: normalizeOptional(pickupForm.pickupLocation),
@@ -1159,11 +667,11 @@ export default function ShippingSettingsWorkspace({
       },
       "Pickup settings saved."
     );
-    setPickupDrawerOpen(false);
+    if (result.success) setPickupDrawerOpen(false);
   }
 
   async function savePackingSlipSettings() {
-    await persistSettings(
+    const result = await persistSettings(
       {
         packingSlipUseLogo: Boolean(packingSlipForm.packingSlipUseLogo),
         packingSlipShowSku: Boolean(packingSlipForm.packingSlipShowSku),
@@ -1172,7 +680,7 @@ export default function ShippingSettingsWorkspace({
       },
       "Packing slip settings saved."
     );
-    setPackingSlipDrawerOpen(false);
+    if (result.success) setPackingSlipDrawerOpen(false);
   }
 
   const content = (
@@ -1184,32 +692,13 @@ export default function ShippingSettingsWorkspace({
         <ShippingSettingsWorkspaceStatusStack
           error={error}
           notice={notice}
-          setupStatusPending={!loading && setupStatusPending}
-          setupStatusPendingMessage="Loading saved status..."
         />
 
         {!loading ? (
           <div className={styles.configStack}>
             <section className={styles.configSection}>
               <div className={styles.sectionHeading}>
-                <h3>Simple rule</h3>
-              </div>
-              <p className={styles.statusText}>
-                Checkout rates decide what customers pay. Label providers create postage after the order is placed.
-              </p>
-              <p className={styles.compactMeta}>
-                Keep these configured separately so pilot checkout totals stay predictable while fulfillment stays flexible.
-              </p>
-              <div className={styles.methodChipRow}>
-                <span className={styles.methodChip}>Checkout rates</span>
-                <span className={styles.methodChip}>Label buying</span>
-                <span className={styles.methodChip}>Fallbacks</span>
-              </div>
-            </section>
-
-            <section className={styles.configSection}>
-              <div className={styles.sectionHeading}>
-                <h3>Checkout rate method</h3>
+                <h2>Checkout rates</h2>
               </div>
               <div className={styles.shippingModeGrid}>
                 {MODE_OPTIONS.map((option) => {
@@ -1217,6 +706,7 @@ export default function ShippingSettingsWorkspace({
                   return (
                     <button
                       type="button"
+                      aria-pressed={selected}
                       key={option.value}
                       className={`${styles.shippingModeCard} ${selected ? styles.shippingModeCardActive : ""}`}
                       onClick={() => {
@@ -1237,18 +727,7 @@ export default function ShippingSettingsWorkspace({
                 })}
               </div>
               <div className={styles.shippingModeFooter}>
-                <AdminField label="Live rates provider">
-                  <AdminSelect
-                    value={activeRateProvider}
-                    onChange={(value) => {
-                      setActiveRateProvider(value);
-                      setModeSaveState("dirty");
-                      setModeSaveError("");
-                    }}
-                    options={PROVIDER_OPTIONS}
-                  />
-                </AdminField>
-                <AdminField label="Fallback behavior">
+                {mode !== "MANUAL" && <AdminField label="If live rates are unavailable">
                   <AdminSelect
                     value={fallbackBehavior}
                     onChange={(value) => {
@@ -1258,26 +737,25 @@ export default function ShippingSettingsWorkspace({
                     }}
                     options={FALLBACK_BEHAVIOR_OPTIONS}
                   />
-                </AdminField>
+                </AdminField>}
               </div>
               <div className={styles.actionRow}>
-                <AdminButton disabled={saving} onClick={saveCheckoutMethod} size="sm" variant="secondary">
+                <AdminButton disabled={saving || !checkoutMethodDirty} onClick={saveCheckoutMethod} size="sm" variant="secondary">
                   {saving ? "Saving..." : "Save checkout method"}
                 </AdminButton>
               </div>
-              <p className={styles.compactMeta}>
-                {activeRateProvider !== "NONE"
-                  ? `${formatShippingProviderName(activeRateProvider)} selected for checkout live rates.`
-                  : mode === "LIVE_RATES" || mode === "HYBRID"
-                    ? "Choose Shippo or EasyPost before live rates can be ready."
-                    : "No live-rate provider selected."}
-              </p>
+              {mode !== "MANUAL" && activeRateProvider === "NONE" && (
+                <p className={styles.statusBlock} role="status">
+                  Live shipping rates are unavailable. Ask your developer to enable a shipping service.
+                  {canViewDeveloper && <Link prefetch={false} href="/admin/system/developer">View Developer status</Link>}
+                </p>
+              )}
               <p className={styles.compactMeta}>
                 {modeSaveState === "saving"
                   ? "Saving checkout method..."
                   : modeSaveState === "saved_just_now"
-                    ? "Saved just now. Run a checkout rate quote to confirm expected customer-facing options."
-                    : modeSaveState === "dirty"
+                    ? "Checkout rate method saved."
+                    : checkoutMethodDirty
                       ? "Unsaved changes. Save checkout method before leaving this section."
                       : modeSaveState === "error"
                         ? modeSaveError || "Save failed. Review the current selection and retry."
@@ -1287,398 +765,84 @@ export default function ShippingSettingsWorkspace({
 
             <section className={styles.configSection}>
               <div className={styles.sectionHeading}>
-                <h3>Live rate and label provider</h3>
+                <h2>Your shipping rates</h2>
               </div>
-              <div className={styles.shippingProviderList}>
-                <div className={styles.shippingProviderRow}>
-                  <div className={styles.shippingProviderMain}>
-                    <p className={styles.compactRowTitle}>Shippo</p>
-                    <p className={styles.compactRowDescription}>
-                      {shippoConnectedButNotSelected
-                        ? "Shippo is connected, but not selected for checkout live rates."
-                        : "Live rates, labels, tracking, and validation."}
+              <p className={styles.statusText}>Set the amounts customers pay when using manual rates or live rates with fallback.</p>
+              {manualRates.length ? (
+                manualRates.map((rate) => (
+                  <div className={styles.configRow} key={rate.id}>
+                    <p className={styles.statusText}>
+                      <strong>{rate.name}</strong> · {rate.regionCountry || "All regions"} ·{" "}
+                      {renderRateSummary(rate, currency)}
+                      {rate.estimatedDeliveryText ? ` · ${rate.estimatedDeliveryText}` : ""}
                     </p>
+                    <div className={styles.actionRow}>
+                      {!rate.isActive ? <AdminStatusChip tone="warning">Inactive</AdminStatusChip> : null}
+                      <AdminButton size="sm" variant="secondary" onClick={() => openManualRateDrawer(rate)}>
+                        Edit
+                      </AdminButton>
+                    </div>
                   </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={shippoConnection.connected ? "success" : "neutral"}>
-                      {shippoConnection.connected ? "Connected" : "Not connected"}
-                    </AdminStatusChip>
-                    <AdminStatusChip tone={activeRateProvider === "SHIPPO" ? "success" : "neutral"}>
-                      {activeRateProvider === "SHIPPO" ? "Live rates" : "Not selected"}
-                    </AdminStatusChip>
-                    <AdminButton size="sm" variant="secondary" onClick={() => openProviderDrawerFor("SHIPPO")}>
-                      Manage
-                    </AdminButton>
-                  </div>
-                </div>
-                <div className={styles.shippingProviderRow}>
-                  <div className={styles.shippingProviderMain}>
-                    <p className={styles.compactRowTitle}>EasyPost</p>
-                    <p className={styles.compactRowDescription}>Alternative rate and label provider.</p>
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={easypostConnection.connected ? "success" : "neutral"}>
-                      {easypostConnection.connected ? "Connected" : "Not connected"}
-                    </AdminStatusChip>
-                    <AdminStatusChip tone={activeRateProvider === "EASYPOST" ? "success" : "neutral"}>
-                      {activeRateProvider === "EASYPOST" ? "Live rates" : "Not selected"}
-                    </AdminStatusChip>
-                    <AdminButton size="sm" variant="secondary" onClick={() => openProviderDrawerFor("EASYPOST")}>
-                      Manage
-                    </AdminButton>
-                  </div>
-                </div>
-                <div className={styles.shippingProviderRow}>
-                  <div className={styles.shippingProviderMain}>
-                    <p className={styles.compactRowTitle}>Manual fulfillment</p>
-                    <p className={styles.compactRowDescription}>Mark shipped and add tracking manually.</p>
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={manualFulfillmentConfigured ? "success" : "neutral"}>
-                      {manualFulfillmentConfigured ? "Configured" : "Optional"}
-                    </AdminStatusChip>
-                    <AdminButton size="sm" variant="secondary" onClick={() => setManualFulfillmentDrawerOpen(true)}>
-                      Configure
-                    </AdminButton>
-                  </div>
-                </div>
+                ))
+              ) : (
+                <p className={styles.compactMeta}>No manual rates yet. Add a fixed price, free shipping or an order-based rate.</p>
+              )}
+              <div className={styles.actionRow}>
+                <AdminButton size="sm" variant="secondary" onClick={() => openManualRateDrawer(null)}>
+                  Add manual rate
+                </AdminButton>
               </div>
             </section>
 
-            <section className={styles.configSection}>
-              <div className={styles.sectionHeading}>
-                <h3>Saved setup status</h3>
+            <details className={styles.disclosure}>
+              <summary><strong>Fallback rates</strong><span className={styles.compactMeta}>{fallbackRates.length} saved</span></summary>
+              <div className={styles.configStack}>
+              <p className={styles.statusText}>Used when live rates are unavailable and your fallback policy allows them.</p>
+              {fallbackRates.length ? (
+                fallbackRates.map((rate) => (
+                  <div className={styles.configRow} key={rate.id}>
+                    <p className={styles.statusText}>
+                      <strong>{rate.name}</strong> · {formatMoney(rate.amount, currency)}
+                      {rate.estimatedDeliveryText ? ` · ${rate.estimatedDeliveryText}` : ""}
+                    </p>
+                    <div className={styles.actionRow}>
+                      {!rate.isActive ? <AdminStatusChip tone="warning">Inactive</AdminStatusChip> : null}
+                      <AdminButton size="sm" variant="secondary" onClick={() => openFallbackRateDrawer(rate)}>
+                        Edit
+                      </AdminButton>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <p className={styles.compactMeta}>No fallback rates yet.</p>
+              )}
+              <div className={styles.actionRow}>
+                <AdminButton size="sm" variant="secondary" onClick={() => openFallbackRateDrawer(null)}>
+                  Add fallback rate
+                </AdminButton>
               </div>
-              <p className={styles.compactMeta}>
-                These checks read your saved settings and help confirm pilot readiness before first live traffic.
-              </p>
-              <div className={styles.requirementsList}>
-                <div className={styles.requirementRow}>
-                  <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Shipping mode</p>
-                    <p className={styles.compactRowDescription}>
-                      {setupStatus?.shippingMode || mode}
-                    </p>
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone="success">Configured</AdminStatusChip>
-                  </div>
-                </div>
-                <div className={styles.requirementRow}>
-                  <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Live rates provider selected</p>
-                    <p className={styles.compactRowDescription}>
-                      {setupStatus?.activeRateProvider || activeRateProvider || "NONE"}
-                    </p>
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip
-                      tone={
-                        setupStatusPending
-                          ? "neutral"
-                          : setupStatus?.shippingMode === "MANUAL" || setupStatus?.activeRateProvider
-                            ? "success"
-                            : "warning"
-                      }
-                    >
-                      {setupStatusPending
-                        ? "Loading"
-                        : setupStatus?.shippingMode === "MANUAL"
-                          ? "Optional"
-                          : setupStatus?.activeRateProvider
-                            ? "Configured"
-                            : "Needs setup"}
-                    </AdminStatusChip>
-                  </div>
-                </div>
-                <div className={styles.requirementRow}>
-                  <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Provider credentials connected/verified</p>
-                    <p className={styles.compactRowDescription}>
-                      {activeRateProvider === "NONE"
-                        ? shippoConnectedButNotSelected
-                          ? "Shippo is connected, but not selected for checkout live rates."
-                          : "No checkout live-rate provider selected."
-                        : selectedLiveProviderConnected
-                          ? `${formatShippingProviderName(activeRateProvider)} connected.`
-                          : selectedLiveProviderHasCredentials
-                            ? `${formatShippingProviderName(activeRateProvider)} credentials saved; verify connection.`
-                            : `${formatShippingProviderName(activeRateProvider)} credentials missing.`}
-                    </p>
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip
-                      tone={setupStatusPending ? "neutral" : selectedLiveProviderConnected ? "success" : "warning"}
-                    >
-                      {setupStatusPending ? "Loading" : selectedLiveProviderConnected ? "Connected" : "Needs setup"}
-                    </AdminStatusChip>
-                  </div>
-                </div>
-                <div className={styles.requirementRow}>
-                  <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Provider usage allows live rates</p>
-                    <p className={styles.compactRowDescription}>
-                      {setupStatus?.shippingProviderUsage || providerForm.usage}
-                    </p>
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={liveRateProviderUsageAllowsRates ? "success" : "warning"}>
-                      {liveRateProviderUsageAllowsRates ? "Configured" : "Labels only"}
-                    </AdminStatusChip>
-                  </div>
-                </div>
-                <div className={styles.requirementRow}>
-                  <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Live rates ready</p>
-                    <p className={styles.compactRowDescription}>
-                      Provider selection, verified credentials, ship-from details, and package setup are complete.
-                    </p>
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={setupStatusPending ? "neutral" : liveRatesReady ? "success" : "warning"}>
-                      {setupStatusPending ? "Loading" : liveRatesReady ? "Live rates ready" : "Needs setup"}
-                    </AdminStatusChip>
-                  </div>
-                </div>
-                <div className={styles.requirementRow}>
-                  <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Origin address</p>
-                    <p className={styles.compactRowDescription}>Required for rates and labels.</p>
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={setupStatusPending ? "neutral" : setupStatus?.hasOriginAddress ? "success" : "warning"}>
-                      {setupStatusPending ? "Loading" : setupStatus?.hasOriginAddress ? "Configured" : "Needs setup"}
-                    </AdminStatusChip>
-                  </div>
-                </div>
-                <div className={styles.requirementRow}>
-                  <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Default package</p>
-                    <p className={styles.compactRowDescription}>Required for live quotes and label estimates.</p>
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={setupStatusPending ? "neutral" : setupStatus?.hasDefaultPackage ? "success" : "warning"}>
-                      {setupStatusPending ? "Loading" : setupStatus?.hasDefaultPackage ? "Configured" : "Needs setup"}
-                    </AdminStatusChip>
-                  </div>
-                </div>
-                <div className={styles.requirementRow}>
-                  <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Manual rates</p>
-                    <p className={styles.compactRowDescription}>Used for manual mode and hybrid fallback.</p>
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={setupStatusPending ? "neutral" : setupStatus?.hasManualRates ? "success" : "warning"}>
-                      {setupStatusPending ? "Loading" : setupStatus?.hasManualRates ? "Configured" : "Needs setup"}
-                    </AdminStatusChip>
-                  </div>
-                </div>
-                <div className={styles.requirementRow}>
-                  <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Fallback rate</p>
-                    <p className={styles.compactRowDescription}>Shown only when live rate requests fail.</p>
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={setupStatusPending ? "neutral" : hasFallbackRate ? "success" : "warning"}>
-                      {setupStatusPending ? "Loading" : hasFallbackRate ? "Configured" : "Needs setup"}
-                    </AdminStatusChip>
-                  </div>
-                </div>
               </div>
-            </section>
+            </details>
 
             <section className={styles.configSection}>
-              <div className={styles.sectionHeading}>
-                <h3>Pilot launch checklist</h3>
-              </div>
-              <p className={styles.compactMeta}>
-                Complete these items before enabling live-rate checkout for customers.
-              </p>
-              <div className={styles.requirementsList}>
-                <div className={styles.requirementRow}>
-                  <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Ship-from location</p>
-                    <p className={styles.compactRowDescription}>Address used for rates, labels, and returns.</p>
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={hasDefaultLocation ? "success" : "warning"}>
-                      {hasDefaultLocation ? "Ready" : "Missing"}
-                    </AdminStatusChip>
-                    <AdminButton
-                      onClick={() => openLocationDrawer(defaultLocationEntry)}
-                      size="sm"
-                      variant="secondary"
-                    >
-                      {hasDefaultLocation ? "Edit" : "Set location"}
-                    </AdminButton>
+              <h2>Ship-from locations</h2>
+              <p className={styles.compactMeta}>Addresses used for shipping quotes and labels.</p>
+              {locations.map((location) => (
+                <div className={styles.configRow} key={location.id}>
+                  <div><strong>{location.name}</strong><p className={styles.compactMeta}>{[location.address1, location.city, location.country].filter(Boolean).join(", ")}</p></div>
+                  <div className={styles.compactActionRow}>
+                    {location.isDefault && <AdminStatusChip tone="success">Default</AdminStatusChip>}
+                    {!location.isActive && <AdminStatusChip tone="neutral">Inactive</AdminStatusChip>}
+                    <AdminButton size="sm" variant="secondary" onClick={() => openLocationDrawer(location)}>Edit location</AdminButton>
                   </div>
                 </div>
-                <div className={styles.requirementRow}>
-                  <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Default package</p>
-                    <p className={styles.compactRowDescription}>Required for live quotes and label estimates.</p>
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={hasDefaultPackage ? "success" : "warning"}>
-                      {hasDefaultPackage ? "Ready" : "Missing"}
-                    </AdminStatusChip>
-                    <AdminButton
-                      onClick={() => openPackageDrawer(defaultPackageEntry)}
-                      size="sm"
-                      variant="secondary"
-                    >
-                      {hasDefaultPackage ? "Edit" : "Add package"}
-                    </AdminButton>
-                  </div>
-                </div>
-                <div className={styles.requirementRow}>
-                  <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Provider connection</p>
-                    <p className={styles.compactRowDescription}>
-                      Live rates need a verified live-rate provider. Labels need a verified label provider.
-                    </p>
-                    <p className={styles.compactMeta}>
-                      {providerVerificationPresentation.detail}
-                      {setupStatus?.providerLastVerifiedAt
-                        ? ` Last verified: ${new Date(setupStatus.providerLastVerifiedAt).toLocaleString()}.`
-                        : ""}
-                    </p>
-                    {setupStatus?.providerLastError ? (
-                      <p className={styles.compactMeta}>Last error: {setupStatus.providerLastError}</p>
-                    ) : null}
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={providerVerificationPresentation.tone}>
-                      {providerVerificationPresentation.label}
-                    </AdminStatusChip>
-                    <AdminButton
-                      size="sm"
-                      variant="ghost"
-                      disabled={providerVerifyLoading || providerForm.provider === "NONE"}
-                      onClick={verifyProvider}
-                    >
-                      {providerVerifyLoading ? "Testing..." : "Test connection"}
-                    </AdminButton>
-                    <AdminButton
-                      size="sm"
-                      variant="secondary"
-                      onClick={() =>
-                        openProviderDrawerFor(
-                          activeRateProvider !== "NONE"
-                            ? activeRateProvider
-                            : labelProvider !== "NONE"
-                              ? labelProvider
-                              : "SHIPPO"
-                        )
-                      }
-                    >
-                      Manage
-                    </AdminButton>
-                  </div>
-                </div>
-                <div className={styles.requirementRow}>
-                  <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Ship-from email</p>
-                    <p className={styles.compactRowDescription}>
-                      Required by Shippo for live rates and by Shippo/USPS when buying labels.
-                    </p>
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={missingShipFromEmailForShippo ? "warning" : "success"}>
-                      {missingShipFromEmailForShippo ? "Missing" : "Ready"}
-                    </AdminStatusChip>
-                    <AdminButton
-                      onClick={() => openLocationDrawer(defaultLocationEntry)}
-                      size="sm"
-                      variant="secondary"
-                    >
-                      {defaultLocationEntry ? "Edit" : "Set location"}
-                    </AdminButton>
-                  </div>
-                </div>
-                <div className={styles.requirementRow}>
-                  <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Ship-from phone</p>
-                    <p className={styles.compactRowDescription}>
-                      Required by Shippo/USPS when buying labels.
-                    </p>
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={missingShipFromPhoneForShippo ? "warning" : "success"}>
-                      {missingShipFromPhoneForShippo ? "Missing" : "Ready"}
-                    </AdminStatusChip>
-                    <AdminButton
-                      onClick={() => openLocationDrawer(defaultLocationEntry)}
-                      size="sm"
-                      variant="secondary"
-                    >
-                      {defaultLocationEntry ? "Edit" : "Set location"}
-                    </AdminButton>
-                  </div>
-                </div>
-                <div className={styles.requirementRow}>
-                  <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Fallback shipping rate</p>
-                    <p className={styles.compactRowDescription}>Shown only if Shippo/EasyPost cannot return rates.</p>
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={hasFallbackRate ? "success" : "neutral"}>
-                      {hasFallbackRate ? "Ready" : "Optional"}
-                    </AdminStatusChip>
-                    <AdminButton onClick={() => openFallbackRateDrawer(null)} size="sm" variant="secondary">
-                      Add fallback
-                    </AdminButton>
-                  </div>
-                </div>
-                <div className={styles.requirementRow}>
-                  <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Fallback behavior configured</p>
-                    <p className={styles.compactRowDescription}>{fallbackBehavior}</p>
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone={fallbackBehavior ? "success" : "warning"}>
-                      {fallbackBehavior ? "Configured" : "Needs setup"}
-                    </AdminStatusChip>
-                  </div>
-                </div>
-                <div className={styles.requirementRow}>
-                  <div className={styles.requirementMain}>
-                    <p className={styles.compactRowTitle}>Product/cart weight available</p>
-                    <p className={styles.compactRowDescription}>
-                      Live providers may require product variant weights for accurate package quotes.
-                    </p>
-                  </div>
-                  <div className={styles.shippingProviderActions}>
-                    <AdminStatusChip tone="neutral">Check products</AdminStatusChip>
-                  </div>
-                </div>
-              </div>
-              {missingLiveRateRequirements ? (
-                <p className={styles.statusText}>Finish the missing items before live rates or label buying can work.</p>
-              ) : null}
-              {missingShipFromEmailForShippo ? (
-                <p className={styles.statusText}>
-                  Ship-from email is required before buying Shippo labels. Add it to your shipping location or store profile.
-                </p>
-              ) : null}
-              {missingShipFromPhoneForShippo ? (
-                <p className={styles.statusText}>
-                  Ship-from phone is required before buying Shippo labels. Add it to your shipping location or store profile.
-                </p>
-              ) : null}
-              {shippoInUse ? (
-                <p className={styles.statusText}>
-                  Shippo/USPS labels require a ship-from email and phone number.
-                </p>
-              ) : null}
-              {!missingLiveRateRequirements && hasLabelProviderConnection === false ? (
-                <p className={styles.statusText}>Label purchase remains unavailable until a label provider is connected.</p>
-              ) : null}
+              ))}
+              {!locations.length && <p>No shipping locations yet.</p>}
+              <div><AdminButton variant="secondary" size="sm" onClick={() => openLocationDrawer(null)}>Add location</AdminButton></div>
             </section>
-
             <section className={styles.configSection}>
               <div className={styles.sectionHeading}>
-                <h3>Packages</h3>
+                <h2>Packages</h2>
               </div>
               {packages.length ? (
                 packages.map((entry) => (
@@ -1722,77 +886,11 @@ export default function ShippingSettingsWorkspace({
 
             <section className={styles.configSection}>
               <div className={styles.sectionHeading}>
-                <h3>Manual checkout rates</h3>
+                <h2>Fulfillment & local delivery</h2>
               </div>
-              <p className={styles.statusText}>Used in Manual mode, or as fallback in Hybrid mode.</p>
-              {manualRates.length ? (
-                manualRates.map((rate) => (
-                  <div className={styles.configRow} key={rate.id}>
-                    <p className={styles.statusText}>
-                      <strong>{rate.name}</strong> · {rate.regionCountry || "All regions"} ·{" "}
-                      {renderRateSummary(rate, currency)}
-                      {rate.estimatedDeliveryText ? ` · ${rate.estimatedDeliveryText}` : ""}
-                    </p>
-                    <div className={styles.actionRow}>
-                      {!rate.isActive ? <AdminStatusChip tone="warning">Inactive</AdminStatusChip> : null}
-                      <AdminButton size="sm" variant="secondary" onClick={() => openManualRateDrawer(rate)}>
-                        Edit
-                      </AdminButton>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <AdminEmptyState
-                  title="No manual checkout rates"
-                  description="Add rates if checkout should work without live carrier rates."
-                  icon="paid"
-                />
-              )}
-              <p className={styles.statusText}>Manual rates control what customers pay. They do not buy postage.</p>
-              <div className={styles.actionRow}>
-                <AdminButton size="sm" variant="secondary" onClick={() => openManualRateDrawer(null)}>
-                  Add manual rate
-                </AdminButton>
-              </div>
-            </section>
-
-            <section className={styles.configSection}>
-              <div className={styles.sectionHeading}>
-                <h3>Fallback shipping rate</h3>
-              </div>
-              <p className={styles.statusText}>Shown only if Shippo/EasyPost cannot return rates.</p>
-              {fallbackRates.length ? (
-                fallbackRates.map((rate) => (
-                  <div className={styles.configRow} key={rate.id}>
-                    <p className={styles.statusText}>
-                      <strong>{rate.name}</strong> · {formatMoney(rate.amount, currency)}
-                      {rate.estimatedDeliveryText ? ` · ${rate.estimatedDeliveryText}` : ""}
-                    </p>
-                    <div className={styles.actionRow}>
-                      {!rate.isActive ? <AdminStatusChip tone="warning">Inactive</AdminStatusChip> : null}
-                      <AdminButton size="sm" variant="secondary" onClick={() => openFallbackRateDrawer(rate)}>
-                        Edit
-                      </AdminButton>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <AdminEmptyState
-                  title="No fallback rates"
-                  description="Add fallback rates for live-provider outage paths."
-                  icon="error"
-                />
-              )}
-              <div className={styles.actionRow}>
-                <AdminButton size="sm" variant="secondary" onClick={() => openFallbackRateDrawer(null)}>
-                  Add fallback
-                </AdminButton>
-              </div>
-            </section>
-
-            <section className={styles.configSection}>
-              <div className={styles.sectionHeading}>
-                <h3>Local options and documents</h3>
+              <div className={styles.configRow}>
+                <div><strong>Manual fulfillment</strong><p className={styles.compactMeta}>Instructions and tracking defaults for your team.</p></div>
+                <AdminButton size="sm" variant="secondary" onClick={() => setManualFulfillmentDrawerOpen(true)}>Edit instructions</AdminButton>
               </div>
               <div className={styles.configRow}>
                 <p className={styles.statusText}>
@@ -1834,112 +932,6 @@ export default function ShippingSettingsWorkspace({
           </div>
         ) : null}
       </div>
-
-      <AdminDrawer
-        open={providerDrawerOpen}
-        isDirty={Boolean(providerForm.token.trim())}
-        onClose={() => {
-          resetProviderDrawerVerificationState();
-          setProviderDrawerOpen(false);
-        }}
-        title="Manage provider"
-        subtitle="Credentials, verification, usage, and disconnect."
-        headerActions={
-          <span aria-label="Connection status">
-            <AdminStatusChip tone={drawerProviderConnectionState.tone}>
-              {drawerProviderConnectionState.label}
-            </AdminStatusChip>
-          </span>
-        }
-      >
-        <div className={styles.drawerStack}>
-          <AdminCard as="section" className={styles.compactDrawerCard} variant="card">
-            <div className={`${styles.drawerFormGrid} ${styles.compactFormGrid}`}>
-              <AdminField
-                label={
-                  <span className={styles.fieldLabelRow}>
-                    <span>Provider</span>
-                    <AdminTooltip
-                      content={PROVIDER_USAGE_HELPER_COPY[providerForm.usage] || PROVIDER_USAGE_HELPER_COPY.LIVE_AND_LABELS}
-                      label="About provider"
-                    />
-                  </span>
-                }
-              >
-                <AdminSelect
-                  value={providerForm.provider}
-                  onChange={(value) => setProviderForm((current) => ({ ...current, provider: value }))}
-                  options={PROVIDER_OPTIONS}
-                />
-              </AdminField>
-              <AdminField
-                label={
-                  <span className={styles.fieldLabelRow}>
-                    <span>Provider usage</span>
-                    <AdminTooltip
-                      content="Live rates and label buying: checkout live rates + label purchase. Label buying only: labels only, no checkout live rates. Live rates only: checkout live rates only, no label purchase."
-                      label="About provider usage"
-                    />
-                  </span>
-                }
-              >
-                <AdminSelect
-                  value={providerForm.usage}
-                  onChange={(value) => setProviderForm((current) => ({ ...current, usage: value }))}
-                  options={PROVIDER_USAGE_OPTIONS}
-                />
-              </AdminField>
-              <AdminField className={styles.fieldFullWidth} label="API token">
-                <AdminInput
-                  type="password"
-                  value={providerForm.token}
-                  onChange={(event) => setProviderForm((current) => ({ ...current, token: event.target.value }))}
-                  placeholder="Paste token to save or update"
-                />
-              </AdminField>
-            </div>
-            <p className={styles.compactMeta}>
-              Saved keys are hidden after saving. Enter a new key only to replace the current one.
-            </p>
-            <p className={styles.compactMeta}>Saved credentials stay encrypted and are never rendered in raw form.</p>
-            <div className={styles.compactActionRow}>
-              <AdminButton disabled={saving} size="sm" variant="secondary" onClick={saveProviderSettings}>
-                Save credentials
-              </AdminButton>
-              <AdminButton
-                disabled={providerVerifyLoading || providerForm.provider === "NONE"}
-                size="sm"
-                variant="secondary"
-                onClick={verifyProvider}
-              >
-                {providerVerifyLoading ? "Testing..." : "Test connection"}
-              </AdminButton>
-            </div>
-          </AdminCard>
-          <AdminCard as="section" className={styles.compactDrawerCard} variant="card">
-            <div className={`${styles.setupCardHeader} ${styles.compactSectionHeader}`}>
-              <h4>Advanced</h4>
-            </div>
-            <p className={styles.compactMeta}>Developer tooling and destructive actions.</p>
-            <AdminButton
-              className={styles.advancedToggle}
-              onClick={() => setShowProviderAdvanced((current) => !current)}
-              size="sm"
-              variant="danger"
-            >
-              {showProviderAdvanced ? "Hide advanced options" : "Advanced Options"}
-            </AdminButton>
-            {showProviderAdvanced ? (
-              <div className={styles.compactActionRow}>
-                <AdminButton disabled={saving} size="sm" variant="danger" onClick={disconnectProvider}>
-                  Disconnect provider
-                </AdminButton>
-              </div>
-            ) : null}
-            {providerTestMessage ? <p className={styles.statusText}>{providerTestMessage}</p> : null}
-          </AdminCard>
-        </div>
-      </AdminDrawer>
 
       <AdminDrawer
         open={locationDrawerOpen}
@@ -1999,14 +991,7 @@ export default function ShippingSettingsWorkspace({
           <AdminButton disabled={saving} size="sm" onClick={saveLocation}>
             Save location
           </AdminButton>
-          <AdminButton disabled={saving} size="sm" variant="secondary" onClick={validateLocationAddress}>
-            Validate address
-          </AdminButton>
         </div>
-        <p className={styles.compactMeta}>
-          Address pre-validation is not available yet. Save this address, then verify it by loading live checkout
-          rates or purchasing a test label.
-        </p>
         {shippoInUse && !resolvedShipFromEmail ? (
           <p className={styles.statusText} style={{ color: "var(--warning, #f59e0b)" }}>
             Ship-from email is required for Shippo/USPS labels. Add an email here or in your store profile.
@@ -2018,11 +1003,10 @@ export default function ShippingSettingsWorkspace({
           </p>
         ) : null}
         {locationDrawerError ? (
-          <p className={styles.statusText} style={{ color: "var(--destructive, #ef4444)" }}>
+          <p role="alert" className={styles.statusText} style={{ color: "var(--destructive, #ef4444)" }}>
             {locationDrawerError}
           </p>
         ) : null}
-        {locationValidationMessage ? <p className={styles.statusText}>{locationValidationMessage}</p> : null}
       </AdminDrawer>
 
       <AdminDrawer
@@ -2312,13 +1296,5 @@ export default function ShippingSettingsWorkspace({
     </>
   );
 
-  if (embedded) {
-    return content;
-  }
-
-  return <AppShell>{content}</AppShell>;
+  return content;
 }
-
-
-
-

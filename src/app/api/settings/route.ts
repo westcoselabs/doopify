@@ -35,12 +35,9 @@ const updateSchema = z.object({
   name: z.string().min(1).optional(),
   email: z.string().email().optional(),
   phone: z.string().optional(),
-  domain: z.string().optional(),
   currency: z.enum(SUPPORTED_STORE_CURRENCIES).optional(),
   timezone: z.enum(SUPPORTED_STORE_TIMEZONES).optional(),
   logoUrl: z.union([z.string().url(), z.literal('')]).optional(),
-  primaryColor: z.string().optional(),
-  secondaryColor: z.string().optional(),
   address1: z.string().optional(),
   city: z.string().optional(),
   province: z.string().optional(),
@@ -59,7 +56,7 @@ const updateSchema = z.object({
   taxOriginCountry: z.string().max(3).nullable().optional(),
   taxOriginState: z.string().max(64).nullable().optional(),
   taxOriginPostalCode: z.string().max(32).nullable().optional(),
-})
+}).strict()
 
 export async function PATCH(req: Request) {
   const auth = await requireAdmin(req)

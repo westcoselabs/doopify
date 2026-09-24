@@ -38,10 +38,9 @@ describe('createStripeRefund', () => {
       amount: 5000,
       reason: 'requested_by_customer',
       idempotencyKey: 'refund:abc123',
-      secretKey: 'sk_test_db_runtime',
     })
 
-    expect(mocks.getStripeSdkClient).toHaveBeenCalledWith('sk_test_db_runtime')
+    expect(mocks.getStripeSdkClient).toHaveBeenCalledWith()
     expect(mocks.createRefund).toHaveBeenCalledWith(
       {
         charge: 'ch_sdk_1',

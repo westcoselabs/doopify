@@ -53,7 +53,7 @@ const optionalColorSchema = z
   .optional()
 
 const optionalStringSchema = z.string().trim().max(500).optional()
-const optionalUrlSchema = z.string().trim().url().max(1000).optional()
+const optionalUrlSchema = z.union([z.string().trim().url().max(1000), z.literal('')]).optional()
 
 export const brandKitUpdateSchema = z.object({
   name: z.string().trim().min(1).max(160).optional(),
@@ -76,7 +76,7 @@ export const brandKitUpdateSchema = z.object({
   buttonTextTransform: z.enum(BUTTON_TEXT_TRANSFORM_VALUES).optional(),
 
   emailFooterText: optionalStringSchema,
-  supportEmail: z.string().trim().email().max(320).optional(),
+  supportEmail: z.union([z.string().trim().email().max(320), z.literal('')]).optional(),
 
   instagramUrl: optionalUrlSchema,
   facebookUrl: optionalUrlSchema,

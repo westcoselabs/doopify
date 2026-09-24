@@ -7,7 +7,7 @@ import { PrismaClient } from '@prisma/client'
 import { decryptWithCurrentEncryptionKey, encrypt, getEncryptionRotationDecision, isCurrentEncryptionEnvelope } from '../src/server/utils/crypto.ts'
 
 type RotationTarget = {
-  kind: 'integrationSecret' | 'integrationWebhookSecret' | 'userMfaSecret' | 'userPendingMfaSecret' | 'digitalDownloadToken'
+  kind: 'userMfaSecret' | 'userPendingMfaSecret' | 'digitalDownloadToken'
   id: string
   value: string
   apply: (nextValue: string) => Promise<unknown>
@@ -50,9 +50,7 @@ const prisma = new PrismaClient({
 })
 
 try {
-  const [integrationSecrets, integrations, users, deliveries] = await Promise.all([
-    prisma.integrationSecret.findMany({ select: { id: true, value: true } }),
-    prisma.integration.findMany({ where: { webhookSecret: { not: null } }, select: { id: true, webhookSecret: true } }),
+  const [users, deliveries] = await Promise.all([
     prisma.user.findMany({
       where: {
         OR: [
@@ -66,18 +64,6 @@ try {
   ])
 
   const targets: RotationTarget[] = [
-    ...integrationSecrets.map((record) => ({
-      kind: 'integrationSecret' as const,
-      id: record.id,
-      value: record.value,
-      apply: (nextValue: string) => prisma.integrationSecret.update({ where: { id: record.id }, data: { value: nextValue } }),
-    })),
-    ...integrations.flatMap((record) => record.webhookSecret ? [{
-      kind: 'integrationWebhookSecret' as const,
-      id: record.id,
-      value: record.webhookSecret,
-      apply: (nextValue: string) => prisma.integration.update({ where: { id: record.id }, data: { webhookSecret: nextValue } }),
-    }] : []),
     ...users.flatMap((record) => [
       ...(record.mfaTotpSecretEnc ? [{
         kind: 'userMfaSecret' as const,
@@ -128,8 +114,8 @@ try {
     mode: apply ? 'apply' : 'dry-run',
     targets: report,
     guidance: apply
-      ? 'If any row is unreadable or invalid, keep ENCRYPTION_KEY_PREVIOUS configured and restore that row from a verified backup before retrying.'
-      : 'Review counts, configure ENCRYPTION_KEY_PREVIOUS during the overlap window, then rerun with --apply --confirm-reencrypt.',
+      ? 'If any row is unreadable or invalid, keep DATA_ENCRYPTION_KEY_PREVIOUS configured and restore that row from a verified backup before retrying.'
+      : 'Review counts, configure DATA_ENCRYPTION_KEY_PREVIOUS during the overlap window, then rerun with --apply --confirm-reencrypt.',
   }, null, 2))
 
   if (Object.values(report).some((entry) => entry.unreadable || entry.invalid)) {

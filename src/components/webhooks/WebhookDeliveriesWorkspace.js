@@ -456,7 +456,7 @@ export default function WebhookDeliveriesWorkspace() {
             <div className={styles.cellStack}>
               <strong>{formatEventType(delivery.event)}</strong>
               <small>
-                Outbound webhook · {delivery.integration?.name || 'Integration'} ·{' '}
+                Outbound webhook · {delivery.destinationName || 'Integration'} ·{' '}
                 {delivery.statusCode ? `HTTP ${delivery.statusCode}` : (delivery.lastError || 'Awaiting response')}
               </small>
             </div>
@@ -467,8 +467,8 @@ export default function WebhookDeliveriesWorkspace() {
           header: 'Destination',
           render: (delivery) => (
             <div className={styles.cellStack}>
-              <strong>{delivery.integration?.name || 'Integration'}</strong>
-              <small>{delivery.integration?.webhookUrl || 'No URL'}</small>
+              <strong>{delivery.destinationName || 'Integration'}</strong>
+              <small>{delivery.destinationUrl || 'No URL'}</small>
             </div>
           ),
         },
@@ -489,7 +489,7 @@ export default function WebhookDeliveriesWorkspace() {
           render: (delivery) => (
             <div className={styles.actionGroup}>
               <AdminButton
-                onClick={() => setNotice(`Outbound delivery ${delivery.id.slice(0, 8)} · ${delivery.integration?.name || 'Integration'} · ${delivery.lastError || 'No error details recorded.'}`)}
+                onClick={() => setNotice(`Outbound delivery ${delivery.id.slice(0, 8)} · ${delivery.destinationName || 'Integration'} · ${delivery.lastError || 'No error details recorded.'}`)}
                 size="sm"
                 variant="secondary"
               >

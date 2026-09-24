@@ -1,169 +1,57 @@
 # Deploy to Vercel
 
-Deploy Doopify to Vercel with a Neon Postgres database.
+Developers configure infrastructure in Vercel Environment Variables. Doopify's admin manages the store and safe diagnostics.
 
----
+## Prepare
 
-## Prerequisites
+1. Provision PostgreSQL and set `DATABASE_URL` with appropriate TLS and pool settings. The current Prisma configuration uses `DATABASE_URL`; use the intended migration connection when running the migration CLI.
+2. For an existing store, complete the [environment-only migration runbook](../ENV_ONLY_MIGRATION_RUNBOOK.md) before cutting over. Preserve application encryption keys, provider account/mode, outbound destination IDs and signing keys.
+3. Run the [verification gate](../../CONTRIBUTING.md) and disposable real-DB tests before promotion.
 
-- Vercel account
-- Neon Postgres project (free tier works for private beta)
-- Stripe account (test mode for beta, production mode before public launch)
-- Local install passing the verification gate (see [docs/deployment/local.md](./local.md))
+## Configure environment
 
----
+Set variables for the intended Vercel environment (Preview or Production):
 
-## 1. Set up Neon
+- Core: `DATABASE_URL`, `JWT_SECRET`, `DATA_ENCRYPTION_KEY`, `NEXT_PUBLIC_STORE_URL`.
+- Stripe: `STRIPE_SECRET_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`.
+- Jobs: `JOB_RUNNER_SECRET`, `WEBHOOK_RETRY_SECRET`, `ABANDONED_CHECKOUT_SECRET`.
+- First owner: `SETUP_TOKEN`, required for initial production bootstrap.
+- Email: `EMAIL_PROVIDER` plus selected Resend/SMTP settings. `none` disables email; preview is prohibited in production.
+- Shipping: `SHIPPING_RATE_PROVIDER`, `SHIPPING_LABEL_PROVIDER` and selected API/webhook keys.
+- Media: `MEDIA_STORAGE_PROVIDER` and matching object-storage credentials. `vercel-blob` supports public media on Vercel; private digital asset uploads need the documented private storage option.
+- Outbound: the `OUTBOUND_WEBHOOK_*` variable names referenced by `src/server/config/outbound-webhooks.ts`.
 
-1. Create a Neon project at [neon.tech](https://neon.tech).
-2. Copy the connection strings from the Neon dashboard.
-3. Use `sslmode=require` (minimum) or `sslmode=verify-full` (recommended for production).
+See the [environment reference](../ENVIRONMENT_VARIABLE_REFERENCE.md) for exact names. Rebuild/redeploy after configuration changes; public build variables must be present during the build. Never enter infrastructure keys into the Doopify admin.
 
-```
-DATABASE_URL=postgresql://user:password@ep-xxx.neon.tech/dbname?sslmode=require
-DIRECT_URL=postgresql://user:password@ep-xxx.neon.tech/dbname?sslmode=require
-```
+## Migrate and deploy
 
----
-
-## 2. Apply schema
-
-From your local machine with `DATABASE_URL` pointing to Neon:
+With the intended database target in your trusted local/deployment environment:
 
 ```bash
 npm run db:generate
-npm run db:push
+npm run db:deploy:safe
+npm run doopify:doctor
+npm run build
 ```
 
-Or using migrations:
+Deploy through your configured Vercel Git integration or `npm run doopify:deploy`. Review CLI plans before remote changes. Production databases use migrations, not `db:push` or development reset commands.
 
-```bash
-npm run db:migrate
-```
+Register `https://<store-domain>/api/webhooks/stripe` for the required payment-intent events and supply its signing secret before checkout goes live. Configure email/shipping callbacks when used. Create the initial owner at `/create-owner`, then review **System → Developer** and store business settings.
 
-Verify connectivity:
+## Schedule operational work
 
-```bash
-npm run doopify:db:check
-```
+The runners are **POST-only**. Use an external scheduler or the Doopify worker capable of issuing authenticated POST requests:
 
----
+| Endpoint | Bearer secret | Typical cadence |
+| --- | --- | --- |
+| `/api/jobs/run` | `JOB_RUNNER_SECRET` | Every 1–5 minutes |
+| `/api/webhook-retries/run` | `WEBHOOK_RETRY_SECRET` | Every 1–5 minutes |
+| `/api/abandoned-checkouts/send-due` | `ABANDONED_CHECKOUT_SECRET` | Every 30–60 minutes |
 
-## 3. Set Vercel environment variables
+A `vercel.json` cron path alone does not invoke these POST handlers. Do not count a scheduled GET as working background delivery. Validate recorded runner heartbeats and actual queue progress. See [worker deployment](worker.md).
 
-In the Vercel dashboard under **Settings → Environment Variables**, set all required variables:
+## Validate and rollback
 
-**Core (required)**
-- `DATABASE_URL`
-- `DIRECT_URL`
-- `JWT_SECRET` — 32+ character random secret
-- `ENCRYPTION_KEY` — 32+ character random secret
-- `NEXT_PUBLIC_STORE_URL` — your production URL (e.g. `https://yourstore.vercel.app`)
-- `WEBHOOK_RETRY_SECRET` — 32+ character random secret
+Use the [deployment checklist](checklist.md) and [pilot validation](../operations/pilot-validation-runbook.md). Presence status does not replace a verified test checkout, job run, email delivery and webhook test.
 
-**Stripe (required)**
-- `STRIPE_SECRET_KEY`
-- `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`
-- `STRIPE_WEBHOOK_SECRET` — set after step 5
-
-**Optional for private beta**
-- `RESEND_API_KEY`
-- `RESEND_WEBHOOK_SECRET`
-- `JOB_RUNNER_SECRET`
-- `ABANDONED_CHECKOUT_SECRET`
-- `MEDIA_STORAGE_PROVIDER=vercel-blob`
-- `BLOB_READ_WRITE_TOKEN`
-
-Use Postgres media only as a local/dev fallback. For Vercel-hosted production, prefer Vercel Blob.
-
-Alternatively, use the CLI helper to push local env vars to Vercel:
-
-```bash
-npm run doopify:env:push
-```
-
----
-
-## 4. Deploy
-
-```bash
-npm run doopify:deploy
-```
-
-Or via Vercel CLI directly:
-
-```bash
-npx vercel --prod
-```
-
----
-
-## 5. Register Stripe webhook
-
-After your production URL is live, register the Stripe webhook endpoint:
-
-```bash
-npm run doopify:stripe:webhook
-```
-
-Set the output `STRIPE_WEBHOOK_SECRET` as a Vercel environment variable and redeploy.
-
-The endpoint to register manually if preferred:
-- URL: `https://<your-domain>/api/webhooks/stripe`
-- Events: `payment_intent.succeeded`, `payment_intent.payment_failed`
-
----
-
-## 6. Create the owner account
-
-Visit `https://<your-domain>/create-owner`.
-
-In production, `SETUP_TOKEN` is required for first-owner bootstrap. Set it as a Vercel environment variable before visiting, then revoke it after account creation. See [docs/setup/first-owner.md](../setup/first-owner.md).
-
-`/create-owner` accepts the token only while no active `OWNER` exists. Once the first owner is created, bootstrap closes permanently.
-
-For private beta, configure Stripe and email in the admin Settings UI after owner creation:
-- **Settings -> Payments** for Stripe
-- **Settings -> Email** for Resend/SMTP
-
----
-
-## 7. Configure cron jobs
-
-Doopify uses secret-protected routes for background processing. Configure Vercel Cron (or an external cron service) to call:
-
-| Route | Secret header | Frequency |
-|---|---|---|
-| `POST /api/jobs/run` | `Authorization: Bearer $JOB_RUNNER_SECRET` | Every 1–5 minutes |
-| `POST /api/webhook-retries/run` | `Authorization: Bearer $WEBHOOK_RETRY_SECRET` | Every 1–5 minutes |
-| `POST /api/abandoned-checkouts/send-due` | `Authorization: Bearer $ABANDONED_CHECKOUT_SECRET` | Every 30–60 minutes |
-
-A sample `vercel.json` cron configuration:
-
-```json
-{
-  "crons": [
-    { "path": "/api/jobs/run", "schedule": "*/5 * * * *" },
-    { "path": "/api/webhook-retries/run", "schedule": "*/5 * * * *" },
-    { "path": "/api/abandoned-checkouts/send-due", "schedule": "*/30 * * * *" }
-  ]
-}
-```
-
-Vercel Cron calls do not pass a bearer token by default — use an external scheduler (e.g. cron-job.org) if you need the Authorization header enforced.
-
----
-
-## 8. Post-deploy smoke check
-
-Run through [docs/operations/pilot-validation-runbook.md](../operations/pilot-validation-runbook.md) before handing off to a merchant.
-
----
-
-## Rollback
-
-Roll back via the Vercel dashboard → **Deployments** → promote a prior deployment.
-
-If data repair is needed, see [docs/BACKUP_AND_RESTORE.md](../BACKUP_AND_RESTORE.md).
-
-If admin access is broken, see [docs/ADMIN_USER_RECOVERY_GUIDE.md](../ADMIN_USER_RECOVERY_GUIDE.md).
+Keep the preceding deployment, database backup, legacy credential tables and old environment snapshot through the upgrade rollback window. After the explicit destructive contraction, an application rollback alone is insufficient; follow the migration runbook's restore procedure.

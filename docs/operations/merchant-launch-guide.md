@@ -3,16 +3,16 @@
 Practical guide for merchants preparing to launch with Doopify.
 
 This guide focuses on two things:
-- The canonical Launch checklist in Settings -> Setup
+- The canonical Launch checklist in System -> Developer
 - The final manual smoke workflow before sending traffic to the storefront
 
 ---
 
 ## 1. Canonical launch checklist surface
 
-Use **Settings -> Setup -> Launch checklist** as the full, server-derived readiness view.
+Use **System -> Developer -> Store readiness** as the full, server-derived readiness view.
 
-- Full checklist: Settings -> Setup
+- Full checklist: System -> Developer
 - Compact summary: Admin dashboard "Launch checklist" card
 
 Both surfaces load the latest saved snapshot from `/api/readiness`.
@@ -74,20 +74,20 @@ Use the checklist CTA links first. These routes are the fastest fix path.
 
 ### Storefront URL
 
-- Route: `Settings -> Setup` (URL check details) and `Settings -> General` (if store URL is managed there)
+- Route: `System -> Developer` (URL check details) and `Settings -> General` (if store URL is managed there)
 - Use a full public URL (for example `https://store.example.com`).
 - Avoid localhost/internal hosts in production.
 - Prefer HTTPS and a stable canonical domain.
 
 ### Stripe keys
 
-- Route: `Settings -> Payments`
+- Route: `System -> Developer`
 - Save Stripe publishable and secret credentials in the Stripe provider drawer.
 - Run provider verification after save.
 
 ### Stripe webhook secret
 
-- Route: `Settings -> Payments` and Stripe dashboard/webhook setup flow
+- Route: `System -> Developer` and Stripe dashboard/webhook setup flow
 - Confirm webhook endpoint points to `/api/webhooks/stripe` on the deployed domain.
 - Ensure signing secret matches current endpoint configuration.
 - Use Delivery logs to confirm successful recent webhook deliveries.
