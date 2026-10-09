@@ -168,9 +168,6 @@ export async function updateStoreSettings(
     shippingThresholdCents: number
     shippingDomesticRateCents: number
     shippingInternationalRateCents: number
-    shippingProviderUsage: 'LIVE_AND_LABELS' | 'LABELS_ONLY' | 'LIVE_RATES_ONLY'
-    activeRateProvider: 'NONE' | 'EASYPOST' | 'SHIPPO'
-    labelProvider: 'NONE' | 'EASYPOST' | 'SHIPPO'
     fallbackBehavior: 'SHOW_FALLBACK' | 'HIDE_SHIPPING' | 'MANUAL_QUOTE'
     manualFulfillmentInstructions: string | null
     manualTrackingBehavior: string | null
@@ -304,6 +301,11 @@ export async function updateBrandKit(input: unknown) {
   })
 
   return mapStoreBrandKit(updated as BrandKitRecord)
+}
+
+/** Document chrome only needs the favicon; preserve primary/legacy resolution. */
+export function getStorefrontDocumentSettings() {
+  return findPrimaryStore({ select: { faviconUrl: true } })
 }
 
 export async function getPublicStorefrontSettings() {

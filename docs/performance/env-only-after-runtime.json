@@ -1,0 +1,512 @@
+{
+  "label": "after",
+  "measuredAt": "2026-09-24T04:14:41.400Z",
+  "node": "v24.11.1",
+  "note": "Synthetic local warm server, cold browser cache, one browser navigation per route; HTTP latencies are 30 sequential warm requests. SQL includes all queries during the initial navigation. Checkout is empty-cart navigation; promotion checkout timing is measured separately.",
+  "results": [
+    {
+      "route": "/admin/settings/general",
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:3107/admin/settings/general",
+      "requests": [
+        {
+          "url": "/admin/settings/general",
+          "type": "document"
+        },
+        {
+          "url": "/_next/static/media/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2",
+          "type": "font"
+        },
+        {
+          "url": "/_next/static/media/a343f882a40d2cc9-s.p.1sj6eobyi31rd.woff2",
+          "type": "font"
+        },
+        {
+          "url": "/_next/static/chunks/23eor0qan_ng3.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/2finzjkd5ofgl.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/2_080rh9ssfaz.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/0dq8zjba4gehe.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/33-9eram50xnj.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/1ycd5by80-dnr.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0nmn3_ni2r51b.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0t1cupau1mtgy.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/06j3juy1u5a-6.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/3nc6x0_y5iwnk.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/turbopack-2nsx2ikl33_7r.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/2yl1jv4w6po1z.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/1ntn7efqc-iiw.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/2_w2d7x-32u0e.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/1pjxl_tof7hfo.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/1q47zzrjwtmgk.js",
+          "type": "script"
+        },
+        {
+          "url": "https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/api/csp-report",
+          "type": "other"
+        },
+        {
+          "url": "/api/csp-report",
+          "type": "other"
+        },
+        {
+          "url": "https://fonts.gstatic.com/s/materialsymbolsoutlined/v374/kJEhBvYX7BgnkSrUwT8OhrdQw4oELdPIeeII9v6oFsI.woff2",
+          "type": "font"
+        }
+      ],
+      "errors": [],
+      "navigationMs": 1870,
+      "scriptEncodedBytes": 162609,
+      "transferBytes": 274783,
+      "sql": {
+        "count": 6,
+        "durationMs": 3.217499999998836
+      },
+      "scriptingSeconds": 0.029401,
+      "samples": 30,
+      "p50Ms": 12.674599999999828,
+      "p95Ms": 19.54880000000003,
+      "htmlBytes": 23583
+    },
+    {
+      "route": "/shop",
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:3107/shop",
+      "requests": [
+        {
+          "url": "/shop",
+          "type": "document"
+        },
+        {
+          "url": "/_next/static/media/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2",
+          "type": "font"
+        },
+        {
+          "url": "/_next/static/media/a343f882a40d2cc9-s.p.1sj6eobyi31rd.woff2",
+          "type": "font"
+        },
+        {
+          "url": "/_next/static/chunks/23eor0qan_ng3.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/2a6s7qmbtlxm3.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/2_080rh9ssfaz.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/1ycd5by80-dnr.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0nmn3_ni2r51b.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0t1cupau1mtgy.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/06j3juy1u5a-6.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/3nc6x0_y5iwnk.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/turbopack-2nsx2ikl33_7r.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/2yl1jv4w6po1z.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/1ntn7efqc-iiw.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/42ao36az2c-_6.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/25y-12d1mnh3b.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00999&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00998&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00997&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00996&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00995&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00994&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00993&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00992&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00991&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00990&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00989&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00988&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00987&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00986&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00985&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00984&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00983&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00982&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00981&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00980&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00979&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00978&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00977&w=384&q=75",
+          "type": "image"
+        },
+        {
+          "url": "/_next/image?url=%2Fapi%2Fmedia%2Fperf-media-00976&w=384&q=75",
+          "type": "image"
+        }
+      ],
+      "errors": [],
+      "navigationMs": 748,
+      "scriptEncodedBytes": 159914,
+      "transferBytes": 249944,
+      "sql": {
+        "count": 13,
+        "durationMs": 90.98460000002524
+      },
+      "scriptingSeconds": 0.027426,
+      "samples": 30,
+      "p50Ms": 19.993599999999788,
+      "p95Ms": 29.77100000000064,
+      "htmlBytes": 96361
+    },
+    {
+      "route": "/collections/performance-collection-0",
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:3107/collections/performance-collection-0",
+      "requests": [
+        {
+          "url": "/collections/performance-collection-0",
+          "type": "document"
+        },
+        {
+          "url": "/_next/static/media/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2",
+          "type": "font"
+        },
+        {
+          "url": "/_next/static/media/a343f882a40d2cc9-s.p.1sj6eobyi31rd.woff2",
+          "type": "font"
+        },
+        {
+          "url": "/_next/static/chunks/23eor0qan_ng3.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/2a6s7qmbtlxm3.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/2_080rh9ssfaz.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/1ycd5by80-dnr.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0nmn3_ni2r51b.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0t1cupau1mtgy.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/06j3juy1u5a-6.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/3nc6x0_y5iwnk.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/turbopack-2nsx2ikl33_7r.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/2yl1jv4w6po1z.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/1ntn7efqc-iiw.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/42ao36az2c-_6.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0wk08_lerand4.js",
+          "type": "script"
+        }
+      ],
+      "errors": [],
+      "navigationMs": 579,
+      "scriptEncodedBytes": 159529,
+      "transferBytes": 241303,
+      "sql": {
+        "count": 15,
+        "durationMs": 32.8808999999892
+      },
+      "scriptingSeconds": 0.019306,
+      "samples": 30,
+      "p50Ms": 16.018299999999726,
+      "p95Ms": 20.767100000000028,
+      "htmlBytes": 54863
+    },
+    {
+      "route": "/checkout",
+      "status": 200,
+      "finalUrl": "http://127.0.0.1:3107/checkout",
+      "requests": [
+        {
+          "url": "/checkout",
+          "type": "document"
+        },
+        {
+          "url": "/_next/static/media/83afe278b6a6bb3c-s.p.2bn3s6zvc0dyp.woff2",
+          "type": "font"
+        },
+        {
+          "url": "/_next/static/media/a343f882a40d2cc9-s.p.1sj6eobyi31rd.woff2",
+          "type": "font"
+        },
+        {
+          "url": "/_next/static/chunks/23eor0qan_ng3.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/2a6s7qmbtlxm3.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/2_080rh9ssfaz.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/_next/static/chunks/1ycd5by80-dnr.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0nmn3_ni2r51b.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/0t1cupau1mtgy.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/06j3juy1u5a-6.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/3nc6x0_y5iwnk.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/turbopack-2nsx2ikl33_7r.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/2yl1jv4w6po1z.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/1ntn7efqc-iiw.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/42ao36az2c-_6.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/2a6agh-lf1c79.js",
+          "type": "script"
+        },
+        {
+          "url": "/api/checkout/stripe-config",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop?_rsc=a9Lu7oUMcKkSuDdI",
+          "type": "fetch"
+        },
+        {
+          "url": "/?_rsc=a9Lu7oUMcKkSuDdI",
+          "type": "fetch"
+        },
+        {
+          "url": "/shop?_rsc=c-ZLSml79PvKM5IR",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/43dtcovg1i391.css",
+          "type": "stylesheet"
+        },
+        {
+          "url": "/?_rsc=L4mEFhsiNQdeNQ13",
+          "type": "fetch"
+        },
+        {
+          "url": "/?_rsc=3LSo7LTRs_S7T0Cj",
+          "type": "fetch"
+        },
+        {
+          "url": "/?_rsc=PXX77GAZqWe5po2o",
+          "type": "fetch"
+        },
+        {
+          "url": "/?_rsc=M9iL7CpPVqgalxiY",
+          "type": "fetch"
+        },
+        {
+          "url": "/_next/static/chunks/3hs39_ntcn6jj.js",
+          "type": "script"
+        },
+        {
+          "url": "/_next/static/chunks/428m5smpkkqrk.js",
+          "type": "script"
+        }
+      ],
+      "errors": [],
+      "navigationMs": 644,
+      "scriptEncodedBytes": 190259,
+      "transferBytes": 283354,
+      "sql": {
+        "count": 2,
+        "durationMs": 2.646999999997206
+      },
+      "scriptingSeconds": 0.029596,
+      "samples": 30,
+      "p50Ms": 7.863599999999678,
+      "p95Ms": 11.944899999999507,
+      "htmlBytes": 20476
+    }
+  ]
+}

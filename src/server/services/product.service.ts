@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto'
+import { cache } from 'react'
 
 import { centsToDollars } from '@/lib/money'
 import { prisma } from '@/lib/prisma'
 import { getVariantOptionValues } from '@/lib/storefront-variant-matching'
 import { emitInternalEvent } from '@/server/events/dispatcher'
+import { catalogMediaSelect, catalogPagination, storefrontVisibleProductWhere } from './catalog-read'
 import {
   getAvailabilityMessage,
   getProductAvailabilityBadge,
@@ -19,7 +21,7 @@ import type {
 const productInclude = {
   variants: { orderBy: { position: 'asc' as const } },
   media: {
-    include: { asset: true },
+    include: { asset: { select: catalogMediaSelect } },
     orderBy: { position: 'asc' as const },
   },
   options: {
@@ -81,7 +83,7 @@ const productSummarySelect = {
 
 const storefrontProductInclude = {
   variants: { orderBy: { position: 'asc' as const } },
-  media: { include: { asset: true }, orderBy: { position: 'asc' as const }, take: 2 },
+  media: { include: { asset: { select: catalogMediaSelect } }, orderBy: [{ position: 'asc' as const }, { id: 'asc' as const }], take: 2 },
 } satisfies Prisma.ProductInclude
 
 type ProductVariantPayload = {
@@ -253,9 +255,7 @@ async function ensureUniqueHandle(baseHandle: string, excludeProductId?: string)
 }
 
 function getStorefrontPublishWindowWhere(now = new Date()): Prisma.ProductWhereInput {
-  return {
-    OR: [{ publishedAt: null }, { publishedAt: { lte: now } }],
-  }
+  return storefrontVisibleProductWhere(now)
 }
 
 async function syncProductVariants(
@@ -366,7 +366,8 @@ export async function getProducts(params: {
   sortBy?: string
   sortDir?: 'asc' | 'desc'
 }) {
-  const { status, search, page = 1, pageSize = 20, sortBy = 'createdAt', sortDir = 'desc' } = params
+  const { status, search, sortBy = 'createdAt', sortDir = 'desc' } = params
+  const { page, pageSize } = catalogPagination(params, 20)
 
   const where: Prisma.ProductWhereInput = {
     ...(status && { status }),
@@ -462,7 +463,8 @@ export async function getProductSummaries(params: {
   sortBy?: string
   sortDir?: 'asc' | 'desc'
 }) {
-  const { status, search, page = 1, pageSize = 20, sortBy = 'createdAt', sortDir = 'desc' } = params
+  const { status, search, sortBy = 'createdAt', sortDir = 'desc' } = params
+  const { page, pageSize } = catalogPagination(params, 20)
 
   const where: Prisma.ProductWhereInput = {
     ...(status && { status }),
@@ -506,7 +508,7 @@ export async function getProduct(id: string) {
   return product ? attachMediaUrls(product) : null
 }
 
-export async function getStorefrontProductByHandle(handle: string) {
+export const getStorefrontProductByHandle = cache(async (handle: string) => {
   const now = new Date()
   const product = await prisma.product.findFirst({
     where: {
@@ -518,7 +520,7 @@ export async function getStorefrontProductByHandle(handle: string) {
   })
 
   return product ? toStorefrontProduct(attachMediaUrls(product)) : null
-}
+})
 
 export async function createProduct(data: {
   title: string
@@ -944,13 +946,16 @@ export async function getStorefrontProducts(params: {
   page?: number
   pageSize?: number
 }) {
-  const { collectionHandle, search, page = 1, pageSize = 24 } = params
+  const { collectionHandle } = params
+  const search = params.search?.trim().slice(0, 200)
+  const { page, pageSize } = catalogPagination(params)
   const now = new Date()
   const searchFilter = search
     ? {
         OR: [
           { title: { contains: search, mode: 'insensitive' as const } },
           { description: { contains: search, mode: 'insensitive' as const } },
+          { vendor: { contains: search, mode: 'insensitive' as const } },
         ],
       }
     : null
@@ -963,6 +968,7 @@ export async function getStorefrontProducts(params: {
         some: {
           collection: {
             handle: collectionHandle,
+            isPublished: true,
           },
         },
       },
@@ -973,7 +979,7 @@ export async function getStorefrontProducts(params: {
     prisma.product.findMany({
       where,
       include: storefrontProductInclude,
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),

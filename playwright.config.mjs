@@ -3,8 +3,10 @@ import { defineConfig, devices } from '@playwright/test'
 
 import { createInertTestEnvironment, EXTERNAL_CREDENTIAL_ENV_NAMES } from './scripts/test-environment.mjs'
 
+const explicitEnvironment = { ...process.env }
 loadEnv({ path: '.env', quiet: true })
 loadEnv({ path: '.env.local', override: true, quiet: true })
+Object.assign(process.env, explicitEnvironment)
 
 // Never attach release E2E to an arbitrary app already running on the common
 // development port. The configured local server is always this checkout.
@@ -49,7 +51,7 @@ try {
 // Playwright worker code and the local Next server must share the disposable
 // database; never let either fall through to .env's normal DATABASE_URL.
 const inertE2eEnvironment = createInertTestEnvironment(process.env)
-for (const name of EXTERNAL_CREDENTIAL_ENV_NAMES) delete process.env[name]
+for (const name of Object.keys(process.env)) if (EXTERNAL_CREDENTIAL_ENV_NAMES.includes(name) || name.startsWith('OUTBOUND_WEBHOOK_')) delete process.env[name]
 Object.assign(process.env, inertE2eEnvironment)
 process.env.E2E_ORIGINAL_DATABASE_URL = originalDatabaseUrl
 process.env.DATABASE_URL = databaseUrlTest
@@ -59,6 +61,9 @@ process.env.JWT_SECRET = jwtSecretForE2E
 const useWebServer = isLocalBaseURL && process.env.E2E_SKIP_WEBSERVER !== '1'
 const e2eWebServerEnv = {
   ...inertE2eEnvironment,
+  __NEXT_PROCESSED_ENV: 'true',
+  DATA_ENCRYPTION_KEY: 'D9g_7eQx3mF5aP1vK8rT2yW6cN4hJ0sL9bU5zX1qR7M',
+  PRISMA_PG_SCHEMA: new URL(databaseUrlTest).searchParams.get('schema') || 'public',
   DATABASE_URL: databaseUrlTest,
   DATABASE_URL_TEST: databaseUrlTest,
   JWT_SECRET: jwtSecretForE2E,

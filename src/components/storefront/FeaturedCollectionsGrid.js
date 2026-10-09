@@ -33,13 +33,13 @@ export default function FeaturedCollectionsGrid({ collections = [], label = 'Sho
           <h2 className="fcg-title">{label}</h2>
         </div>
         {showViewAll && (
-          <Link className="fcg-link" href="/collections">Browse all</Link>
+          <Link prefetch={false} className="fcg-link" href="/collections">Browse all</Link>
         )}
       </div>
 
       <div className="fcg-grid">
         {collections.map(collection => (
-          <Link className="fcg-card" href={`/collections/${collection.handle}`} key={collection.id}>
+          <Link prefetch={false} className="fcg-card" href={`/collections/${collection.handle}`} key={collection.id}>
             <div className="fcg-img">
               {collection.imageUrl ? (
                 <img alt={collection.title} src={collection.imageUrl} />

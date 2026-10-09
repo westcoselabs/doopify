@@ -41,5 +41,15 @@ jobs:
       - name: Run unit and service tests
         run: npm run test
 
+      - name: Generate ephemeral build-only data key
+        run: node -e "require('fs').appendFileSync(process.env.GITHUB_ENV, 'DATA_ENCRYPTION_KEY=' + require('crypto').randomBytes(48).toString('base64url') + '\n')"
+
       - name: Build
+        env:
+          __NEXT_PROCESSED_ENV: "true"
+          DATABASE_URL: "postgresql://ci:ci@127.0.0.1:1/build_only"
+          JWT_SECRET: "ci-build-only-not-for-deployment"
+          EMAIL_PROVIDER: "none"
+          SHIPPING_RATE_PROVIDER: "none"
+          SHIPPING_LABEL_PROVIDER: "none"
         run: npm run build

@@ -2,7 +2,7 @@
 
 import { useEffect, useEffectEvent } from 'react';
 import AppShell from '../AppShell';
-import { useProductStore } from '../../context/ProductContext';
+import { useProductStore, useProductNotifications, useProductCatalog } from '../../context/ProductContext';
 import ProductCatalog from './ProductCatalog';
 import ProductEditorDrawer from './ProductEditorDrawer';
 import ConfirmDialog from './ConfirmDialog';
@@ -10,7 +10,9 @@ import ToastViewport from './ToastViewport';
 import styles from '../layout/AppShell.module.css';
 
 export default function ProductsWorkspace() {
-  const { editor, confirmDialog, searchQuery, actions } = useProductStore();
+  const { editor, actions } = useProductStore();
+  const { confirmDialog } = useProductNotifications();
+  const { searchQuery } = useProductCatalog();
 
   const handleKeyDown = useEffectEvent(async event => {
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's' && editor.isOpen) {

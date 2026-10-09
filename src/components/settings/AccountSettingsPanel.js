@@ -10,7 +10,7 @@ import AdminInput from '../admin/ui/AdminInput';
 import { SettingsCardSkeleton } from './SettingsSkeletons';
 import styles from './SettingsWorkspace.module.css';
 
-export default function AccountSettingsPanel({ currentUser }) {
+export default function AccountSettingsPanel({ currentUser, initialMfaStatus = null }) {
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmNewPassword: '' });
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [passwordError, setPasswordError] = useState('');
@@ -19,7 +19,7 @@ export default function AccountSettingsPanel({ currentUser }) {
   const [sessionLoading, setSessionLoading] = useState(false);
   const [sessionResult, setSessionResult] = useState('');
   const [sessionError, setSessionError] = useState('');
-  const [mfaStatus, setMfaStatus] = useState(null);
+  const [mfaStatus, setMfaStatus] = useState(initialMfaStatus);
   const [mfaLoading, setMfaLoading] = useState(false);
   const [mfaError, setMfaError] = useState('');
   const [mfaCode, setMfaCode] = useState('');
@@ -46,9 +46,10 @@ export default function AccountSettingsPanel({ currentUser }) {
   }, [isOwner]);
 
   useEffect(() => {
+    if (initialMfaStatus) return;
 // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional effect-driven state sync for existing async/load flow
     loadMfaStatus();
-  }, [loadMfaStatus]);
+  }, [loadMfaStatus, initialMfaStatus]);
 
   const setField = (key, value) => {
     setPasswordForm((f) => ({ ...f, [key]: value }));
@@ -319,7 +320,7 @@ export default function AccountSettingsPanel({ currentUser }) {
               <p className={styles.statusText}>
                 {mfaStatus.enabled
                   ? `MFA enabled. Recovery codes remaining: ${mfaStatus.recoveryCodesRemaining}.`
-                  : `MFA not enabled.${mfaStatus.gracePeriodEndsAt ? ` Grace ends ${new Date(mfaStatus.gracePeriodEndsAt).toLocaleString()}.` : ''}`}
+                  : `MFA not enabled.${mfaStatus.gracePeriodEndsAt ? ` Grace ends ${new Date(mfaStatus.gracePeriodEndsAt).toISOString().replace('T', ' ').replace('.000Z', ' UTC')}.` : ''}`}
               </p>
             ) : null}
 

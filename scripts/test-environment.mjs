@@ -1,6 +1,11 @@
 // Keep all normal test runners hermetic. Live-provider smoke checks, if ever
 // needed, must live behind a separate explicit command and test-account guard.
 export const EXTERNAL_CREDENTIAL_ENV_NAMES = [
+  'EMAIL_PROVIDER',
+  'SHIPPING_RATE_PROVIDER',
+  'SHIPPING_LABEL_PROVIDER',
+  'MEDIA_STORAGE_PROVIDER',
+  'MEDIA_PUBLIC_BASE_URL',
   'STRIPE_SECRET_KEY',
   'NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY',
   'STRIPE_WEBHOOK_SECRET',
@@ -40,6 +45,10 @@ export const EXTERNAL_CREDENTIAL_ENV_NAMES = [
 ]
 
 export const INERT_TEST_PROVIDER_ENV = {
+  EMAIL_PROVIDER: 'none',
+  SHIPPING_RATE_PROVIDER: 'none',
+  SHIPPING_LABEL_PROVIDER: 'none',
+  MEDIA_STORAGE_PROVIDER: 'postgres',
   STRIPE_SECRET_KEY: 'sk_test_doopify_inert_runner',
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: 'pk_test_doopify_inert_runner',
   STRIPE_WEBHOOK_SECRET: 'whsec_doopify_inert_runner',
@@ -52,12 +61,14 @@ export const INERT_TEST_PROVIDER_ENV = {
 export function createInertTestEnvironment(parentEnvironment, overrides = {}) {
   const environment = { ...parentEnvironment }
   for (const name of EXTERNAL_CREDENTIAL_ENV_NAMES) delete environment[name]
+  for (const name of Object.keys(environment)) if (name.startsWith('OUTBOUND_WEBHOOK_')) delete environment[name]
   return { ...environment, ...INERT_TEST_PROVIDER_ENV, ...overrides }
 }
 
 export function applyInertTestEnvironment(parentEnvironment = process.env, overrides = {}) {
   const environment = createInertTestEnvironment(parentEnvironment, overrides)
   for (const name of EXTERNAL_CREDENTIAL_ENV_NAMES) delete process.env[name]
+  for (const name of Object.keys(process.env)) if (name.startsWith('OUTBOUND_WEBHOOK_')) delete process.env[name]
   Object.assign(process.env, environment)
   return environment
 }

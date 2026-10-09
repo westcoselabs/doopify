@@ -6,6 +6,7 @@ import type { WebhookDeliveryStatus } from '@prisma/client'
 import { centsToDollars } from '@/lib/money'
 import { prisma } from '@/lib/prisma'
 import { emitInternalEvent } from '@/server/events/dispatcher'
+import { DELIVERY_LEASE_MS } from '@/server/jobs/delivery-runtime'
 
 export const MAX_WEBHOOK_DELIVERY_ATTEMPTS = 4
 
@@ -31,11 +32,6 @@ const webhookDeliveryListSelect = {
   createdAt: true,
   updatedAt: true,
 } satisfies Prisma.WebhookDeliverySelect
-
-function normalizeProviderEventId(providerEventId: string | undefined, payloadHash: string) {
-  const normalized = String(providerEventId || '').trim()
-  return normalized || `unknown:${payloadHash.slice(0, 24)}`
-}
 
 function getRetryDelayMs(attempts: number) {
   return RETRY_BACKOFF_MS[Math.max(0, Math.min(attempts - 1, RETRY_BACKOFF_MS.length - 1))]
@@ -70,13 +66,17 @@ function getReplayBlockers(delivery: Awaited<ReturnType<typeof getWebhookDeliver
   if (delivery.providerEventId.startsWith('unknown:')) blockers.push('Replay requires a provider event id')
   if (!delivery.rawPayload) blockers.push('Replay requires a verified stored payload')
   if (delivery.status === 'SIGNATURE_FAILED') blockers.push('Signature failures are not replayable')
+  if (delivery.claimToken && delivery.leaseExpiresAt && delivery.leaseExpiresAt > new Date()) blockers.push('Delivery is already being processed')
 
   return blockers
 }
 
 function getRetryBlockers(delivery: Awaited<ReturnType<typeof getWebhookDeliveryById>>) {
-  const blockers = getReplayBlockers(delivery)
-  if (!delivery) return blockers
+  const blockers: string[] = []
+  if (!delivery) return ['Webhook delivery not found']
+  if (!delivery.rawPayload || delivery.status === 'SIGNATURE_FAILED') blockers.push('Retry requires a verified stored payload')
+  if (!['stripe', 'resend', 'shipping.shippo', 'shipping.easypost'].includes(delivery.provider)) blockers.push('Unsupported retry provider')
+  if (delivery.claimToken && delivery.leaseExpiresAt && delivery.leaseExpiresAt > new Date()) blockers.push('Delivery is already being processed')
   if (delivery.status === 'PROCESSED') blockers.push('Processed deliveries do not need retry')
   if (delivery.status === 'RETRY_EXHAUSTED') blockers.push('Retry attempts are exhausted')
   if (delivery.attempts >= MAX_WEBHOOK_DELIVERY_ATTEMPTS) blockers.push('Maximum attempts reached')
@@ -154,180 +154,79 @@ export function hashWebhookPayload(payload: string) {
   return crypto.createHash('sha256').update(payload, 'utf8').digest('hex')
 }
 
-export async function recordWebhookDeliveryAttempt(input: {
-  provider: string
-  providerEventId?: string
-  eventType?: string
-  payload: string
-  rawPayload?: string
-  isRetry?: boolean
+/** Only call after provider signature verification. Repeated receipts cannot
+ * mutate an existing verified payload, outcome, retry schedule, or ownership. */
+export async function recordVerifiedWebhookDelivery(input: {
+  provider: string; providerEventId: string; eventType: string; payload: string
 }) {
-  const payloadHash = hashWebhookPayload(input.payload)
-  const providerEventId = normalizeProviderEventId(input.providerEventId, payloadHash)
-  const eventType = String(input.eventType || 'unknown')
-  const now = new Date()
-
   return prisma.webhookDelivery.upsert({
-    where: {
-      provider_providerEventId: {
-        provider: input.provider,
-        providerEventId,
-      },
-    },
-    create: {
-      provider: input.provider,
-      providerEventId,
-      eventType,
-      payloadHash,
-      status: 'RECEIVED',
-      attempts: 1,
-      rawPayload: input.rawPayload,
-      nextRetryAt: null,
-      lastRetriedAt: input.isRetry ? now : null,
-    },
-    update: {
-      eventType,
-      payloadHash,
-      status: 'RECEIVED',
-      attempts: { increment: 1 },
-      lastError: null,
-      nextRetryAt: null,
-      ...(input.rawPayload ? { rawPayload: input.rawPayload } : {}),
-      ...(input.isRetry ? { lastRetriedAt: now } : {}),
-    },
+    where: { provider_providerEventId: { provider: input.provider, providerEventId: input.providerEventId } },
+    create: { provider: input.provider, providerEventId: input.providerEventId, eventType: input.eventType, payloadHash: hashWebhookPayload(input.payload), rawPayload: input.payload, status: 'RECEIVED', attempts: 0 },
+    update: {},
   })
 }
 
-export async function storeVerifiedWebhookPayload(input: {
-  provider: string
-  providerEventId: string
-  rawPayload: string
-}) {
-  return prisma.webhookDelivery.update({
-    where: {
-      provider_providerEventId: {
-        provider: input.provider,
-        providerEventId: input.providerEventId,
-      },
-    },
-    data: {
-      rawPayload: input.rawPayload,
-      payloadHash: hashWebhookPayload(input.rawPayload),
-    },
+export async function recordRejectedWebhook(input: { provider: string; payload: string; error: string }) {
+  const payloadHash = hashWebhookPayload(input.payload)
+  // Untrusted event IDs can never address the canonical delivery row.
+  const providerEventId = 'invalid:' + payloadHash
+  return prisma.webhookDelivery.upsert({
+    where: { provider_providerEventId: { provider: input.provider, providerEventId } },
+    create: { provider: input.provider, providerEventId, eventType: 'unverified', payloadHash, status: 'SIGNATURE_FAILED', lastError: input.error.slice(0, 1000) },
+    update: {},
   })
 }
 
-export async function markWebhookDeliveryProcessed(input: {
-  provider: string
-  providerEventId: string
-}) {
-  const delivery = await prisma.webhookDelivery.update({
-    where: {
-      provider_providerEventId: {
-        provider: input.provider,
-        providerEventId: input.providerEventId,
-      },
-    },
-    data: {
-      status: 'PROCESSED',
-      processedAt: new Date(),
-      lastError: null,
-      nextRetryAt: null,
-    },
-  })
+function runnableWebhookWhere(now: Date): Prisma.WebhookDeliveryWhereInput {
+  return { rawPayload: { not: null }, attempts: { lt: MAX_WEBHOOK_DELIVERY_ATTEMPTS }, OR: [
+    { status: 'RECEIVED', OR: [{ claimToken: null }, { leaseExpiresAt: { lte: now } }] },
+    { status: 'RETRY_PENDING', nextRetryAt: { lte: now }, claimToken: null },
+  ] }
+}
 
-  await emitInternalEvent('webhook.delivered', {
-    direction: 'inbound',
-    provider: delivery.provider,
-    providerEventId: delivery.providerEventId,
-    eventType: delivery.eventType,
-    attempts: delivery.attempts,
+export async function claimWebhookDelivery(id: string, manualReplay = false, now = new Date()) {
+  const [delivery] = await prisma.webhookDelivery.updateManyAndReturn({
+    where: { id, ...(manualReplay
+      ? { rawPayload: { not: null }, status: { not: 'SIGNATURE_FAILED' as const }, OR: [{ claimToken: null }, { leaseExpiresAt: { lte: now } }] }
+      : runnableWebhookWhere(now)) },
+    data: { status: 'RECEIVED', claimToken: crypto.randomUUID(), leaseExpiresAt: new Date(now.getTime() + DELIVERY_LEASE_MS), attempts: { increment: 1 }, lastRetriedAt: now, nextRetryAt: null, lastError: null },
   })
+  return delivery ?? null
+}
 
+export const claimWebhookDeliveryForRetry = (id: string, now = new Date()) => claimWebhookDelivery(id, false, now)
+
+export async function markWebhookDeliveryProcessed(input: { provider: string; providerEventId: string; claimToken: string }) {
+  const [delivery] = await prisma.webhookDelivery.updateManyAndReturn({
+    where: { provider: input.provider, providerEventId: input.providerEventId, claimToken: input.claimToken, leaseExpiresAt: { gt: new Date() } },
+    data: { status: 'PROCESSED', processedAt: new Date(), lastError: null, nextRetryAt: null, claimToken: null, leaseExpiresAt: null },
+  })
+  if (!delivery) return null
+  await emitInternalEvent('webhook.delivered', { direction: 'inbound', provider: delivery.provider, providerEventId: delivery.providerEventId, eventType: delivery.eventType, attempts: delivery.attempts })
   return delivery
 }
 
-export async function markWebhookDeliveryFailed(input: {
-  provider: string
-  providerEventId: string
-  status?: WebhookDeliveryStatus
-  error: string
-  retryable?: boolean
-}) {
-  const delivery = await prisma.webhookDelivery.findUnique({
-    where: {
-      provider_providerEventId: {
-        provider: input.provider,
-        providerEventId: input.providerEventId,
-      },
-    },
-    select: {
-      attempts: true,
-    },
+export async function markWebhookDeliveryFailed(input: { provider: string; providerEventId: string; claimToken: string; error: string; retryable?: boolean }) {
+  const delivery = await prisma.webhookDelivery.findFirst({ where: { provider: input.provider, providerEventId: input.providerEventId, claimToken: input.claimToken }, select: { attempts: true } })
+  if (!delivery) return null
+  const schedule = getRetrySchedule(delivery.attempts, input.retryable ?? true)
+  const [updated] = await prisma.webhookDelivery.updateManyAndReturn({
+    where: { provider: input.provider, providerEventId: input.providerEventId, claimToken: input.claimToken, leaseExpiresAt: { gt: new Date() } },
+    data: { status: schedule.status, processedAt: null, lastError: input.error.slice(0, 4000), nextRetryAt: schedule.nextRetryAt, claimToken: null, leaseExpiresAt: null },
   })
-  const schedule = input.status
-    ? { status: input.status, nextRetryAt: null }
-    : getRetrySchedule(delivery?.attempts ?? 1, input.retryable ?? true)
-
-  const updated = await prisma.webhookDelivery.update({
-    where: {
-      provider_providerEventId: {
-        provider: input.provider,
-        providerEventId: input.providerEventId,
-      },
-    },
-    data: {
-      status: schedule.status,
-      processedAt: null,
-      lastError: input.error,
-      nextRetryAt: schedule.nextRetryAt,
-    },
-  })
-
-  await emitInternalEvent('webhook.failed', {
-    direction: 'inbound',
-    provider: updated.provider,
-    providerEventId: updated.providerEventId,
-    eventType: updated.eventType,
-    error: input.error,
-    attempts: updated.attempts,
-    retryable: Boolean(schedule.nextRetryAt),
-  })
-
+  if (!updated) return null
+  await emitInternalEvent('webhook.failed', { direction: 'inbound', provider: updated.provider, providerEventId: updated.providerEventId, eventType: updated.eventType, error: input.error, attempts: updated.attempts, retryable: Boolean(schedule.nextRetryAt) })
   return updated
 }
 
-export async function claimWebhookDeliveryForRetry(id: string, now = new Date()) {
-  const claim = await prisma.webhookDelivery.updateMany({
-    where: {
-      id,
-      status: 'RETRY_PENDING',
-      nextRetryAt: { lte: now },
-    },
-    data: {
-      status: 'RECEIVED',
-      attempts: { increment: 1 },
-      lastRetriedAt: now,
-      nextRetryAt: null,
-      lastError: null,
-    },
-  })
-
-  if (claim.count === 0) return null
-  return getWebhookDeliveryById(id)
-}
-
 export async function getDueWebhookDeliveriesForRetry(limit = 10, now = new Date()) {
-  return prisma.webhookDelivery.findMany({
-    where: {
-      status: 'RETRY_PENDING',
-      nextRetryAt: { lte: now },
-      rawPayload: { not: null },
-      attempts: { lt: MAX_WEBHOOK_DELIVERY_ATTEMPTS },
-    },
-    orderBy: { nextRetryAt: 'asc' },
-    take: limit,
+  // A final-attempt crash must become visible exhaustion instead of remaining
+  // stranded in RECEIVED forever.
+  await prisma.webhookDelivery.updateMany({
+    where: { status: 'RECEIVED', attempts: { gte: MAX_WEBHOOK_DELIVERY_ATTEMPTS }, leaseExpiresAt: { lte: now } },
+    data: { status: 'RETRY_EXHAUSTED', claimToken: null, leaseExpiresAt: null, lastError: 'Attempt limit reached after expired worker claim' },
   })
+  return prisma.webhookDelivery.findMany({ where: runnableWebhookWhere(now), select: { id: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: Math.max(1, Math.min(50, limit)) })
 }
 
 export async function getWebhookDeliveryDiagnostics(id: string) {
@@ -387,7 +286,7 @@ export async function getWebhookDeliveryDiagnostics(id: string) {
   const replayBlockers = getReplayBlockers(delivery)
   const retryBlockers = getRetryBlockers(delivery)
 
-  const { rawPayload, ...safeDelivery } = delivery
+  const { rawPayload, claimToken: _claimToken, ...safeDelivery } = delivery
 
   return {
     delivery: {

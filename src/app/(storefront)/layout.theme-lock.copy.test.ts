@@ -14,7 +14,7 @@ describe('storefront beta theme lock behavior', () => {
   it('keeps favicon/logo identity support without backend-driven CSS token overrides', () => {
     const source = read(LAYOUT)
 
-    expect(source).toContain('getPublicStorefrontSettings')
+    expect(source).toContain('getStorefrontDocumentSettings')
     expect(source).toContain('store?.faviconUrl')
     expect(source).not.toContain("'--store-primary'")
     expect(source).not.toContain("'--brand-primary'")

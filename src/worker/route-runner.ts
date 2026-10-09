@@ -1,3 +1,6 @@
+// @ts-ignore Native Node TypeScript execution needs explicit extensions.
+import { parseEnvironmentSubset, workerEnvironmentSchema } from '../lib/env-schema.ts'
+
 export type WorkerMode = 'once' | 'loop'
 
 export type WorkerConfig = {
@@ -51,24 +54,6 @@ type RouteTarget = {
   secret: string | null
 }
 
-const DEFAULT_INTERVAL_MS = 60_000
-const DEFAULT_WORKER_NAME = 'doopify-worker'
-
-function parseMode(raw: string | undefined): WorkerMode {
-  const normalized = String(raw || '')
-    .trim()
-    .toLowerCase()
-  return normalized === 'once' ? 'once' : 'loop'
-}
-
-function parseIntervalMs(raw: string | undefined): number {
-  const parsed = Number(raw ?? '')
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return DEFAULT_INTERVAL_MS
-  }
-  return Math.floor(parsed)
-}
-
 function normalizeBaseUrl(raw: string | undefined): string {
   const value = String(raw || '').trim()
   if (!value) {
@@ -87,11 +72,6 @@ function normalizeBaseUrl(raw: string | undefined): string {
   }
 
   return parsed.toString().replace(/\/+$/, '')
-}
-
-function parseWorkerName(raw: string | undefined): string {
-  const value = String(raw || '').trim()
-  return value || DEFAULT_WORKER_NAME
 }
 
 function parseModeFromArgv(argv: string[]): WorkerMode | null {
@@ -119,14 +99,15 @@ function joinRouteUrl(baseUrl: string, path: string): string {
 }
 
 export function buildWorkerConfig(
-  env: NodeJS.ProcessEnv = process.env,
+  env: Record<string, string | undefined> = process.env,
   argv: string[] = process.argv.slice(2)
 ): WorkerConfig {
+  const config = parseEnvironmentSubset(workerEnvironmentSchema, env)
   const explicitMode = parseModeFromArgv(argv)
-  const mode = explicitMode ?? parseMode(env.DOOPIFY_WORKER_MODE)
-  const baseUrl = normalizeBaseUrl(env.DOOPIFY_WORKER_BASE_URL || env.NEXT_PUBLIC_STORE_URL)
-  const workerName = parseWorkerName(env.DOOPIFY_WORKER_NAME)
-  const intervalMs = parseIntervalMs(env.DOOPIFY_WORKER_INTERVAL_MS)
+  const mode = explicitMode ?? config.DOOPIFY_WORKER_MODE
+  const baseUrl = normalizeBaseUrl(config.DOOPIFY_WORKER_BASE_URL || config.NEXT_PUBLIC_STORE_URL)
+  const workerName = config.DOOPIFY_WORKER_NAME
+  const intervalMs = config.DOOPIFY_WORKER_INTERVAL_MS
 
   return {
     baseUrl,
@@ -134,9 +115,9 @@ export function buildWorkerConfig(
     intervalMs,
     workerName,
     secrets: {
-      jobsRunner: env.JOB_RUNNER_SECRET || env.WEBHOOK_RETRY_SECRET || null,
-      webhookRetry: env.WEBHOOK_RETRY_SECRET || null,
-      abandonedCheckout: env.ABANDONED_CHECKOUT_SECRET || env.WEBHOOK_RETRY_SECRET || null,
+      jobsRunner: config.JOB_RUNNER_SECRET || config.WEBHOOK_RETRY_SECRET || null,
+      webhookRetry: config.WEBHOOK_RETRY_SECRET || null,
+      abandonedCheckout: config.ABANDONED_CHECKOUT_SECRET || config.WEBHOOK_RETRY_SECRET || null,
     },
   }
 }
@@ -204,6 +185,7 @@ async function runSingleRoute(input: {
   try {
     const response = await fetchImpl(url, {
       method: 'POST',
+      signal: AbortSignal.timeout(60_000),
       headers: {
         Authorization: `Bearer ${target.secret}`,
         'x-doopify-worker-name': config.workerName,

@@ -1,0 +1,114 @@
+{
+  "capturedAt": "2026-09-24T03:21:40.985Z",
+  "scope": "Warm local PostgreSQL, unchanged loader + pure evaluator; no payment/provider calls",
+  "results": [
+    {
+      "activePromotions": 10,
+      "cartLines": 1,
+      "samples": 25,
+      "loadP50Ms": 1.703200000000038,
+      "loadP95Ms": 2.0919000000000096,
+      "evaluationP50Ms": 0.0261000000000422,
+      "evaluationP95Ms": 0.0504999999999427,
+      "queryCountMin": 7,
+      "queryCountMax": 7,
+      "loadedPayloadBytes": 3449
+    },
+    {
+      "activePromotions": 10,
+      "cartLines": 10,
+      "samples": 25,
+      "loadP50Ms": 1.3342000000000098,
+      "loadP95Ms": 1.9347000000000207,
+      "evaluationP50Ms": 0.039800000000013824,
+      "evaluationP95Ms": 0.0645000000000664,
+      "queryCountMin": 7,
+      "queryCountMax": 7,
+      "loadedPayloadBytes": 3449
+    },
+    {
+      "activePromotions": 10,
+      "cartLines": 50,
+      "samples": 25,
+      "loadP50Ms": 1.2437999999999647,
+      "loadP95Ms": 1.98599999999999,
+      "evaluationP50Ms": 0.044399999999996,
+      "evaluationP95Ms": 0.09640000000001692,
+      "queryCountMin": 7,
+      "queryCountMax": 7,
+      "loadedPayloadBytes": 3449
+    },
+    {
+      "activePromotions": 100,
+      "cartLines": 1,
+      "samples": 25,
+      "loadP50Ms": 2.5108999999999924,
+      "loadP95Ms": 3.2416999999999234,
+      "evaluationP50Ms": 0.037599999999997635,
+      "evaluationP95Ms": 0.07799999999997453,
+      "queryCountMin": 7,
+      "queryCountMax": 7,
+      "loadedPayloadBytes": 35929
+    },
+    {
+      "activePromotions": 100,
+      "cartLines": 10,
+      "samples": 25,
+      "loadP50Ms": 2.2351999999999634,
+      "loadP95Ms": 2.6358000000000175,
+      "evaluationP50Ms": 0.04079999999999018,
+      "evaluationP95Ms": 0.06769999999994525,
+      "queryCountMin": 7,
+      "queryCountMax": 7,
+      "loadedPayloadBytes": 35929
+    },
+    {
+      "activePromotions": 100,
+      "cartLines": 50,
+      "samples": 25,
+      "loadP50Ms": 2.401800000000094,
+      "loadP95Ms": 2.7907000000000153,
+      "evaluationP50Ms": 0.09429999999997563,
+      "evaluationP95Ms": 0.15209999999990487,
+      "queryCountMin": 7,
+      "queryCountMax": 7,
+      "loadedPayloadBytes": 35929
+    },
+    {
+      "activePromotions": 1000,
+      "cartLines": 1,
+      "samples": 25,
+      "loadP50Ms": 12.89799999999991,
+      "loadP95Ms": 20.10460000000012,
+      "evaluationP50Ms": 0.23019999999996799,
+      "evaluationP95Ms": 0.2985999999998512,
+      "queryCountMin": 7,
+      "queryCountMax": 7,
+      "loadedPayloadBytes": 361719
+    },
+    {
+      "activePromotions": 1000,
+      "cartLines": 10,
+      "samples": 25,
+      "loadP50Ms": 14.292300000000068,
+      "loadP95Ms": 27.996200000000044,
+      "evaluationP50Ms": 0.28719999999998436,
+      "evaluationP95Ms": 0.8251999999999953,
+      "queryCountMin": 7,
+      "queryCountMax": 7,
+      "loadedPayloadBytes": 361719
+    },
+    {
+      "activePromotions": 1000,
+      "cartLines": 50,
+      "samples": 25,
+      "loadP50Ms": 12.646999999999935,
+      "loadP95Ms": 20.052400000000034,
+      "evaluationP50Ms": 0.27819999999974243,
+      "evaluationP95Ms": 0.3912999999997737,
+      "queryCountMin": 7,
+      "queryCountMax": 7,
+      "loadedPayloadBytes": 361719
+    }
+  ]
+}

@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ZodError } from 'zod'
 
 const mocks = vi.hoisted(() => ({
   requireAdmin: vi.fn(),
@@ -75,30 +74,22 @@ describe('settings brand kit route', () => {
     expect(mocks.updateBrandKit).not.toHaveBeenCalled()
   })
 
-  it('invalid color returns validation error', async () => {
+  it.each(['primaryColor', 'headingFont', 'buttonStyle', 'STRIPE_SECRET_KEY'])('rejects developer-owned configuration: %s', async (field) => {
     mocks.requireAdmin.mockResolvedValue({
       ok: true,
       user: { id: 'staff_1', email: 'staff@example.com', role: 'STAFF' },
     })
-    mocks.updateBrandKit.mockRejectedValue(
-      new ZodError([
-        {
-          code: 'custom',
-          message: 'Must be a valid 6-digit hex color',
-          path: ['primaryColor'],
-        },
-      ])
-    )
 
     const response = await PATCH(
       new Request('http://localhost/api/settings/brand-kit', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ primaryColor: 'blue' }),
+        body: JSON.stringify({ [field]: 'not-a-merchant-setting' }),
       })
     )
 
     expect(response.status).toBe(422)
+    expect(mocks.updateBrandKit).not.toHaveBeenCalled()
   })
 
   it('successful update returns updated brand kit', async () => {
@@ -122,12 +113,12 @@ describe('settings brand kit route', () => {
       new Request('http://localhost/api/settings/brand-kit', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ primaryColor: '#101010' }),
+        body: JSON.stringify({ supportEmail: 'help@example.com' }),
       })
     )
 
     expect(response.status).toBe(200)
-    expect(mocks.updateBrandKit).toHaveBeenCalledWith({ primaryColor: '#101010' })
+    expect(mocks.updateBrandKit).toHaveBeenCalledWith({ supportEmail: 'help@example.com' })
     expect(mocks.revalidatePath).toHaveBeenCalledWith('/checkout')
   })
 })

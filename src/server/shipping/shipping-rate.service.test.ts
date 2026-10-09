@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const selection = vi.hoisted(() => ({ rate: null as 'SHIPPO' | 'EASYPOST' | null, label: null as 'SHIPPO' | 'EASYPOST' | null }))
+vi.mock('@/server/shipping/shipping-provider-selection', () => ({ resolveActiveRateProvider: () => selection.rate, resolveLabelProvider: () => selection.label }))
+
 const mocks = vi.hoisted(() => ({
   prisma: {
     store: {
@@ -30,10 +33,6 @@ function storeFixture(overrides: Record<string, unknown> = {}) {
     currency: 'USD',
     country: 'US',
     shippingMode: 'MANUAL',
-    shippingLiveProvider: null,
-    shippingProviderUsage: 'LIVE_AND_LABELS',
-    activeRateProvider: 'NONE',
-    labelProvider: 'NONE',
     fallbackBehavior: 'SHOW_FALLBACK',
     shippingFallbackEnabled: true,
     shippingThresholdCents: null,
@@ -93,13 +92,14 @@ function storeFixture(overrides: Record<string, unknown> = {}) {
 describe('shipping-rate service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    selection.rate = null
+    selection.label = null
   })
 
   it('returns manual rates in MANUAL mode without provider and package/location requirements', async () => {
     mocks.prisma.store.findFirst.mockResolvedValue(
       storeFixture({
         shippingMode: 'MANUAL',
-        shippingLiveProvider: null,
         shippingPackages: [],
         shippingLocations: [],
         shippingManualRates: [
@@ -209,11 +209,10 @@ describe('shipping-rate service', () => {
   })
 
   it('returns provider live rates in LIVE_RATES mode when provider is configured', async () => {
+    selection.rate = 'EASYPOST'
     mocks.prisma.store.findFirst.mockResolvedValue(
       storeFixture({
         shippingMode: 'LIVE_RATES',
-        shippingLiveProvider: 'EASYPOST',
-        activeRateProvider: 'EASYPOST',
       })
     )
     mocks.getShippingProviderConnectionStatus.mockResolvedValue({
@@ -252,11 +251,10 @@ describe('shipping-rate service', () => {
   })
 
   it('uses fallback rates in LIVE_RATES mode when provider fails', async () => {
+    selection.rate = 'EASYPOST'
     mocks.prisma.store.findFirst.mockResolvedValue(
       storeFixture({
         shippingMode: 'LIVE_RATES',
-        shippingLiveProvider: 'EASYPOST',
-        activeRateProvider: 'EASYPOST',
         shippingFallbackRates: [
           {
             id: 'fb_1',
@@ -301,7 +299,6 @@ describe('shipping-rate service', () => {
     mocks.prisma.store.findFirst.mockResolvedValue(
       storeFixture({
         shippingMode: 'LIVE_RATES',
-        shippingLiveProvider: null,
         shippingFallbackRates: [],
       })
     )
@@ -320,17 +317,16 @@ describe('shipping-rate service', () => {
     ).rejects.toMatchObject({
       name: 'ShippingRateSetupError',
       message:
-        'Live shipping mode is enabled, but no live-rate provider is selected. Go to Settings -> Shipping & delivery -> Live rates provider and choose Shippo or EasyPost.',
+        expect.stringContaining('SHIPPING_RATE_PROVIDER'),
     })
   })
 
   it('calls Shippo for checkout live rates when activeRateProvider is SHIPPO', async () => {
+    selection.rate = 'SHIPPO'
     mocks.prisma.store.findFirst.mockResolvedValue(
       storeFixture({
         email: 'store@example.com',
         shippingMode: 'LIVE_RATES',
-        shippingLiveProvider: null,
-        activeRateProvider: 'SHIPPO',
       })
     )
     mocks.getShippingProviderConnectionStatus.mockResolvedValue({ connected: true })
@@ -375,11 +371,10 @@ describe('shipping-rate service', () => {
   })
 
   it('returns a clear setup error in LIVE_RATES mode when ship-from location is missing', async () => {
+    selection.rate = 'SHIPPO'
     mocks.prisma.store.findFirst.mockResolvedValue(
       storeFixture({
         shippingMode: 'LIVE_RATES',
-        shippingLiveProvider: 'SHIPPO',
-        activeRateProvider: 'SHIPPO',
         shippingLocations: [],
         shippingOriginAddress1: null,
         shippingOriginCity: null,
@@ -408,11 +403,10 @@ describe('shipping-rate service', () => {
   })
 
   it('returns a clear setup error in LIVE_RATES mode when default package is missing', async () => {
+    selection.rate = 'SHIPPO'
     mocks.prisma.store.findFirst.mockResolvedValue(
       storeFixture({
         shippingMode: 'LIVE_RATES',
-        shippingLiveProvider: 'SHIPPO',
-        activeRateProvider: 'SHIPPO',
         shippingPackages: [],
         defaultPackageWeightOz: null,
         defaultPackageLengthIn: null,
@@ -440,14 +434,12 @@ describe('shipping-rate service', () => {
     })
   })
 
-  it('returns a clear setup error when provider usage is labels-only in LIVE_RATES mode', async () => {
+  it('returns a clear setup error when no live-rate provider is selected in LIVE_RATES mode', async () => {
+    selection.rate = null
+    selection.label = 'SHIPPO'
     mocks.prisma.store.findFirst.mockResolvedValue(
       storeFixture({
         shippingMode: 'LIVE_RATES',
-        shippingLiveProvider: 'SHIPPO',
-        shippingProviderUsage: 'LABELS_ONLY',
-        activeRateProvider: 'NONE',
-        labelProvider: 'SHIPPO',
       })
     )
 
@@ -464,16 +456,15 @@ describe('shipping-rate service', () => {
       })
     ).rejects.toMatchObject({
       name: 'ShippingRateSetupError',
-      message: expect.stringContaining('Provider is configured for labels only'),
+      message: expect.stringContaining('SHIPPING_RATE_PROVIDER'),
     })
   })
 
   it('returns live-only quotes in HYBRID mode, then fallback/manual only when live rates fail', async () => {
+    selection.rate = 'EASYPOST'
     mocks.prisma.store.findFirst.mockResolvedValue(
       storeFixture({
         shippingMode: 'HYBRID',
-        shippingLiveProvider: 'EASYPOST',
-        activeRateProvider: 'EASYPOST',
         shippingManualRates: [
           {
             id: 'manual_hybrid',
@@ -550,11 +541,10 @@ describe('shipping-rate service', () => {
   })
 
   it('returns manual-quote fallback when fallback behavior is MANUAL_QUOTE and live provider fails', async () => {
+    selection.rate = 'EASYPOST'
     mocks.prisma.store.findFirst.mockResolvedValue(
       storeFixture({
         shippingMode: 'LIVE_RATES',
-        shippingLiveProvider: 'EASYPOST',
-        activeRateProvider: 'EASYPOST',
         fallbackBehavior: 'MANUAL_QUOTE',
         shippingFallbackRates: [],
       })
@@ -826,11 +816,10 @@ describe('shipping-rate service', () => {
   })
 
   it('throws when fallback behavior is HIDE_SHIPPING and live rates fail', async () => {
+    selection.rate = 'EASYPOST'
     mocks.prisma.store.findFirst.mockResolvedValue(
       storeFixture({
         shippingMode: 'LIVE_RATES',
-        shippingLiveProvider: 'EASYPOST',
-        activeRateProvider: 'EASYPOST',
         fallbackBehavior: 'HIDE_SHIPPING',
         shippingFallbackRates: [
           {

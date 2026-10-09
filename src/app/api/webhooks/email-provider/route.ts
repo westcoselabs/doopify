@@ -1,16 +1,9 @@
 import { Webhook } from 'svix'
 
 import { env } from '@/lib/env'
-import {
-  markWebhookDeliveryFailed,
-  markWebhookDeliveryProcessed,
-  recordWebhookDeliveryAttempt,
-  storeVerifiedWebhookPayload,
-} from '@/server/services/webhook-delivery.service'
-import {
-  applyEmailProviderWebhookEvent,
-  parseEmailProviderWebhookPayload,
-} from '@/server/services/email-delivery.service'
+import { recordVerifiedWebhookDelivery, recordRejectedWebhook } from '@/server/services/webhook-delivery.service'
+import { parseEmailProviderWebhookPayload } from '@/server/services/email-delivery.service'
+import { processInboundWebhook } from '@/server/services/inbound-webhook-processing.service'
 
 export const runtime = 'nodejs'
 
@@ -41,91 +34,18 @@ function verifyEmailProviderWebhookPayload(payload: string, req: Request) {
 }
 
 export async function POST(req: Request) {
+  if (!env.RESEND_WEBHOOK_SECRET) return new Response('RESEND_WEBHOOK_SECRET is not configured', { status: 503 })
   const payload = await req.text()
-  const parsedEvent = parseEmailProviderWebhookPayload(payload)
-  const providerEventId = req.headers.get('svix-id') || undefined
-  const delivery = await recordWebhookDeliveryAttempt({
-    provider: 'resend',
-    providerEventId,
-    eventType: parsedEvent?.type,
-    payload,
-  })
-
-  try {
-    verifyEmailProviderWebhookPayload(payload, req)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Webhook signature verification failed'
-    await markWebhookDeliveryFailed({
-      provider: 'resend',
-      providerEventId: delivery.providerEventId,
-      status: 'SIGNATURE_FAILED',
-      error: message,
-    })
-    return new Response(message, { status: 400 })
+  try { verifyEmailProviderWebhookPayload(payload, req) }
+  catch {
+    await recordRejectedWebhook({ provider: 'resend', payload, error: 'Email webhook signature verification failed' })
+    return new Response('Webhook signature verification failed', { status: 400 })
   }
-
-  if (!parsedEvent) {
-    await markWebhookDeliveryFailed({
-      provider: 'resend',
-      providerEventId: delivery.providerEventId,
-      error: 'Invalid email provider webhook payload',
-      retryable: false,
-    })
-    return new Response('Invalid email provider webhook payload', { status: 400 })
-  }
-
-  await storeVerifiedWebhookPayload({
-    provider: 'resend',
-    providerEventId: delivery.providerEventId,
-    rawPayload: payload,
-  })
-
-  try {
-    const result = await applyEmailProviderWebhookEvent(parsedEvent)
-
-    if (!result.handled) {
-      if (result.reason === 'UNSUPPORTED_EVENT') {
-        await markWebhookDeliveryProcessed({
-          provider: 'resend',
-          providerEventId: delivery.providerEventId,
-        })
-        return new Response('Unsupported email provider event ignored', { status: 202 })
-      }
-
-      if (result.reason === 'MISSING_EMAIL_ID') {
-        await markWebhookDeliveryFailed({
-          provider: 'resend',
-          providerEventId: delivery.providerEventId,
-          error: 'Email provider webhook payload missing provider email id',
-          retryable: false,
-        })
-        return new Response('Email provider webhook payload missing provider email id', { status: 422 })
-      }
-
-      if (result.reason === 'DELIVERY_NOT_FOUND') {
-        await markWebhookDeliveryFailed({
-          provider: 'resend',
-          providerEventId: delivery.providerEventId,
-          error: 'Email delivery record was not found for this provider message id',
-          retryable: false,
-        })
-        return new Response('No matching email delivery record for provider message id', { status: 202 })
-      }
-    }
-
-    await markWebhookDeliveryProcessed({
-      provider: 'resend',
-      providerEventId: delivery.providerEventId,
-    })
-    return new Response('OK', { status: 200 })
-  } catch (error) {
-    console.error('[POST /api/webhooks/email-provider]', error)
-    await markWebhookDeliveryFailed({
-      provider: 'resend',
-      providerEventId: delivery.providerEventId,
-      error: error instanceof Error ? error.message : 'Email provider webhook processing failed',
-      retryable: true,
-    })
-    return new Response('Webhook processing failed', { status: 500 })
-  }
+  const event = parseEmailProviderWebhookPayload(payload)
+  const providerEventId = req.headers.get('svix-id')
+  if (!event || !providerEventId) return new Response('Invalid email webhook payload', { status: 400 })
+  const delivery = await recordVerifiedWebhookDelivery({ provider: 'resend', providerEventId, eventType: event.type, payload })
+  if (delivery.status === 'PROCESSED') return new Response('OK')
+  const result = await processInboundWebhook(delivery.id)
+  return new Response(result?.status === 'PROCESSED' ? 'OK' : 'Delivery pending or failed', { status: !result ? 202 : result.status === 'PROCESSED' ? 200 : 500 })
 }

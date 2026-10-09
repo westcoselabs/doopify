@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18"
   },
   "scripts": {
     "dev": "next dev",
@@ -56,12 +56,16 @@
     "pg": "^8.21.0",
     "react": "19.2.6",
     "react-dom": "19.2.6",
+    "server-only": "^0.0.1",
     "stripe": "^22.1.0",
     "svix": "^1.94.0",
     "swr": "^2.3.3",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/context-async-hooks": "2.9.0",
+    "@opentelemetry/sdk-trace": "2.9.0",
     "@playwright/test": "^1.60.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.9",

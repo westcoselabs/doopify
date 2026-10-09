@@ -1,0 +1,75 @@
+{
+  "git": "06c8336cfd7140435ef5a45fcc803db7a5010c70",
+  "builtAt": "2026-09-24T03:06:58.972Z",
+  "next": "16.2.10",
+  "node": "v24.11.1",
+  "route": "/settings",
+  "chunks": [
+    {
+      "file": "/_next/static/chunks/2yl1jv4w6po1z.js",
+      "raw": 3380,
+      "gzip": 1456
+    },
+    {
+      "file": "/_next/static/chunks/1ntn7efqc-iiw.js",
+      "raw": 54763,
+      "gzip": 12938
+    },
+    {
+      "file": "/_next/static/chunks/2_w2d7x-32u0e.js",
+      "raw": 12847,
+      "gzip": 4415
+    },
+    {
+      "file": "/_next/static/chunks/18--l2c1x_55r.js",
+      "raw": 17819,
+      "gzip": 5280
+    },
+    {
+      "file": "/_next/static/chunks/41-y90gh36ttg.js",
+      "raw": 34069,
+      "gzip": 10709
+    },
+    {
+      "file": "/_next/static/chunks/0vd32mvq3vv_w.js",
+      "raw": 89066,
+      "gzip": 16062
+    },
+    {
+      "file": "/_next/static/chunks/2qc8h1i4y3i5b.js",
+      "raw": 205101,
+      "gzip": 42615
+    }
+  ],
+  "totals": {
+    "raw": 417045,
+    "gzip": 93475
+  },
+  "pageOnly": [
+    {
+      "file": "/_next/static/chunks/18--l2c1x_55r.js",
+      "raw": 17819,
+      "gzip": 5280
+    },
+    {
+      "file": "/_next/static/chunks/41-y90gh36ttg.js",
+      "raw": 34069,
+      "gzip": 10709
+    },
+    {
+      "file": "/_next/static/chunks/0vd32mvq3vv_w.js",
+      "raw": 89066,
+      "gzip": 16062
+    },
+    {
+      "file": "/_next/static/chunks/2qc8h1i4y3i5b.js",
+      "raw": 205101,
+      "gzip": 42615
+    }
+  ],
+  "pageOnlyTotals": {
+    "raw": 346055,
+    "gzip": 74666
+  },
+  "measurement": "Static production client-reference manifest, unique referenced JS chunks gzip-compressed independently; excludes common root runtime, CSS, HTML/RSC, browser transfer and hydration CPU."
+}

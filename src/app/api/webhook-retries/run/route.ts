@@ -1,13 +1,9 @@
 import { err, ok } from '@/lib/api'
 import { env } from '@/lib/env'
-import {
-  claimWebhookDeliveryForRetry,
-  getDueWebhookDeliveriesForRetry,
-  markWebhookDeliveryFailed,
-  markWebhookDeliveryProcessed,
-} from '@/server/services/webhook-delivery.service'
-import { parseStripeWebhookEventPayload, processStripeWebhookEvent } from '@/server/services/stripe-webhook.service'
+import { getDueWebhookDeliveriesForRetry } from '@/server/services/webhook-delivery.service'
+import { processInboundWebhook } from '@/server/services/inbound-webhook-processing.service'
 import { processDueOutboundDeliveries } from '@/server/services/outbound-webhook.service'
+import { runBounded } from '@/server/jobs/delivery-runtime'
 
 export const runtime = 'nodejs'
 
@@ -32,85 +28,15 @@ export async function POST(req: Request) {
   }
 
   const { searchParams } = new URL(req.url)
-  const limit = Math.max(1, Math.min(50, Number(searchParams.get('limit') || 10)))
+  const limit = Math.max(1, Math.min(50, Number(searchParams.get('limit')) || 10))
   const dueDeliveries = await getDueWebhookDeliveriesForRetry(limit)
-  const results = []
-
-  for (const dueDelivery of dueDeliveries) {
-    const delivery = await claimWebhookDeliveryForRetry(dueDelivery.id)
-    if (!delivery) {
-      results.push({
-        id: dueDelivery.id,
-        providerEventId: dueDelivery.providerEventId,
-        status: 'SKIPPED',
-        error: 'Delivery was already claimed or no longer due',
-      })
-      continue
-    }
-
-    if (delivery.provider !== 'stripe' || !delivery.rawPayload) {
-      await markWebhookDeliveryFailed({
-        provider: delivery.provider,
-        providerEventId: delivery.providerEventId,
-        error: 'Retry requires a Stripe delivery with a verified stored payload',
-        retryable: false,
-      })
-      results.push({
-        id: delivery.id,
-        providerEventId: delivery.providerEventId,
-        status: 'FAILED',
-        error: 'Retry requires a Stripe delivery with a verified stored payload',
-      })
-      continue
-    }
-
-    const event = parseStripeWebhookEventPayload(delivery.rawPayload)
-    if (!event) {
-      await markWebhookDeliveryFailed({
-        provider: delivery.provider,
-        providerEventId: delivery.providerEventId,
-        error: 'Stored webhook payload is invalid',
-        retryable: false,
-      })
-      results.push({
-        id: delivery.id,
-        providerEventId: delivery.providerEventId,
-        status: 'FAILED',
-        error: 'Stored webhook payload is invalid',
-      })
-      continue
-    }
-
-    try {
-      await processStripeWebhookEvent(event)
-      await markWebhookDeliveryProcessed({
-        provider: delivery.provider,
-        providerEventId: delivery.providerEventId,
-      })
-      results.push({
-        id: delivery.id,
-        providerEventId: delivery.providerEventId,
-        status: 'PROCESSED',
-      })
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Webhook retry failed'
-      const failedDelivery = await markWebhookDeliveryFailed({
-        provider: delivery.provider,
-        providerEventId: delivery.providerEventId,
-        error: message,
-        retryable: true,
-      })
-      results.push({
-        id: delivery.id,
-        providerEventId: delivery.providerEventId,
-        status: failedDelivery.status,
-        nextRetryAt: failedDelivery.nextRetryAt,
-        error: message,
-      })
-    }
-  }
-
-  const outboundResults = await processDueOutboundDeliveries()
+  // Both bounded queues share the request's time window rather than consuming
+  // two consecutive runner budgets (four workers per queue, eight in total).
+  const [settled, outboundResults] = await Promise.all([
+    runBounded(dueDeliveries, (delivery) => processInboundWebhook(delivery.id)),
+    processDueOutboundDeliveries(),
+  ])
+  const results = settled.map((result) => result.status === 'fulfilled' ? result.value : { status: 'FAILED', error: 'Webhook retry failed' })
 
   return ok({
     processedInbound: results.length,

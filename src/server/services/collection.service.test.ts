@@ -10,6 +10,8 @@ const mocks = vi.hoisted(() => ({
     },
     collectionProduct: {
       groupBy: vi.fn(),
+      findMany: vi.fn(),
+      count: vi.fn(),
     },
   },
 }))
@@ -27,6 +29,8 @@ import {
 describe('collection service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.prisma.collection.count.mockResolvedValue(1)
+    mocks.prisma.collectionProduct.count.mockResolvedValue(1)
   })
 
   it('keeps publish state visible to admin collection summaries', async () => {
@@ -124,7 +128,7 @@ describe('collection service', () => {
       },
     ])
 
-    const summaries = await getStorefrontCollectionSummaries()
+    const { collections: summaries } = await getStorefrontCollectionSummaries()
 
     expect(mocks.prisma.collection.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -166,7 +170,7 @@ describe('collection service', () => {
   })
 
   it('returns storefront-safe collection detail DTOs without admin-only fields', async () => {
-    mocks.prisma.collection.findFirst.mockResolvedValue({
+    const fixture = {
       id: 'col_1',
       title: 'Featured',
       handle: 'featured',
@@ -222,7 +226,9 @@ describe('collection service', () => {
           },
         },
       ],
-    })
+    }
+    mocks.prisma.collection.findFirst.mockResolvedValue(fixture)
+    mocks.prisma.collectionProduct.findMany.mockResolvedValue(fixture.products)
 
     const detail = await getStorefrontCollectionByHandle('featured')
 
@@ -234,6 +240,7 @@ describe('collection service', () => {
       imageUrl: '/api/media/asset_1',
       sortOrder: 'MANUAL',
       productCount: 1,
+      pagination: { page: 1, pageSize: 24, total: 1, totalPages: 1 },
       products: [
         {
           id: 'prod_1',

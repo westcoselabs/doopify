@@ -1,171 +1,19 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-const mocks = vi.hoisted(() => ({
-  getWebhookDeliveryById: vi.fn(),
-  recordWebhookDeliveryAttempt: vi.fn(),
-  markWebhookDeliveryProcessed: vi.fn(),
-  markWebhookDeliveryFailed: vi.fn(),
-  processStripeWebhookEvent: vi.fn(),
-  requireAdmin: vi.fn(),
-}))
-
-vi.mock('@/server/services/webhook-delivery.service', () => ({
-  getWebhookDeliveryById: mocks.getWebhookDeliveryById,
-  recordWebhookDeliveryAttempt: mocks.recordWebhookDeliveryAttempt,
-  markWebhookDeliveryProcessed: mocks.markWebhookDeliveryProcessed,
-  markWebhookDeliveryFailed: mocks.markWebhookDeliveryFailed,
-}))
-
-vi.mock('@/server/services/stripe-webhook.service', () => ({
-  parseStripeWebhookEventPayload: (payload: string) => {
-    try {
-      return JSON.parse(payload)
-    } catch {
-      return null
-    }
-  },
-  processStripeWebhookEvent: mocks.processStripeWebhookEvent,
-}))
-vi.mock('@/server/auth/require-auth', () => ({
-  requireAdmin: mocks.requireAdmin,
-}))
-
-import { POST } from './route'
-
-describe('POST /api/webhook-deliveries/[id]/replay', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mocks.requireAdmin.mockResolvedValue({
-      ok: true,
-      user: { id: 'staff-1', email: 'staff@example.com', firstName: null, lastName: null, role: 'STAFF' },
-    })
-    mocks.getWebhookDeliveryById.mockResolvedValue({
-      id: 'delivery_1',
-      provider: 'stripe',
-      providerEventId: 'evt_1',
-      eventType: 'payment_intent.succeeded',
-      status: 'FAILED',
-      rawPayload: JSON.stringify({
-        id: 'evt_1',
-        type: 'payment_intent.succeeded',
-        data: {
-          object: {
-            id: 'pi_1',
-            amount: 5999,
-            currency: 'usd',
-            status: 'succeeded',
-          },
-        },
-      }),
-    })
-    mocks.recordWebhookDeliveryAttempt.mockResolvedValue({
-      id: 'delivery_1',
-      provider: 'stripe',
-      providerEventId: 'evt_1',
-      eventType: 'payment_intent.succeeded',
-      status: 'RECEIVED',
-    })
-  })
-
-  it('returns 404 when the webhook delivery does not exist', async () => {
-    mocks.getWebhookDeliveryById.mockResolvedValue(null)
-
-    const response = await POST(new Request('http://localhost/api/webhook-deliveries/missing/replay'), {
-      params: Promise.resolve({ id: 'missing' }),
-    })
-
-    expect(response.status).toBe(404)
-    expect(await response.json()).toEqual({
-      success: false,
-      error: 'Webhook delivery not found',
-    })
-  })
-
-  it('rejects replay for entries without a provider event id', async () => {
-    mocks.getWebhookDeliveryById.mockResolvedValue({
-      id: 'delivery_unknown',
-      provider: 'stripe',
-      providerEventId: 'unknown:abc123',
-      eventType: 'unknown',
-      status: 'FAILED',
-    })
-
-    const response = await POST(new Request('http://localhost/api/webhook-deliveries/delivery_unknown/replay'), {
-      params: Promise.resolve({ id: 'delivery_unknown' }),
-    })
-
-    expect(response.status).toBe(400)
-    expect(await response.json()).toEqual({
-      success: false,
-      error: 'Replay requires a provider event id',
-    })
-  })
-
-  it('replays a Stripe webhook delivery and marks it processed', async () => {
-    const response = await POST(new Request('http://localhost/api/webhook-deliveries/delivery_1/replay'), {
-      params: Promise.resolve({ id: 'delivery_1' }),
-    })
-
-    expect(response.status).toBe(200)
-    expect(mocks.processStripeWebhookEvent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: 'evt_1',
-        type: 'payment_intent.succeeded',
-      })
-    )
-    expect(mocks.markWebhookDeliveryProcessed).toHaveBeenCalledWith({
-      provider: 'stripe',
-      providerEventId: 'evt_1',
-    })
-    expect(mocks.recordWebhookDeliveryAttempt).toHaveBeenCalledWith({
-      provider: 'stripe',
-      providerEventId: 'evt_1',
-      eventType: 'payment_intent.succeeded',
-      payload: expect.stringContaining('"evt_1"'),
-      rawPayload: expect.stringContaining('"evt_1"'),
-      isRetry: true,
-    })
-  })
-
-  it('rejects replay when no verified stored payload exists', async () => {
-    mocks.getWebhookDeliveryById.mockResolvedValue({
-      id: 'delivery_1',
-      provider: 'stripe',
-      providerEventId: 'evt_1',
-      eventType: 'payment_intent.succeeded',
-      status: 'FAILED',
-      rawPayload: null,
-    })
-
-    const response = await POST(new Request('http://localhost/api/webhook-deliveries/delivery_1/replay'), {
-      params: Promise.resolve({ id: 'delivery_1' }),
-    })
-
-    expect(response.status).toBe(400)
-    expect(await response.json()).toEqual({
-      success: false,
-      error: 'Replay requires a verified stored payload',
-    })
-    expect(mocks.processStripeWebhookEvent).not.toHaveBeenCalled()
-  })
-
-  it('marks replay failures and returns 500 when processing fails', async () => {
-    mocks.processStripeWebhookEvent.mockRejectedValue(new Error('Replay processing failed'))
-
-    const response = await POST(new Request('http://localhost/api/webhook-deliveries/delivery_1/replay'), {
-      params: Promise.resolve({ id: 'delivery_1' }),
-    })
-
-    expect(response.status).toBe(500)
-    expect(await response.json()).toEqual({
-      success: false,
-      error: 'Webhook replay failed',
-    })
-    expect(mocks.markWebhookDeliveryFailed).toHaveBeenCalledWith({
-      provider: 'stripe',
-      providerEventId: 'evt_1',
-      error: 'Replay processing failed',
-      retryable: true,
-    })
-  })
+import {beforeEach,describe,expect,it,vi} from 'vitest'
+const mocks=vi.hoisted(()=>({requireAdmin:vi.fn(),getDelivery:vi.fn(),process:vi.fn(),audit:vi.fn()}))
+vi.mock('@/server/auth/require-auth',()=>({requireAdmin:mocks.requireAdmin}))
+vi.mock('@/server/services/webhook-delivery.service',()=>({getWebhookDeliveryById:mocks.getDelivery}))
+vi.mock('@/server/services/inbound-webhook-processing.service',()=>({processInboundWebhook:mocks.process}))
+vi.mock('@/server/services/audit-log.service',()=>({recordAuditLogBestEffort:mocks.audit,auditActorFromUser:(user:unknown)=>user}))
+import {POST} from './route'
+const actor={id:'staff',email:'staff@example.org',role:'STAFF'}
+const delivery={id:'delivery',provider:'stripe',providerEventId:'evt_1',status:'FAILED',rawPayload:'verified payment payload'}
+const invoke=()=>POST(new Request('http://localhost/api/webhook-deliveries/delivery/replay',{method:'POST'}),{params:Promise.resolve({id:'delivery'})})
+describe('authenticated manual webhook replay',()=>{
+ beforeEach(()=>{vi.resetAllMocks();mocks.requireAdmin.mockResolvedValue({ok:true,user:actor});mocks.getDelivery.mockResolvedValue(delivery);mocks.process.mockResolvedValue({id:'delivery',status:'PROCESSED',attempts:3})})
+ it('checks authorization before looking up or processing a delivery',async()=>{mocks.requireAdmin.mockResolvedValue({ok:false,response:new Response('Forbidden',{status:403})});expect((await invoke()).status).toBe(403);expect(mocks.getDelivery).not.toHaveBeenCalled();expect(mocks.process).not.toHaveBeenCalled()})
+ it('returns not found for missing deliveries',async()=>{mocks.getDelivery.mockResolvedValue(null);expect((await invoke()).status).toBe(404);expect(mocks.process).not.toHaveBeenCalled()})
+ it.each([{provider:'resend'},{rawPayload:null},{status:'SIGNATURE_FAILED'}])('rejects unverifiable or unsupported deliveries',async(patch)=>{mocks.getDelivery.mockResolvedValue({...delivery,...patch});expect((await invoke()).status).toBe(400);expect(mocks.process).not.toHaveBeenCalled()})
+ it('uses the shared lease instead of independently re-running commerce logic',async()=>{const response=await invoke();expect(response.status).toBe(200);expect(mocks.process).toHaveBeenCalledExactlyOnceWith('delivery',true);expect((await response.json()).data).toEqual({id:'delivery',status:'PROCESSED',attempts:3})})
+ it('returns conflict when another worker holds the claim',async()=>{mocks.process.mockResolvedValue(null);expect((await invoke()).status).toBe(409);expect(mocks.audit).not.toHaveBeenCalled()})
+ it.each([['PROCESSED','inbound_webhook.manual_replay',200],['RETRY_PENDING','inbound_webhook.manual_replay_failed',500]])('audits a %s outcome without payload or claim material',async(status,action,httpStatus)=>{mocks.process.mockResolvedValue({id:'delivery',status,attempts:3});expect((await invoke()).status).toBe(httpStatus);expect(mocks.audit).toHaveBeenCalledWith(expect.objectContaining({action,actor,resource:{type:'WebhookDelivery',id:'delivery'},snapshot:{deliveryId:'delivery',provider:'stripe',providerEventId:'evt_1',previousStatus:'FAILED',newStatus:status,attemptCount:3},redactions:['raw payload','webhook signature','provider secrets']}));expect(JSON.stringify(mocks.audit.mock.calls[0][0].snapshot)).not.toContain(delivery.rawPayload)})
 })

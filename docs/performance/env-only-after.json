@@ -1,0 +1,67 @@
+{
+  "git": "06c8336cfd7140435ef5a45fcc803db7a5010c70",
+  "workingTree": "Environment-only implementation working tree, based on git above",
+  "builtAt": "2026-09-24T04:30:09.411Z",
+  "next": "16.2.10",
+  "node": "v24.11.1",
+  "route": "/admin/settings/general",
+  "chunks": [
+    {
+      "file": "/_next/static/chunks/2yl1jv4w6po1z.js",
+      "raw": 3380,
+      "gzip": 1456
+    },
+    {
+      "file": "/_next/static/chunks/1ntn7efqc-iiw.js",
+      "raw": 54763,
+      "gzip": 12938
+    },
+    {
+      "file": "/_next/static/chunks/2_w2d7x-32u0e.js",
+      "raw": 12847,
+      "gzip": 4415
+    },
+    {
+      "file": "/_next/static/chunks/1pjxl_tof7hfo.js",
+      "raw": 44154,
+      "gzip": 10829
+    },
+    {
+      "file": "/_next/static/chunks/1q47zzrjwtmgk.js",
+      "raw": 5806,
+      "gzip": 2305
+    }
+  ],
+  "totals": {
+    "raw": 120950,
+    "gzip": 31943
+  },
+  "pageOnly": [
+    {
+      "file": "/_next/static/chunks/1q47zzrjwtmgk.js",
+      "raw": 5806,
+      "gzip": 2305
+    }
+  ],
+  "pageOnlyTotals": {
+    "raw": 5806,
+    "gzip": 2305
+  },
+  "routeSpecific": [
+    {
+      "file": "/_next/static/chunks/1pjxl_tof7hfo.js",
+      "raw": 44154,
+      "gzip": 10829
+    },
+    {
+      "file": "/_next/static/chunks/1q47zzrjwtmgk.js",
+      "raw": 5806,
+      "gzip": 2305
+    }
+  ],
+  "routeSpecificTotals": {
+    "raw": 49960,
+    "gzip": 13134
+  },
+  "measurement": "Static production client-reference manifest, unique referenced JS chunks gzip-compressed independently; excludes common root runtime, CSS, HTML/RSC, browser transfer and hydration CPU."
+}

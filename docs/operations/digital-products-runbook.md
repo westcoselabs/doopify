@@ -79,7 +79,7 @@ Notes:
 
 Required or strongly recommended:
 
-- `ENCRYPTION_KEY`
+- `DATA_ENCRYPTION_KEY`
   - Required for secure encrypted token storage and secret encryption helpers.
 - `NEXT_PUBLIC_STORE_URL`
   - Required for absolute links used in email/download contexts.

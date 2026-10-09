@@ -8,6 +8,7 @@ const root = fileURLToPath(new URL('.', import.meta.url))
 export default defineConfig({
   resolve: {
     alias: {
+      'server-only': path.resolve(root, 'tests/server-only.ts'),
       '@': path.resolve(root, 'src'),
     },
   },

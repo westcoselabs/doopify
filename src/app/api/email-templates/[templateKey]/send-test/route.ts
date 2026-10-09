@@ -1,8 +1,7 @@
 import { z } from 'zod'
 import { ok, err, parseBody } from '@/lib/api'
 import { requireAdmin } from '@/server/auth/require-auth'
-import { sendTransactionalEmail } from '@/server/email/provider'
-import { createEmailDelivery, markEmailDeliverySent, markEmailDeliveryFailed } from '@/server/services/email-delivery.service'
+import { sendTrackedEmail } from '@/server/services/email-delivery.service'
 import {
   getEmailTemplateSetting,
   isEditableTemplateKey,
@@ -67,42 +66,24 @@ export async function POST(req: Request, { params }: Params) {
       html = buildFulfillmentTrackingTestHtml(setting.fields, storeName, store)
     }
 
-    // Record the delivery for observability before attempting send.
-    const delivery = await createEmailDelivery({
-      event: 'template_test',
-      template: templateKey,
-      recipientEmail,
-      subject,
-      provider: 'resend',
-    })
-
     try {
-      const result = await sendTransactionalEmail({ from, to: [recipientEmail], subject, html })
-
-      await markEmailDeliverySent({
-        deliveryId: delivery.id,
-        provider: result.provider,
-        providerMessageId: result.providerMessageId,
+      const delivery = await sendTrackedEmail({
+        event: 'template_test', template: templateKey, recipientEmail, subject, from, html,
       })
-
       return ok({
-        sent: true,
-        provider: result.provider,
+        sent: delivery.status === 'SENT',
+        provider: delivery.provider,
         recipientEmail,
         subject,
         deliveryId: delivery.id,
+        ...(delivery.status !== 'SENT' ? { error: delivery.lastError || 'No message was sent.' } : {}),
       })
-    } catch (sendError) {
-      const message = sendError instanceof Error ? sendError.message : 'Send failed'
-      await markEmailDeliveryFailed({ deliveryId: delivery.id, error: message })
-
+    } catch {
       return ok({
         sent: false,
-        provider: 'preview',
         recipientEmail,
         subject,
-        deliveryId: delivery.id,
-        error: 'Email provider not configured or send failed. Check Settings → Email to connect a provider.',
+        error: 'Email delivery failed. Review delivery logs and the Developer environment configuration.',
       })
     }
   } catch (e) {

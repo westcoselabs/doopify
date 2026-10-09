@@ -1,7 +1,7 @@
 import { Prisma, type ShippingLiveProvider } from '@prisma/client'
 
 import { prisma } from '@/lib/prisma'
-import { emitInternalEvent } from '@/server/events/dispatcher'
+import { enqueueCommerceEvent } from '@/server/events/outbox'
 import {
   getShippingProviderApiKey,
   getShippingProviderConnectionStatus,
@@ -11,7 +11,7 @@ import {
 import { resolveLabelProvider } from '@/server/shipping/shipping-provider-selection'
 import type { ShippingRateRequest, ShippingRateQuote } from '@/server/shipping/shipping-rate.types'
 import { resolveOrderFulfillmentSnapshot } from '@/server/services/fulfillment-status.service'
-import { getRuntimeProviderConnection } from '@/server/services/provider-connection.service'
+import { isTransactionalEmailConfigured } from '@/server/email/provider'
 import { getStoreSettings } from '@/server/services/settings.service'
 
 type OrderLabelItemInput = {
@@ -303,7 +303,7 @@ async function resolveLiveProviderForLabels() {
   const store = await getStoreSettings()
   if (!store) throw new Error('Store is not configured')
 
-  const configuredProvider = resolveLabelProvider(store)
+  const configuredProvider = resolveLabelProvider()
   const providerCandidates: ShippingLiveProvider[] = ['SHIPPO', 'EASYPOST']
   const providerStatuses = await Promise.all(
     providerCandidates.map(async (provider) => ({
@@ -315,22 +315,17 @@ async function resolveLiveProviderForLabels() {
     .filter((entry) => Boolean(entry.status.connected))
     .map((entry) => entry.provider)
 
-  const provider =
-    (configuredProvider && connectedProviders.includes(configuredProvider)
-      ? configuredProvider
-      : connectedProviders[0] ?? configuredProvider) || null
-  if (!provider) {
-    throw new Error('A live shipping provider must be connected to buy labels')
-  }
+  const provider = configuredProvider
+  if (!provider) throw new Error('Set SHIPPING_LABEL_PROVIDER in the deployment environment before buying labels')
 
   const connection = await getShippingProviderConnectionStatus(provider)
   if (!connection.connected) {
-    throw new Error(`${provider} is not connected. Connect provider credentials before buying labels.`)
+    throw new Error(`${provider} is not connected. Configure provider environment credentials before buying labels.`)
   }
 
   const apiKey = await getShippingProviderApiKey(provider)
   if (!apiKey) {
-    throw new Error('Provider credentials are unavailable. Reconnect provider credentials and try again.')
+    throw new Error('Provider credentials are unavailable. Check provider environment configuration and try again.')
   }
 
   return {
@@ -344,32 +339,10 @@ async function resolveLiveProviderForLabels() {
 async function resolveLiveProviderForLabelsWithOverride(input: {
   requestedProvider?: ShippingLiveProvider
 }) {
-  const store = await getStoreSettings()
-  if (!store) throw new Error('Store is not configured')
-
-  if (!input.requestedProvider) {
-    return resolveLiveProviderForLabels()
+  if (input.requestedProvider && input.requestedProvider !== resolveLabelProvider()) {
+    throw new Error('Requested label provider must match SHIPPING_LABEL_PROVIDER')
   }
-
-  const provider = input.requestedProvider
-  const connection = await getShippingProviderConnectionStatus(provider)
-  if (!connection.connected) {
-    throw new Error(
-      `${provider} is not connected. Connect and verify ${provider} credentials before buying labels.`
-    )
-  }
-
-  const apiKey = await getShippingProviderApiKey(provider)
-  if (!apiKey) {
-    throw new Error('Provider credentials are unavailable. Reconnect provider credentials and try again.')
-  }
-
-  return {
-    provider,
-    apiKey,
-    store,
-    connectedProviders: [provider],
-  }
+  return resolveLiveProviderForLabels()
 }
 
 async function resolveOrderContext(input: {
@@ -586,9 +559,8 @@ export async function buyOrderShippingLabel(input: {
 
   const currency = (store.currency || 'USD').toUpperCase()
   const hasCustomerEmail = Boolean(order.email)
-  const emailRuntime = await getRuntimeProviderConnection('RESEND')
   const emailProviderConfigured = Boolean(
-    emailRuntime.source !== 'none' && emailRuntime.credentials?.API_KEY
+    isTransactionalEmailConfigured()
   )
   const trackingEmailRequested = Boolean(input.sendTrackingEmail)
   const shouldQueueTrackingEmail =
@@ -700,14 +672,13 @@ export async function buyOrderShippingLabel(input: {
       data: timelineEvents,
     })
 
+    await enqueueCommerceEvent(tx, 'fulfillment.created', {
+      fulfillmentId: fulfillment.id,
+      orderId: order.id,
+      trackingNumber: fulfillment.trackingNumber ?? undefined,
+      sendTrackingEmail: shouldQueueTrackingEmail,
+    }, fulfillment.id)
     return { fulfillment, shippingLabel }
-  })
-
-  await emitInternalEvent('fulfillment.created', {
-    fulfillmentId: saved.fulfillment.id,
-    orderId: order.id,
-    trackingNumber: saved.fulfillment.trackingNumber ?? undefined,
-    sendTrackingEmail: shouldQueueTrackingEmail,
   })
 
   return {

@@ -36,8 +36,10 @@ function runPrismaPush(environment) {
 }
 
 async function main() {
+  const explicitEnvironment = { ...process.env }
   loadEnv({ path: '.env', quiet: true })
   loadEnv({ path: '.env.local', override: true, quiet: true })
+  Object.assign(process.env, explicitEnvironment)
   const reset = await resetIntegrationSchema({ environment: process.env })
   if (!reset.ok) throw new Error(`Refusing to reset integration database: ${reset.reason}`)
 
@@ -46,7 +48,6 @@ async function main() {
     ...createInertTestEnvironment(parentEnvironment),
     DATABASE_URL: process.env.DATABASE_URL_TEST,
     DATABASE_URL_TEST: process.env.DATABASE_URL_TEST,
-    DIRECT_URL: process.env.DATABASE_URL_TEST,
     NODE_ENV: 'test',
   }
   process.exitCode = runPrismaPush(runEnvironment)

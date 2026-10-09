@@ -14,9 +14,9 @@ This lets first-party consumers (email, analytics, webhooks) react to commerce e
 
 ## Internal event dispatcher
 
-`src/server/events/dispatcher.ts` dispatches typed events after commerce operations succeed.
+`enqueueCommerceEvent()` in `src/server/events/outbox.ts` writes a deduplicated `DISPATCH_INTERNAL_EVENT` job inside each order, payment-status, refund, return or fulfillment transaction. The job is visible only after that transaction commits.
 
-Events are synchronous within the request lifecycle but consumers are designed to be side-effect-safe — a consumer failure does not roll back the commerce operation.
+The worker checks its ownership lease, calls persistence-only registry consumers with the same Prisma transaction and writes an `EventDispatchReceipt`. Failure rolls back fan-out and is retried by the existing job lifecycle. A retry after dispatch committed skips fan-out using the receipt. Provider network I/O runs in subsequent delivery jobs. Informational events outside these commerce producers still use the best-effort `emitInternalEvent()` path.
 
 ---
 
@@ -33,7 +33,7 @@ Events are synchronous within the request lifecycle but consumers are designed t
 
 ## Outbound webhook delivery
 
-When an `order.paid` or other lifecycle event fires, `queueOutboundWebhooks()` creates delivery records for all active integrations subscribed to that event.
+When an `order.paid` or other lifecycle event fires, `queueOutboundWebhooks()` creates delivery records for all developer-configured destinations subscribed to that event.
 
 Background processing:
 1. `processOutboundWebhook()` sends the signed HTTP delivery.
@@ -57,7 +57,7 @@ Delivery headers:
 - Email lifecycle (sent, failed, bounced, complained)
 - Webhook lifecycle (delivery success/failure)
 
-Analytics persistence is isolated from commerce durability — a failed analytics write does not affect order creation.
+For durable commerce events, analytics persistence is atomic with fan-out and its dispatch receipt. A failed write retries the event; the already committed commerce transaction remains intact.
 
 ---
 
@@ -68,10 +68,12 @@ Side effects that should not block the request lifecycle run as background jobs.
 `Job` records are created with a `PENDING` status. The job runner (`POST /api/jobs/run`) claims and processes due jobs. Each job has retry/backoff/exhaustion lifecycle.
 
 Current job types:
-- `ORDER_CONFIRMATION_EMAIL` — sends tracked order confirmation email
-- `FULFILLMENT_TRACKING_EMAIL` — sends tracked shipping confirmation email
+- `DISPATCH_INTERNAL_EVENT` — fans out persisted commerce events transactionally
+- `SEND_ORDER_CONFIRMATION_EMAIL` — sends tracked order confirmation email
 - `SYNC_SHIPPING_TRACKING` — polls shipping provider for tracking updates
 - `SEND_FULFILLMENT_EMAIL` — queued email for fulfillment events
+- `SEND_OUTBOUND_WEBHOOK` — sends a persisted outbound delivery
+- `RECORD_ANALYTICS_EVENT` — records typed analytics events
 
 ---
 
@@ -79,7 +81,7 @@ Current job types:
 
 `src/server/integrations/registry.ts` is the static integration registry. Integrations register their event subscriptions here before any plugin platform exists.
 
-Custom merchant integrations are configured in **Settings → Webhooks** and stored as `Integration` + `IntegrationEvent` records in the database.
+Developers define outbound destinations/events in `src/server/config/outbound-webhooks.ts` with separate environment secret references. Durable delivery records preserve destination snapshots and history.
 
 ---
 
@@ -91,4 +93,6 @@ Custom merchant integrations are configured in **Settings → Webhooks** and sto
 | `src/server/integrations/registry.ts` | Static integration registry |
 | `src/server/services/outbound-webhook.service.ts` | Outbound delivery queue and processing |
 | `src/server/services/email-delivery.service.ts` | Email delivery tracking |
-| `src/server/services/job.service.ts` | Background job lifecycle |
+| `src/server/jobs/job.service.ts` | Background job lifecycle |
+
+Outbox jobs and dispatch receipts must be retained together under a deliberate archival/replay policy. Internal deduplication does not guarantee exactly-once external delivery; uncertain email sends still require reconciliation. See [scaling rollout](../performance/scaling-hardening.md).

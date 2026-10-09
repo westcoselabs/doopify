@@ -3,7 +3,7 @@ import { type PaymentStatus, type Prisma, type ReturnStatus } from '@prisma/clie
 import { centsToDollars } from '@/lib/money'
 import { prisma } from '@/lib/prisma'
 import { createStripeRefund } from '@/lib/stripe'
-import { emitInternalEvent } from '@/server/events/dispatcher'
+import { enqueueCommerceEvent } from '@/server/events/outbox'
 import type { AuditActor } from '@/server/services/audit-log.service'
 import { safeAuditReturnEvent, type ReturnAuditAction } from '@/server/services/return-audit.service'
 
@@ -317,19 +317,19 @@ export async function createReturnRecord(orderId: string, payload: CreateReturnR
       },
     })
 
+    await enqueueCommerceEvent(tx, 'order.return_requested', {
+      orderId,
+      orderNumber: order.orderNumber,
+      returnId: created.id,
+    }, created.id)
+
+    await enqueueCommerceEvent(tx, 'return.requested', {
+      orderId,
+      orderNumber: order.orderNumber,
+      returnId: created.id,
+    }, created.id)
+
     return created
-  })
-
-  await emitInternalEvent('order.return_requested', {
-    orderId,
-    orderNumber: order.orderNumber,
-    returnId: createdReturn.id,
-  })
-
-  await emitInternalEvent('return.requested', {
-    orderId,
-    orderNumber: order.orderNumber,
-    returnId: createdReturn.id,
   })
 
   await emitReturnAuditEventSafely({
@@ -403,25 +403,27 @@ export async function updateReturnRecord(returnId: string, payload: UpdateReturn
       })
     }
 
+    if (payload.status) {
+      await enqueueCommerceEvent(tx, 'order.return_updated', {
+        orderId: existing.orderId,
+        orderNumber: existing.order.orderNumber,
+        returnId: existing.id,
+        status: payload.status,
+      }, `${returnId}:${payload.status}`)
+
+      if (payload.status === 'CLOSED') {
+        await enqueueCommerceEvent(tx, 'return.closed', {
+          orderId: existing.orderId,
+          orderNumber: existing.order.orderNumber,
+          returnId: existing.id,
+        }, `${returnId}:${payload.status}`)
+      }
+
+    }
     return next
   })
 
   if (payload.status) {
-    await emitInternalEvent('order.return_updated', {
-      orderId: existing.orderId,
-      orderNumber: existing.order.orderNumber,
-      returnId: existing.id,
-      status: payload.status,
-    })
-
-    if (payload.status === 'CLOSED') {
-      await emitInternalEvent('return.closed', {
-        orderId: existing.orderId,
-        orderNumber: existing.order.orderNumber,
-        returnId: existing.id,
-      })
-    }
-
     const statusToAction: Partial<Record<ReturnStatus, ReturnAuditAction>> = {
       APPROVED: 'return.approved',
       DECLINED: 'return.declined',
@@ -668,23 +670,23 @@ export async function createPaymentRefundRecord(orderId: string, payload: Create
       },
     })
 
+    await enqueueCommerceEvent(tx, 'order.refunded', {
+      orderId,
+      orderNumber: order.orderNumber,
+      refundId: issued.id,
+      amount: centsToDollars(issued.amountCents),
+      currency: order.currency,
+    }, issued.id)
+
+    await enqueueCommerceEvent(tx, 'refund.issued', {
+      orderId,
+      orderNumber: order.orderNumber,
+      refundId: issued.id,
+      amount: centsToDollars(issued.amountCents),
+      currency: order.currency,
+    }, issued.id)
+
     return issued
-  })
-
-  await emitInternalEvent('order.refunded', {
-    orderId,
-    orderNumber: order.orderNumber,
-    refundId: issuedRefund.id,
-    amount: centsToDollars(issuedRefund.amountCents),
-    currency: order.currency,
-  })
-
-  await emitInternalEvent('refund.issued', {
-    orderId,
-    orderNumber: order.orderNumber,
-    refundId: issuedRefund.id,
-    amount: centsToDollars(issuedRefund.amountCents),
-    currency: order.currency,
   })
 
   return issuedRefund

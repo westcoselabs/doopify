@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
     },
   },
   createManualFulfillment: vi.fn(),
-  getRuntimeProviderConnection: vi.fn(),
+  isTransactionalEmailConfigured: vi.fn(),
   auditActorFromUser: vi.fn(),
   recordAuditLogBestEffort: vi.fn(),
 }))
@@ -25,8 +25,8 @@ vi.mock('@/server/services/order.service', () => ({
   createManualFulfillment: mocks.createManualFulfillment,
 }))
 
-vi.mock('@/server/services/provider-connection.service', () => ({
-  getRuntimeProviderConnection: mocks.getRuntimeProviderConnection,
+vi.mock('@/server/email/provider', () => ({
+  isTransactionalEmailConfigured: mocks.isTransactionalEmailConfigured,
 }))
 
 vi.mock('@/server/services/audit-log.service', () => ({
@@ -49,10 +49,7 @@ describe('POST /api/orders/[orderNumber]/manual-fulfillment', () => {
     vi.clearAllMocks()
     mocks.auditActorFromUser.mockImplementation((user) => user)
     mocks.recordAuditLogBestEffort.mockResolvedValue(null)
-    mocks.getRuntimeProviderConnection.mockResolvedValue({
-      source: 'runtime',
-      credentials: { API_KEY: 're_test_key' },
-    })
+    mocks.isTransactionalEmailConfigured.mockReturnValue(true)
   })
 
   it('requires admin authorization', async () => {
@@ -170,10 +167,7 @@ describe('POST /api/orders/[orderNumber]/manual-fulfillment', () => {
       user: { id: 'user_1', role: 'OWNER' },
     })
     mocks.prisma.order.findUnique.mockResolvedValue({ id: 'order_1', email: 'buyer@example.com' })
-    mocks.getRuntimeProviderConnection.mockResolvedValue({
-      source: 'none',
-      credentials: null,
-    })
+    mocks.isTransactionalEmailConfigured.mockReturnValue(false)
     mocks.createManualFulfillment.mockResolvedValue({
       id: 'ful_1',
       orderId: 'order_1',

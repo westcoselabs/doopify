@@ -192,7 +192,6 @@ function providerLabel(provider) {
   return "Carrier";
 }
 
-export const STORE_DEFAULT_LABEL_PROVIDER_OPTION = "STORE_DEFAULT";
 
 function hasPrefetchedTimelineData(order) {
   if (!order) return false;
@@ -216,48 +215,6 @@ function hasPrefetchedDigitalDeliveryData(order) {
   if (!order) return false;
   if (order.digitalDeliveryLoaded === false) return false;
   return Boolean(order.digitalDelivery && typeof order.digitalDelivery === "object");
-}
-
-function normalizeConnectedProviders(input) {
-  const values = Array.isArray(input) ? input : [];
-  const orderedProviders = ["EASYPOST", "SHIPPO"];
-  return orderedProviders.filter((provider) => values.includes(provider));
-}
-
-export function resolveOrderLabelProviderSelection(input) {
-  const connectedProviders = normalizeConnectedProviders(input?.connectedProviders);
-  const storeDefaultProvider =
-    connectedProviders.find((provider) => provider === input?.storeDefaultProvider) || null;
-  const fallbackProvider = storeDefaultProvider || connectedProviders[0] || "";
-  const selectedChoiceRaw = String(input?.selectedChoice || "").trim().toUpperCase();
-  const selectedChoice =
-    selectedChoiceRaw === STORE_DEFAULT_LABEL_PROVIDER_OPTION
-      ? STORE_DEFAULT_LABEL_PROVIDER_OPTION
-      : connectedProviders.includes(selectedChoiceRaw)
-        ? selectedChoiceRaw
-        : connectedProviders.length > 1
-          ? STORE_DEFAULT_LABEL_PROVIDER_OPTION
-          : fallbackProvider;
-  const selectedProvider =
-    selectedChoice === STORE_DEFAULT_LABEL_PROVIDER_OPTION
-      ? fallbackProvider
-      : connectedProviders.find((provider) => provider === selectedChoice) || "";
-  const selectedProviderDisconnected = Boolean(
-    selectedChoice !== STORE_DEFAULT_LABEL_PROVIDER_OPTION &&
-      selectedChoice &&
-      !connectedProviders.includes(selectedChoice)
-  );
-
-  return {
-    connectedProviders,
-    storeDefaultProvider,
-    selectedChoice,
-    selectedProvider,
-    providerOverride:
-      selectedChoice === STORE_DEFAULT_LABEL_PROVIDER_OPTION ? undefined : selectedProvider || undefined,
-    selectedProviderDisconnected,
-    storeDefaultMissing: selectedChoice === STORE_DEFAULT_LABEL_PROVIDER_OPTION && !storeDefaultProvider,
-  };
 }
 
 function statusTextForShipment(input) {
@@ -333,7 +290,6 @@ export default function OrderDetailView({
   const initialConnectedProviders = Array.isArray(initialShippingCapabilities.connectedProviders)
     ? initialShippingCapabilities.connectedProviders
     : [];
-  const initialStoreDefaultLabelProvider = initialShippingCapabilities.labelProvider || null;
   const [refreshing, setRefreshing] = useState(false);
   const [pageError, setPageError] = useState("");
   const [ratesLoading, setRatesLoading] = useState(false);
@@ -347,12 +303,7 @@ export default function OrderDetailView({
   const [selectedShipmentId, setSelectedShipmentId] = useState("");
   const [selectedQuantities, setSelectedQuantities] = useState({});
   const [fulfillmentMethod, setFulfillmentMethod] = useState(
-    initialConnectedProviders.length ? "BUY_LABEL" : "MANUAL_TRACKING"
-  );
-  const [selectedLabelProviderChoice, setSelectedLabelProviderChoice] = useState(() =>
-    initialConnectedProviders.length > 1
-      ? STORE_DEFAULT_LABEL_PROVIDER_OPTION
-      : initialStoreDefaultLabelProvider || initialConnectedProviders[0] || ""
+    initialShippingCapabilities.labelProvider && initialConnectedProviders.includes(initialShippingCapabilities.labelProvider) ? "BUY_LABEL" : "MANUAL_TRACKING"
   );
   const [ratesLoadAttempted, setRatesLoadAttempted] = useState(false);
   const [toasts, setToasts] = useState([]);
@@ -437,19 +388,8 @@ export default function OrderDetailView({
   const connectedProviders = Array.isArray(shippingCapabilities.connectedProviders)
     ? shippingCapabilities.connectedProviders
     : [];
-  const storeDefaultLabelProvider = shippingCapabilities.labelProvider || null;
-  const labelProviderSelection = useMemo(
-    () =>
-      resolveOrderLabelProviderSelection({
-        connectedProviders,
-        storeDefaultProvider: storeDefaultLabelProvider,
-        selectedChoice: selectedLabelProviderChoice,
-      }),
-    [connectedProviders, selectedLabelProviderChoice, storeDefaultLabelProvider]
-  );
-  const selectedProviderForLabel = labelProviderSelection.selectedProvider;
-  const selectedProviderOverride = labelProviderSelection.providerOverride;
-  const hasAnyConnectedProvider = connectedProviders.length > 0;
+  const selectedProviderForLabel = shippingCapabilities.labelProvider || "";
+  const hasAnyConnectedProvider = Boolean(selectedProviderForLabel && connectedProviders.includes(selectedProviderForLabel));
   const canBuyShippingLabel = Boolean(currentOrder?.availableActions?.canBuyShippingLabel);
   const hasCustomerEmail =
     currentOrder?.emailCapabilities?.hasCustomerEmail ??
@@ -501,19 +441,12 @@ export default function OrderDetailView({
     setManualSendTrackingEmail(hasCustomerEmail);
     setLabelSendTrackingEmail(hasCustomerEmail);
     setFulfillmentMethod(hasAnyConnectedProvider ? "BUY_LABEL" : "MANUAL_TRACKING");
-    setSelectedLabelProviderChoice(
-      connectedProviders.length > 1
-        ? STORE_DEFAULT_LABEL_PROVIDER_OPTION
-        : shippingCapabilities.labelProvider || connectedProviders[0] || ""
-    );
     setRatesLoadAttempted(false);
   }, [
     currentOrder?.id,
     currentOrder?.notes,
     hasCustomerEmail,
     hasAnyConnectedProvider,
-    connectedProviders,
-    shippingCapabilities.labelProvider,
   ]);
 
   const chips = useMemo(
@@ -610,7 +543,7 @@ export default function OrderDetailView({
   useEffect(() => {
 // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional effect-driven state sync for existing async/load flow
     clearQuoteSelection();
-  }, [selectedLabelProviderChoice]);
+  }, [selectedProviderForLabel]);
 
   useEffect(() => {
     if (!currentOrder?.orderNumberValue) return;
@@ -783,9 +716,9 @@ export default function OrderDetailView({
     setLabelRatesError("");
     try {
       if (!selectedProviderForLabel) {
-        throw new Error("Select a connected label provider before loading label rates.");
+        throw new Error("Configure SHIPPING_LABEL_PROVIDER in the deployment environment before loading label rates.");
       }
-      if (labelProviderSelection.selectedProviderDisconnected) {
+      if (!hasAnyConnectedProvider) {
         throw new Error(`${providerLabel(selectedProviderForLabel)} is not currently connected.`);
       }
       const items = normalizeItemsPayload();
@@ -793,7 +726,7 @@ export default function OrderDetailView({
       const response = await fetch(`/api/orders/${normalizeOrderNumber(currentOrder.orderNumber)}/shipping-rates`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items, parcel: parcelPayload, provider: selectedProviderOverride }),
+        body: JSON.stringify({ items, parcel: parcelPayload }),
       });
       const json = await response.json();
       if (!response.ok || !json?.success) throw new Error(parseErrorMessage(json, "Failed to load label rates."));
@@ -843,7 +776,6 @@ export default function OrderDetailView({
         body: JSON.stringify({
           providerRateId: selectedRateId,
           shipmentId: selectedShipmentId || undefined,
-          provider: selectedProviderOverride,
           sendTrackingEmail: Boolean(labelSendTrackingEmail),
           items,
           parcel: parcelPayload,
@@ -1404,56 +1336,11 @@ export default function OrderDetailView({
                   </div>
                 ) : (
                   <>
-                    {labelProviderSelection.connectedProviders.length > 1 ? (
-                      <div className={styles.providerSelectorRow}>
-                        <div className={styles.providerSelectorHeader}>
-                          <span className={styles.metaText}>Label provider</span>
-                          <Link className={styles.inlineLinkButton} href="/admin/settings/shipping">
-                            Manage providers
-                          </Link>
-                        </div>
-                        <div className={styles.providerSelectorButtons}>
-                          <button
-                            className={`${styles.providerSelectorButton} ${selectedLabelProviderChoice === STORE_DEFAULT_LABEL_PROVIDER_OPTION ? styles.providerSelectorButtonActive : ""}`}
-                            onClick={() => setSelectedLabelProviderChoice(STORE_DEFAULT_LABEL_PROVIDER_OPTION)}
-                            type="button"
-                          >
-                            Store default
-                          </button>
-                          {labelProviderSelection.connectedProviders.map((provider) => (
-                            <button
-                              className={`${styles.providerSelectorButton} ${selectedLabelProviderChoice === provider ? styles.providerSelectorButtonActive : ""}`}
-                              key={provider}
-                              onClick={() => setSelectedLabelProviderChoice(provider)}
-                              type="button"
-                            >
-                              {providerLabel(provider)}
-                            </button>
-                          ))}
-                        </div>
-                        <p className={styles.metaText}>
-                          {labelProviderSelection.storeDefaultProvider
-                            ? `Store default: ${providerLabel(labelProviderSelection.storeDefaultProvider)}`
-                            : "Store default is not configured. A connected provider will be used."}
-                        </p>
-                      </div>
-                    ) : (
-                      <div className={styles.providerSingleRow}>
-                        <span className={styles.metaText}>Label provider</span>
-                        <span className={styles.providerSingleMeta}>
-                          {providerLabel(selectedProviderForLabel)} · Connected
-                        </span>
-                        <Link className={styles.inlineLinkButton} href="/admin/settings/shipping">
-                          Manage providers
-                        </Link>
-                      </div>
-                    )}
-
-                    {labelProviderSelection.selectedProviderDisconnected ? (
-                      <p className={styles.providerInlineError}>
-                        {providerLabel(selectedProviderForLabel)} is disconnected. Choose a connected provider or update Shipping settings.
-                      </p>
-                    ) : null}
+                    <div className={styles.providerSingleRow}>
+                      <span className={styles.metaText}>Label provider</span>
+                      <span className={styles.providerSingleMeta}>{providerLabel(selectedProviderForLabel)} · Configured</span>
+                      <Link className={styles.inlineLinkButton} href="/admin/system/developer">Environment & integrations</Link>
+                    </div>
 
                     <h4 className={styles.workflowTitle}>Buy shipping label with {providerLabel(selectedProviderForLabel || rateProvider)}</h4>
                     <div className={styles.formGrid}>
@@ -1510,7 +1397,7 @@ export default function OrderDetailView({
                     </label>
                     <div className={styles.actionRow}>
                       <AdminButton
-                        disabled={!fulfillmentPanelReady || labelProviderSelection.selectedProviderDisconnected}
+                        disabled={!fulfillmentPanelReady || !hasAnyConnectedProvider}
                         loading={ratesLoading}
                         onClick={loadShippingRates}
                         size="sm"

@@ -43,10 +43,9 @@ describe('createStripePaymentIntent', () => {
         checkoutEmail: 'buyer@example.com',
         ignoredEmpty: '',
       },
-      secretKey: 'sk_test_db_runtime',
     })
 
-    expect(mocks.getStripeSdkClient).toHaveBeenCalledWith('sk_test_db_runtime')
+    expect(mocks.getStripeSdkClient).toHaveBeenCalledWith()
     expect(mocks.createPaymentIntent).toHaveBeenCalledWith({
       amount: 5999,
       currency: 'usd',

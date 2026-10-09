@@ -1,4 +1,6 @@
 import Link from 'next/link';
+import Image from 'next/image';
+import CatalogPagination from '@/components/storefront/CatalogPagination';
 
 import { getStorefrontCollectionSummaries } from '@/server/services/collection.service';
 
@@ -7,11 +9,13 @@ export const metadata = {
   description: 'Browse curated product collections built in Doopify.',
 };
 
-export default async function CollectionsPage() {
+export default async function CollectionsPage({ searchParams }) {
   let collections = [];
+  let pagination;
+  const query = await searchParams;
 
   try {
-    collections = await getStorefrontCollectionSummaries();
+    ({ collections, pagination } = await getStorefrontCollectionSummaries({ page: Number(query?.page) }));
   } catch (error) {
     console.error('[CollectionsPage]', error);
   }
@@ -74,7 +78,7 @@ export default async function CollectionsPage() {
               <Link className="card" href={`/collections/${collection.handle}`} key={collection.id}>
                 <div className="card-image">
                   {collection.imageUrl ? (
-                    <img alt={collection.title} src={collection.imageUrl} />
+                    <Image alt={collection.title} src={collection.imageUrl} width={800} height={600} sizes="(max-width: 640px) 100vw, (max-width: 980px) 50vw, 33vw" unoptimized={!collection.imageUrl.startsWith('/')} />
                   ) : (
                     <div className="placeholder">✦</div>
                   )}
@@ -102,6 +106,7 @@ export default async function CollectionsPage() {
             </Link>
           </div>
         )}
+        <CatalogPagination pagination={pagination} pathname="/collections" />
       </div>
     </>
   );

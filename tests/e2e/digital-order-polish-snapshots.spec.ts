@@ -21,7 +21,7 @@ if (!jwtSecret) throw new Error('E2E_JWT_SECRET or JWT_SECRET is required for te
 const prisma = new PrismaClient({
   adapter: new PrismaPg({
     connectionString: databaseUrlTest,
-  }),
+  }, { schema: new URL(databaseUrlTest).searchParams.get('schema') || 'public' }),
 })
 
 async function createAdminSession(): Promise<AuthSession> {

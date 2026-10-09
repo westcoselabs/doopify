@@ -1,153 +1,48 @@
-# Local Development Setup
+# Local development
 
-Run Doopify locally against a real Postgres database.
+Use Node.js 22.18 or newer, npm and PostgreSQL. Doopify uses real commerce persistence locally.
 
----
+## Environment and database
 
-## Prerequisites
+Copy `.env.example` to `.env` and replace placeholders. Next.js supports `.env.local` overrides; Prisma CLI configuration reads `.env` and the process environment. Keep `DATABASE_URL` available to database commands. `DIRECT_URL` is not used by the current Prisma configuration.
 
-- Node.js 20+
-- PostgreSQL database (local or cloud — Neon free tier works)
-- npm
+Required foundation: `DATABASE_URL`, `JWT_SECRET`, `DATA_ENCRYPTION_KEY` and an appropriate `NEXT_PUBLIC_STORE_URL` (`http://localhost:3000` locally). Generate new random encryption keys only for new installations; preserve existing keys on upgrade.
 
----
-
-## 1. Install dependencies
+Select optional capabilities explicitly: `EMAIL_PROVIDER=none|resend|smtp|preview`, `SHIPPING_RATE_PROVIDER=none|shippo|easypost`, `SHIPPING_LABEL_PROVIDER=none|shippo|easypost`, and `MEDIA_STORAGE_PROVIDER=postgres|vercel-blob|s3`. Add corresponding credentials in the environment. Preview email is development-only and never reports a successful send.
 
 ```bash
-npm install
-```
-
----
-
-## 2. Configure environment
-
-Copy the example file:
-
-```bash
-cp .env.example .env.local
-```
-
-Edit `.env.local` and fill in:
-
-```env
-DATABASE_URL="postgresql://user:password@localhost:5432/doopify_dev"
-DIRECT_URL="postgresql://user:password@localhost:5432/doopify_dev"
-JWT_SECRET="your-random-32-char-secret"
-ENCRYPTION_KEY="your-random-32-char-secret"
-NEXT_PUBLIC_STORE_URL="http://localhost:3000"
-STRIPE_SECRET_KEY="sk_test_..."
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY="pk_test_..."
-STRIPE_WEBHOOK_SECRET="whsec_..."
-WEBHOOK_RETRY_SECRET="your-random-16-char-secret"
-```
-
-Generate random secrets:
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
----
-
-`DATABASE_URL` and `DIRECT_URL` must be set before the app boots.
-
-## 3. Bootstrap the database
-
-```bash
-npm run db:generate      # generate Prisma client
-npm run db:push          # apply schema
-npm run db:seed:bootstrap  # create initial store record
-```
-
----
-
-## 4. Run diagnostics
-
-```bash
+npm ci
+npm run db:generate
+npm run db:deploy:safe
+npm run db:seed:bootstrap
 npm run doopify:doctor
-```
-
-This checks database connectivity, env var presence, and schema health.
-
----
-
-## 5. Start the dev server
-
-```bash
 npm run dev
 ```
 
-Open `http://localhost:3000`.
+The safe migration command inspects migration history; resolve known predecessor histories using their runbooks. `db:push` is reserved for disposable development/test schemas, not an existing deployment upgrade. Existing credential-backed stores use the [migration runbook](../ENV_ONLY_MIGRATION_RUNBOOK.md).
 
----
+## First owner and store setup
 
-## 6. Create the owner account
+Open `/create-owner`. If `SETUP_TOKEN` is configured, enter it; production requires it. Bootstrap closes once an active owner exists. Merchant business configuration remains in the focused Settings pages. Infrastructure is visible through **System → Developer** and changed only through local/deployment environment variables.
 
-Visit `http://localhost:3000/create-owner`.
-
-In development (`NODE_ENV` not `production`), no `SETUP_TOKEN` is required.
-If `SETUP_TOKEN` is set locally, the entered token must match.
-After the first active `OWNER` is created, `/create-owner` is permanently closed.
-
----
-
-## Local Stripe webhook testing
-
-Use the [Stripe CLI](https://stripe.com/docs/stripe-cli) to forward webhooks to your local server:
+For local Stripe webhooks:
 
 ```bash
 stripe listen --forward-to localhost:3000/api/webhooks/stripe
 ```
 
-Copy the output webhook signing secret and set it as `STRIPE_WEBHOOK_SECRET` in `.env.local`.
+Set the listener's signing secret in `STRIPE_WEBHOOK_SECRET` and restart. Use matching test-mode Stripe keys. Run a worker in another process with `npm run worker`, or call the protected POST runner endpoints using an authenticated scheduler.
 
-For private beta, save and verify Stripe in **Settings -> Payments** after login.
-
----
-
-## Verification gate
-
-Before committing or opening a PR:
+## Verification
 
 ```bash
 npm run db:generate
+npm run lint
 npx tsc --noEmit
 npm run test
 npm run build
 ```
 
-Run integration tests when a disposable test database is configured:
+Real-DB tests require a disposable `DATABASE_URL_TEST`. A dedicated schema is preferred. For a confirmed disposable public schema, `E2E_DATABASE_URL` must match exactly and `DOOPIFY_ALLOW_PUBLIC_TEST_SCHEMA=1` explicitly permits reset. Never point these variables at a live store.
 
-```bash
-npm run db:test:reset
-DATABASE_URL_TEST="postgresql://..." npm run test:integration
-```
-
-Never point `DATABASE_URL_TEST` at your development or production database.
-`npm run db:test:reset` rebuilds the integration schema and runs `prisma db push` against `DATABASE_URL_TEST`, so use a disposable test target.
-Use a dedicated test schema in `DATABASE_URL_TEST` (for example `...?schema=doopify_test`). For a confirmed disposable public schema only, set `E2E_DATABASE_URL` to the exact same target and set `DOOPIFY_ALLOW_PUBLIC_TEST_SCHEMA=1`; the runner refuses any mismatch and passes its internal reset permission only to the database-preparation child.
-
----
-
-## Local CSP report logging
-
-Set `CSP_REPORT_LOG=1` to print CSP violation reports during local development or e2e debugging.
-Without that flag, local/dev suppresses CSP report log noise.
-
----
-
-## Playwright Stripe fallback (local e2e)
-
-For Playwright-managed local web-server runs, test-only Stripe fallback keys are injected when Stripe keys are missing or placeholder values are detected.
-This does not change production Stripe runtime behavior.
-
----
-
-## Explore the database
-
-```bash
-npm run db:studio
-```
-
-Opens Prisma Studio at `http://localhost:5555`.
+Install browser binaries with `npm run test:e2e:install` before `npm run test:e2e`. Existing local-server tests can use `E2E_BASE_URL` and `E2E_SKIP_WEBSERVER=1`. Stripe smoke tests require explicit test credentials and opt-in. See [worker deployment](worker.md) and the [environment reference](../ENVIRONMENT_VARIABLE_REFERENCE.md).

@@ -104,6 +104,7 @@ export const shippoProviderAdapter: ShippingProviderAdapter = {
     try {
       const response = await fetch(`${SHIPPO_API_BASE}/carrier_accounts`, {
         method: 'GET',
+        signal: AbortSignal.timeout(5_000),
         headers: {
           Authorization: `ShippoToken ${input.apiKey}`,
           Accept: 'application/json',
@@ -154,6 +155,7 @@ export const shippoProviderAdapter: ShippingProviderAdapter = {
   async getRates(input) {
     const response = await fetch(`${SHIPPO_API_BASE}/shipments/`, {
       method: 'POST',
+      signal: AbortSignal.timeout(15_000),
       headers: {
         Authorization: `ShippoToken ${input.apiKey}`,
         'Content-Type': 'application/json',
@@ -251,6 +253,7 @@ export const shippoProviderAdapter: ShippingProviderAdapter = {
   async purchaseLabel(input) {
     const response = await fetch(`${SHIPPO_API_BASE}/transactions/`, {
       method: 'POST',
+      signal: AbortSignal.timeout(15_000),
       headers: {
         Authorization: `ShippoToken ${input.apiKey}`,
         'Content-Type': 'application/json',
@@ -324,6 +327,7 @@ export const shippoProviderAdapter: ShippingProviderAdapter = {
       `${SHIPPO_API_BASE}/tracks/${encodeURIComponent(carrier)}/${encodeURIComponent(trackingNumber)}`,
       {
         method: 'GET',
+      signal: AbortSignal.timeout(15_000),
         headers: {
           Authorization: `ShippoToken ${input.apiKey}`,
           Accept: 'application/json',

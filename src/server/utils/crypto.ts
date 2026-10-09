@@ -1,25 +1,15 @@
 import crypto from 'crypto'
+// Native TypeScript CLI imports require the explicit extension.
+// @ts-ignore -- shared with the local rotation CLI.
+import { parseDataEncryptionKey, type DataEncryptionKeyName } from '../../lib/env-schema.ts'
 
 const ALGORITHM = 'aes-256-gcm'
 const IV_LENGTH = 16
 const SALT_LENGTH = 64
 const CURRENT_ENVELOPE_VERSION = 'v1'
 
-function isUnsafeEncryptionSecret(value: string) {
-  const normalized = value.trim().toLowerCase()
-  if (/default|replace|changeme|example|sample|generate-a-random|insecure|password|secret/.test(normalized)) return true
-  if (/^(.)\1+$/.test(normalized)) return true
-  if (new Set(normalized).size < 8) return true
-  if (/0123456789|9876543210|abcdefghijklmnopqrstuvwxyz|zyxwvutsrqponmlkjihgfedcba/.test(normalized)) return true
-  return false
-}
-
-function getEncryptionSecret(name: 'ENCRYPTION_KEY' | 'ENCRYPTION_KEY_PREVIOUS' = 'ENCRYPTION_KEY') {
-  const secret = process.env[name]?.trim()
-  if (!secret || secret.length < 32 || isUnsafeEncryptionSecret(secret)) {
-    throw new Error(`${name} must be a high-entropy value of at least 32 characters before encrypted data can be used.`)
-  }
-  return secret
+function getEncryptionSecret(name: DataEncryptionKeyName = 'DATA_ENCRYPTION_KEY') {
+  return parseDataEncryptionKey(process.env, name)
 }
 
 function decryptWithSecret(parts: string[], secret: string) {
@@ -41,10 +31,10 @@ function parseEncryptedParts(encryptedData: string) {
 
 function candidateSecrets() {
   const current = getEncryptionSecret()
-  const previous = process.env.ENCRYPTION_KEY_PREVIOUS?.trim()
+  const previous = process.env.DATA_ENCRYPTION_KEY_PREVIOUS?.trim()
   if (!previous) return [current]
   try {
-    return [current, getEncryptionSecret('ENCRYPTION_KEY_PREVIOUS')]
+    return [current, getEncryptionSecret('DATA_ENCRYPTION_KEY_PREVIOUS')]
   } catch {
     // A malformed previous key must not weaken current-key encryption.
     return [current]
@@ -88,7 +78,7 @@ export function isCurrentEncryptionEnvelope(value: string) {
   return value.startsWith(`${CURRENT_ENVELOPE_VERSION}:`)
 }
 
-/** Decrypts with ENCRYPTION_KEY only; it never falls back to the previous key. */
+/** Decrypts with DATA_ENCRYPTION_KEY only; it never falls back to the previous key. */
 export function decryptWithCurrentEncryptionKey(encryptedData: string): string {
   if (!isCurrentEncryptionEnvelope(encryptedData)) {
     throw new Error('Encrypted value does not use the current envelope version.')
@@ -99,8 +89,8 @@ export function decryptWithCurrentEncryptionKey(encryptedData: string): string {
 
 /**
  * Produces the rotation decision used by the re-encryption CLI. A v1 envelope
- * is current only when it decrypts with ENCRYPTION_KEY itself, not merely when
- * it can be read through ENCRYPTION_KEY_PREVIOUS.
+ * is current only when it decrypts with DATA_ENCRYPTION_KEY itself, not merely when
+ * it can be read through DATA_ENCRYPTION_KEY_PREVIOUS.
  */
 export function getEncryptionRotationDecision(encryptedData: string) {
   const plaintext = decrypt(encryptedData)
@@ -110,7 +100,7 @@ export function getEncryptionRotationDecision(encryptedData: string) {
         return { plaintext, needsRotation: false }
       }
     } catch {
-      // A versioned envelope that requires ENCRYPTION_KEY_PREVIOUS must rotate.
+      // A versioned envelope that requires DATA_ENCRYPTION_KEY_PREVIOUS must rotate.
     }
   }
   return { plaintext, needsRotation: true }

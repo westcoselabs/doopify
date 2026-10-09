@@ -1,14 +1,13 @@
 import CheckoutClientPage from './CheckoutClientPage';
 import { getPublicStorefrontSettings } from '@/server/services/settings.service';
-import { getStripeRuntimeConnection } from '@/server/payments/stripe-runtime.service';
+import { getStripePublicConfig } from '@/lib/stripe-client';
 
 export const metadata = {
   title: 'Checkout - Doopify',
   description: 'Secure checkout',
 };
 
-// Checkout resolves live Stripe runtime/env-fallback credentials per request and
-// must never be statically cached, so the publishable key is always current.
+// Checkout reads deployment configuration and live store settings per request.
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -26,8 +25,8 @@ export default async function CheckoutPage({ searchParams }) {
   }
 
   try {
-    const stripeRuntime = await getStripeRuntimeConnection();
-    publishableKey = stripeRuntime.publishableKey || '';
+    const stripeConfig = getStripePublicConfig();
+    publishableKey = stripeConfig.publishableKey || '';
   } catch (error) {
     console.error('[CheckoutPage Stripe runtime]', error);
   }

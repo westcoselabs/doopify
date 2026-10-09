@@ -37,10 +37,9 @@ export async function createStripePaymentIntent(input: {
   currency: string
   email?: string
   metadata?: Record<string, string | undefined>
-  secretKey?: string | null
   idempotencyKey?: string
 }) {
-  const stripeClient = getStripeSdkClient(input.secretKey)
+  const stripeClient = getStripeSdkClient()
   const metadata = Object.fromEntries(
     Object.entries(input.metadata ?? {}).filter(([, value]) => Boolean(value))
   ) as Record<string, string>
@@ -83,9 +82,8 @@ export async function createStripeRefund(input: {
   amount?: number
   reason?: 'duplicate' | 'fraudulent' | 'requested_by_customer'
   idempotencyKey?: string
-  secretKey?: string | null
 }) {
-  const stripeClient = getStripeSdkClient(input.secretKey)
+  const stripeClient = getStripeSdkClient()
   const createPayload: Stripe.RefundCreateParams = {}
 
   if (input.chargeId) {
@@ -117,8 +115,8 @@ export async function createStripeRefund(input: {
   }
 }
 
-export async function getStripeEvent(eventId: string, secretKey?: string | null) {
-  const stripeClient = getStripeSdkClient(secretKey)
+export async function getStripeEvent(eventId: string) {
+  const stripeClient = getStripeSdkClient()
   try {
     const event = await stripeClient.events.retrieve(eventId)
     return event as StripeWebhookEvent<StripePaymentIntent>

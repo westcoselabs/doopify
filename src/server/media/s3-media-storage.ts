@@ -1,5 +1,5 @@
-import { Client as MinioClient } from 'minio'
-import type { Readable } from 'node:stream'
+import { createS3Client } from './s3-client'
+import { Readable } from 'node:stream'
 
 import { prisma } from '@/lib/prisma'
 import {
@@ -105,47 +105,11 @@ function resolvePublicUrl(config: S3MediaStorageConfig, key: string) {
   return `${base}/${encodedKey}`
 }
 
-async function streamToBuffer(stream: Readable): Promise<Buffer> {
-  const chunks: Buffer[] = []
-  for await (const chunk of stream) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-  }
-  return Buffer.concat(chunks)
-}
-
-function buildMinioClient(config: S3MediaStorageConfig) {
-  const endpoint = config.endpoint?.trim()
-
-  if (!endpoint) {
-    return new MinioClient({
-      endPoint: 's3.amazonaws.com',
-      useSSL: true,
-      region: config.region,
-      accessKey: config.accessKeyId,
-      secretKey: config.secretAccessKey,
-      pathStyle: false,
-    })
-  }
-
-  const normalizedEndpoint = endpoint.includes('://') ? endpoint : `https://${endpoint}`
-  const parsed = new URL(normalizedEndpoint)
-
-  return new MinioClient({
-    endPoint: parsed.hostname,
-    useSSL: parsed.protocol === 'https:',
-    port: parsed.port ? Number(parsed.port) : undefined,
-    region: config.region,
-    accessKey: config.accessKeyId,
-    secretKey: config.secretAccessKey,
-    pathStyle: true,
-  })
-}
-
 export function createS3MediaStorageAdapter(
   config: S3MediaStorageConfig,
   deps: S3MediaAdapterDeps = {
     prismaClient: prisma as unknown as PrismaMediaClient,
-    objectClient: buildMinioClient(config),
+    objectClient: createS3Client(config),
   }
 ): MediaStorageAdapter {
   return {
@@ -214,7 +178,7 @@ export function createS3MediaStorageAdapter(
       }
     },
 
-    async get(assetId: string): Promise<GetMediaObjectResult | null> {
+    async get(assetId: string, signal?: AbortSignal): Promise<GetMediaObjectResult | null> {
       const asset = await deps.prismaClient.mediaAsset.findUnique({
         where: { id: assetId },
         select: {
@@ -252,9 +216,14 @@ export function createS3MediaStorageAdapter(
       }
 
       const body = await deps.objectClient.getObject(asset.storageBucket || config.bucket, asset.storageKey)
+      const abort = () => body.destroy(new Error('Media request cancelled'))
+      signal?.addEventListener('abort', abort, { once: true })
+      body.once('close', () => signal?.removeEventListener('abort', abort))
+      const stream = Readable.toWeb(body) as ReadableStream<Uint8Array>
+      if (signal?.aborted) abort()
 
       return {
-        body: await streamToBuffer(body),
+        stream,
         mimeType: asset.mimeType,
         filename: asset.filename,
         size: asset.size,

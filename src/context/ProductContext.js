@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { createContext, useContext, useEffect, useMemo, useReducer } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useReducer, useRef } from 'react';
 import {
   buildVariantTitle,
   cloneProduct,
@@ -34,7 +34,10 @@ import {
   syncPersistedMediaOnProduct,
 } from './product-media-upload.helpers';
 
+const ACTION_NAMES = ["setSearchQuery","setActiveFilter","requestSelectProduct","requestCreateProduct","requestDuplicateProduct","requestCloseEditor","cancelDraftChanges","saveDraft","setAutosaveEnabled","setDraftField","setDraftTagsFromText","addSampleImage","addImagesFromFiles","addImagesFromLibrary","replaceImageWithSample","replaceImageWithFile","selectPreviewImage","setFeaturedImage","moveImage","removeImage","addOptionGroup","removeOptionGroup","updateOptionName","updateOptionValues","addOptionValue","removeOptionValue","addVariant","updateVariantField","requestDeleteVariant","requestDeleteProduct","confirmDialogAction","dismissConfirmDialog","dismissToast","showToast"];
 const ProductContext = createContext(null);
+const ProductCatalogContext = createContext(null);
+const ProductNotificationContext = createContext(null);
 
 const initialState = {
   products: [],
@@ -297,6 +300,16 @@ function collectSkuValidationErrors(draftProduct, products) {
   return errors;
 }
 
+// Weak keys release cached signatures with obsolete immutable collections.
+const collectionSignatures = new WeakMap();
+function collectionSignature(values, kind, project = value => value) {
+  if (!values) return '[]';
+  let signatures = collectionSignatures.get(values);
+  if (!signatures) { signatures = new Map(); collectionSignatures.set(values, signatures); }
+  if (!signatures.has(kind)) signatures.set(kind, JSON.stringify(values.map(project)));
+  return signatures.get(kind);
+}
+
 function getComparableProduct(product) {
   if (!product) {
     return null;
@@ -317,25 +330,25 @@ function getComparableProduct(product) {
     storefrontBadgeText: product.storefrontBadgeText,
     fulfillmentType: product.fulfillmentType,
     category: product.category,
-    tags: product.tags,
+    tags: collectionSignature(product.tags, 'tags'),
     vendor: product.vendor,
     sku: product.sku,
     basePrice: product.basePrice,
     compareAtPrice: product.compareAtPrice,
     featuredImageId: product.featuredImageId,
-    images: (product.images || []).map(image => ({
+    images: collectionSignature(product.images, 'images', image => ({
       id: image.id,
       assetId: image.assetId || null,
       src: image.src,
       alt: image.alt,
       sortOrder: image.sortOrder,
     })),
-    options: (product.options || []).map(option => ({
+    options: collectionSignature(product.options, 'options', option => ({
       id: option.id,
       name: option.name,
       values: option.values,
     })),
-    variants: (product.variants || []).map(variant => ({
+    variants: collectionSignature(product.variants, 'variants', variant => ({
       id: variant.id,
       title: variant.title,
       optionValues: variant.optionValues,
@@ -456,6 +469,7 @@ function productReducer(state, action) {
         },
       };
     case 'ADJUST_MEDIA_UPLOADS':
+      if (action.productId && action.productId !== state.editor.draftProduct?.id) return state;
       return {
         ...state,
         editor: {
@@ -656,6 +670,37 @@ export function ProductProvider({ children }) {
     };
   }, []);
 
+  const stateRef = useRef(state);
+  const blobUrls = useRef(new Set());
+  const uploads = useRef(new Map());
+  const toastTimers = useRef(new Set());
+  useLayoutEffect(() => { stateRef.current = state; }, [state]);
+  useEffect(() => {
+    const activeUrls = new Set((state.editor.draftProduct?.images || []).map(image => image.src));
+    for (const url of blobUrls.current) {
+      if (!activeUrls.has(url)) { URL.revokeObjectURL(url); blobUrls.current.delete(url); }
+    }
+  }, [state.editor.draftProduct?.images]);
+  useEffect(() => {
+    const activeProductId = state.editor.draftProduct?.id;
+    for (const [controller, productId] of uploads.current) {
+      if (productId !== activeProductId) controller.abort();
+    }
+  }, [state.editor.draftProduct?.id]);
+  useEffect(() => {
+    const urls = blobUrls.current;
+    const pending = uploads.current;
+    const timers = toastTimers.current;
+    return () => {
+      for (const url of urls) URL.revokeObjectURL(url);
+      urls.clear();
+      for (const controller of pending.keys()) controller.abort();
+      pending.clear();
+      for (const timer of timers) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
+
   const selectedProduct = useMemo(
     () => state.products.find(product => product.id === state.selectedProductId) || null,
     [state.products, state.selectedProductId]
@@ -663,7 +708,7 @@ export function ProductProvider({ children }) {
 
   const draftInventorySummary = useMemo(
     () => deriveInventorySummary(state.editor.draftProduct?.variants || []),
-    [state.editor.draftProduct]
+    [state.editor.draftProduct?.variants]
   );
 
   const draftFeaturedImage = useMemo(() => {
@@ -678,11 +723,12 @@ export function ProductProvider({ children }) {
     );
   }, [state.editor.draftProduct]);
 
+  const comparableBaseline = useMemo(() => getComparableProduct(state.editor.baselineProduct), [state.editor.baselineProduct]);
   const hasUnsavedChanges = useMemo(() => {
-    const comparableDraft = JSON.stringify(getComparableProduct(state.editor.draftProduct));
-    const comparableBaseline = JSON.stringify(getComparableProduct(state.editor.baselineProduct));
-    return comparableDraft !== comparableBaseline;
-  }, [state.editor.baselineProduct, state.editor.draftProduct]);
+    const comparableDraft = getComparableProduct(state.editor.draftProduct);
+    if (!comparableDraft || !comparableBaseline) return comparableDraft !== comparableBaseline;
+    return Object.keys(comparableDraft).some(key => comparableDraft[key] !== comparableBaseline[key]);
+  }, [comparableBaseline, state.editor.draftProduct]);
 
   const draftValidation = useMemo(() => {
     if (!state.editor.draftProduct) {
@@ -714,12 +760,14 @@ export function ProductProvider({ children }) {
       },
     });
 
-    setTimeout(() => {
+    const timer = setTimeout(() => {
+      toastTimers.current.delete(timer);
       dispatch({
         type: 'REMOVE_TOAST',
         toastId,
       });
     }, 3200);
+    toastTimers.current.add(timer);
   };
 
   // Fetches full product detail from the API before opening the editor so that
@@ -822,22 +870,23 @@ export function ProductProvider({ children }) {
   };
 
   const updateDraftProduct = updater => {
-    const currentDraft = state.editor.draftProduct;
+    const currentDraft = stateRef.current.editor.draftProduct;
     if (!currentDraft) {
       return;
     }
 
-    const nextDraft = updater(cloneProduct(currentDraft));
+    const nextDraft = updater(currentDraft);
     if (!nextDraft) {
       return;
     }
 
     const nextPreviewImageId =
-      nextDraft.images?.find(image => image.id === state.editor.previewImageId)?.id ||
+      nextDraft.images?.find(image => image.id === stateRef.current.editor.previewImageId)?.id ||
       nextDraft.featuredImageId ||
       nextDraft.images?.[0]?.id ||
       null;
 
+    stateRef.current = { ...stateRef.current, editor: { ...stateRef.current.editor, draftProduct: nextDraft } };
     setDraftState(nextDraft, nextPreviewImageId);
   };
 
@@ -1106,22 +1155,21 @@ export function ProductProvider({ children }) {
       draftProductId: state.editor.draftProduct?.id || null,
       attachToDraft,
     });
-    dispatch({ type: 'ADJUST_MEDIA_UPLOADS', delta: files.length });
+    const productId = state.editor.draftProduct?.id;
+    const controller = new AbortController();
+    uploads.current.set(controller, productId);
+    dispatch({ type: 'ADJUST_MEDIA_UPLOADS', delta: files.length, productId });
 
-    const optimisticImages = [];
+    const draft = stateRef.current.editor.draftProduct;
+    const optimisticImages = uploadStrategy.shouldAttachToDraft && draft ? files.map((file, index) => {
+      const url = URL.createObjectURL(file);
+      blobUrls.current.add(url);
+      return createImageAsset(url, file.name || 'Product image', draft.images.length + index);
+    }) : [];
 
     // Optimistic preview using blob URLs while upload is in flight.
     if (uploadStrategy.shouldAttachToDraft) {
       updateDraftProduct(draftProduct => {
-        optimisticImages.push(
-          ...files.map((file, index) =>
-            createImageAsset(
-              URL.createObjectURL(file),
-              file.name || `${draftProduct.title || 'Product'} image ${draftProduct.images.length + index + 1}`,
-              draftProduct.images.length + index
-            )
-          )
-        );
         const mediaState = ensureMediaState(
           [...draftProduct.images, ...optimisticImages],
           draftProduct.featuredImageId || optimisticImages[0]?.id || null
@@ -1140,6 +1188,7 @@ export function ProductProvider({ children }) {
     for (const [fileIndex, file] of files.entries()) {
       const optimisticImage = optimisticImages[fileIndex];
       try {
+        if (controller.signal.aborted || stateRef.current.editor.draftProduct?.id !== productId) break;
         const form = new FormData();
         form.append('file', file);
         form.append('altText', file.name);
@@ -1147,8 +1196,9 @@ export function ProductProvider({ children }) {
           form.append('productId', uploadStrategy.productId);
         }
 
-        const res = await fetch('/api/media/upload', { method: 'POST', body: form });
+        const res = await fetch('/api/media/upload', { method: 'POST', body: form, signal: controller.signal });
         const { json, isJson } = await parseMediaUploadResponse(res);
+        if (controller.signal.aborted || stateRef.current.editor.draftProduct?.id !== productId) break;
 
         if (res.ok && json?.success) {
           uploadedAssets.push(json.data);
@@ -1207,6 +1257,7 @@ export function ProductProvider({ children }) {
           );
         }
       } catch (e) {
+        if (controller.signal.aborted || stateRef.current.editor.draftProduct?.id !== productId) break;
         console.error('[addImagesFromFiles] upload error', e);
         if (uploadStrategy.shouldAttachToDraft && optimisticImage?.id) {
           updateDraftProduct(draftProduct => {
@@ -1225,9 +1276,12 @@ export function ProductProvider({ children }) {
         }
         pushToast(GENERIC_MEDIA_UPLOAD_FAILURE_MESSAGE, 'error');
       } finally {
-        dispatch({ type: 'ADJUST_MEDIA_UPLOADS', delta: -1 });
+        dispatch({ type: 'ADJUST_MEDIA_UPLOADS', delta: -1, productId });
       }
     }
+
+    uploads.current.delete(controller);
+    if (controller.signal.aborted) return uploadedAssets;
 
     if (shouldRefreshPersistedMedia && uploadStrategy.productId) {
       const refreshed = await refreshPersistedProductMedia(uploadStrategy.productId);
@@ -1763,27 +1817,7 @@ export function ProductProvider({ children }) {
     dispatch({ type: 'REMOVE_TOAST', toastId });
   };
 
-  const value = {
-    products: state.products,
-    selectedProductId: state.selectedProductId,
-    selectedProduct,
-    searchQuery: state.catalog.searchQuery,
-    activeFilter: state.catalog.activeFilter,
-    catalogLoaded: state.catalog.hasLoaded,
-    editor: {
-      ...state.editor,
-      draftInventorySummary,
-      draftFeaturedImage,
-      hasUnsavedChanges,
-      isUploadingMedia: (state.editor.mediaUploadsInFlight || 0) > 0,
-      isDraftValid: draftValidation.isValid,
-      validationErrors: draftValidation.errors,
-      computedState: getComputedProductStateMeta(state.editor.draftProduct || {}),
-    },
-    confirmDialog: state.confirmDialog,
-    toasts: state.toasts,
-    formatMoney,
-    actions: {
+  const actionImplementations = {
       setSearchQuery,
       setActiveFilter,
       requestSelectProduct,
@@ -1818,10 +1852,29 @@ export function ProductProvider({ children }) {
       dismissConfirmDialog,
       dismissToast,
       showToast: pushToast,
-    },
   };
 
-  return <ProductContext.Provider value={value}>{children}</ProductContext.Provider>;
+  const actionRef = useRef(actionImplementations);
+  useLayoutEffect(() => { actionRef.current = actionImplementations; });
+  const actions = useMemo(() => Object.fromEntries(ACTION_NAMES.map(name => [name, (...args) => actionRef.current[name](...args)])), []);
+  const draftId = state.editor.draftProduct?.id || null;
+  const catalogValue = useMemo(() => ({ products: state.products, selectedProductId: state.selectedProductId, searchQuery: state.catalog.searchQuery, activeFilter: state.catalog.activeFilter, catalogLoaded: state.catalog.hasLoaded, draftId, formatMoney, actions }), [state.products, state.selectedProductId, state.catalog, draftId, actions]);
+  const notificationValue = useMemo(() => ({ toasts: state.toasts, confirmDialog: state.confirmDialog, actions }), [state.toasts, state.confirmDialog, actions]);
+  const editorValue = useMemo(() => ({
+    editor: {
+      ...state.editor,
+      draftInventorySummary,
+      draftFeaturedImage,
+      hasUnsavedChanges,
+      isUploadingMedia: (state.editor.mediaUploadsInFlight || 0) > 0,
+      isDraftValid: draftValidation.isValid,
+      validationErrors: draftValidation.errors,
+      computedState: getComputedProductStateMeta(state.editor.draftProduct || {}),
+    },
+    formatMoney, actions,
+  }), [state.editor, draftInventorySummary, draftFeaturedImage, hasUnsavedChanges, draftValidation, actions]);
+  return <ProductCatalogContext.Provider value={catalogValue}><ProductNotificationContext.Provider value={notificationValue}><ProductContext.Provider value={editorValue}>{children}</ProductContext.Provider></ProductNotificationContext.Provider></ProductCatalogContext.Provider>;
+
 }
 
 export function useProductStore() {
@@ -1834,3 +1887,6 @@ export function useProductStore() {
 }
 
 
+
+export function useProductCatalog() { return useContext(ProductCatalogContext); }
+export function useProductNotifications() { return useContext(ProductNotificationContext); }

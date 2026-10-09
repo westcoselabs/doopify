@@ -21,7 +21,7 @@ describe('getStripeEvent', () => {
     })
   })
 
-  it('retrieves events through Stripe SDK with secret override', async () => {
+  it('retrieves events through Stripe SDK with the configured SDK client', async () => {
     mocks.retrieveEvent.mockResolvedValue({
       id: 'evt_sdk_1',
       type: 'payment_intent.succeeded',
@@ -35,9 +35,9 @@ describe('getStripeEvent', () => {
       },
     })
 
-    const result = await getStripeEvent('evt_sdk_1', 'sk_test_db_runtime')
+    const result = await getStripeEvent('evt_sdk_1')
 
-    expect(mocks.getStripeSdkClient).toHaveBeenCalledWith('sk_test_db_runtime')
+    expect(mocks.getStripeSdkClient).toHaveBeenCalledWith()
     expect(mocks.retrieveEvent).toHaveBeenCalledWith('evt_sdk_1')
     expect(result).toMatchObject({
       id: 'evt_sdk_1',

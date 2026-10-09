@@ -6,6 +6,8 @@ Doopify is a real commerce application built with Next.js 16, Prisma, PostgreSQL
 
 ---
 
+**Developers configure infrastructure. Doopify operates the store.** See the [architecture](docs/architecture/env-only-commerce.md) and [measured acceptance report](docs/performance/env-only-acceptance.md).
+
 ## What it does
 
 - Protected admin with role-based team management (Owner, Admin, Staff)
@@ -31,6 +33,8 @@ Doopify is a real commerce application built with Next.js 16, Prisma, PostgreSQL
 
 ## Getting started
 
+**Documentation:** [Maintained guides](docs/README.md)
+
 **Quickstart (15 minutes):** [docs/quickstart.md](./docs/quickstart.md)
 
 **Deploy to Vercel:** [docs/deployment/vercel.md](./docs/deployment/vercel.md)
@@ -40,13 +44,15 @@ Doopify is a real commerce application built with Next.js 16, Prisma, PostgreSQL
 ### Setup essentials
 
 - Copy `.env.example` to `.env.local` before first boot.
-- `DATABASE_URL` and `DIRECT_URL` are required before the app can boot.
+- `DATABASE_URL`, `JWT_SECRET` and `DATA_ENCRYPTION_KEY` are required before the app can boot. `DIRECT_URL` is unused; Prisma tooling uses `DATABASE_URL` too.
 - `SETUP_TOKEN` behavior:
   - Local development: optional.
   - Deployed production first-owner bootstrap: required.
   - `/create-owner` requires a token only when `SETUP_TOKEN` is set (and production enforces that it must be set).
 - `/create-owner` closes permanently after the first active `OWNER` account exists.
-- For private beta onboarding, configure Stripe and email from **Settings -> Payments** and **Settings -> Email** (do not rely on placeholder env values).
+- Use Node.js 22.18 or later. Configure Stripe, email, shipping, storage and runner secrets in environment variables; set `EMAIL_PROVIDER` and the two shipping provider selectors explicitly.
+- **System -> Developer** shows safe configuration states and explicit connection tests. Business settings remain in the admin.
+- Existing installations: follow the [environment-only migration runbook](docs/ENV_ONLY_MIGRATION_RUNBOOK.md). Rename `ENCRYPTION_KEY` to `DATA_ENCRYPTION_KEY` without changing its effective value.
 
 ---
 
@@ -133,6 +139,8 @@ DATABASE_URL_TEST="postgresql://..." npm run test:integration
 ```
 
 Never point `DATABASE_URL_TEST` at your development or production database.
+
+GitHub Actions provisions a disposable Postgres 16 service for integration tests on every push and pull request. No database secret is needed for CI.
 For a disposable `public` schema, also set `E2E_DATABASE_URL` to the exact same target and explicitly acknowledge the reset with `DOOPIFY_ALLOW_PUBLIC_TEST_SCHEMA=1`.
 
 E2E smoke tests (safe-by-default, local only):

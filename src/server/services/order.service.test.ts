@@ -45,6 +45,10 @@ vi.mock('@/lib/prisma', () => ({
   prisma: mocks.prisma,
 }))
 
+vi.mock('@/server/events/outbox', () => ({
+  enqueueCommerceEvent: (_tx: unknown, event: unknown, payload: unknown) => mocks.emitInternalEvent(event, payload),
+}))
+
 vi.mock('@/server/events/dispatcher', () => ({
   emitInternalEvent: mocks.emitInternalEvent,
 }))

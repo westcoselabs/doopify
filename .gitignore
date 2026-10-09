@@ -55,3 +55,6 @@ next-env.d.ts
 # generated repository maps and local agent worktrees
 /graphify-out/
 /.claude/
+
+# Local verification logs (reports live in docs/performance)
+/output/

@@ -1,0 +1,58 @@
+{
+  "measuredAt": "2026-09-24T04:30:08.788Z",
+  "productionBuild": true,
+  "anonymousStatusDenied": true,
+  "legacyBookmarkRedirect": true,
+  "generalSaveFailurePreservesDraft": true,
+  "results": [
+    {
+      "route": "/admin/settings/general",
+      "status": 200,
+      "automaticRequests": [],
+      "browserErrors": []
+    },
+    {
+      "route": "/admin/settings/brand",
+      "status": 200,
+      "automaticRequests": [],
+      "browserErrors": []
+    },
+    {
+      "route": "/admin/settings/shipping",
+      "status": 200,
+      "automaticRequests": [],
+      "browserErrors": []
+    },
+    {
+      "route": "/admin/settings/taxes",
+      "status": 200,
+      "automaticRequests": [],
+      "browserErrors": []
+    },
+    {
+      "route": "/admin/settings/email",
+      "status": 200,
+      "automaticRequests": [],
+      "browserErrors": []
+    },
+    {
+      "route": "/admin/settings/account",
+      "status": 200,
+      "automaticRequests": [],
+      "browserErrors": []
+    },
+    {
+      "route": "/admin/settings/team",
+      "status": 200,
+      "automaticRequests": [],
+      "browserErrors": []
+    },
+    {
+      "route": "/admin/system/developer",
+      "status": 200,
+      "automaticRequests": [],
+      "browserErrors": []
+    }
+  ],
+  "browserTimeZone": "Pacific/Auckland"
+}

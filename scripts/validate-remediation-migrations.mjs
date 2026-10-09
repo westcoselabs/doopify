@@ -14,8 +14,10 @@ const COMMAND_TIMEOUT_MS = Number.isFinite(configuredTimeout) && configuredTimeo
   ? configuredTimeout
   : DEFAULT_COMMAND_TIMEOUT_MS
 
+const explicitEnvironment = { ...process.env }
 loadEnv({ path: '.env', quiet: true })
 loadEnv({ path: '.env.local', override: true, quiet: true })
+Object.assign(process.env, explicitEnvironment)
 
 const testUrl = String(process.env.DATABASE_URL_TEST || '').trim()
 const e2eUrl = String(process.env.E2E_DATABASE_URL || '').trim()
@@ -44,7 +46,6 @@ function childEnvironment(databaseUrl) {
   return createInertTestEnvironment(process.env, {
     DATABASE_URL: databaseUrl,
     DATABASE_URL_TEST: testUrl,
-    DIRECT_URL: databaseUrl,
     NODE_ENV: 'test',
     DOOPIFY_MIGRATION_TIMEOUT_MS: String(COMMAND_TIMEOUT_MS),
   })
@@ -251,8 +252,22 @@ async function validateActualDeploymentAndHistories() {
       const migrations = await client.query('SELECT count(*)::int AS count FROM "_prisma_migrations" WHERE finished_at IS NOT NULL')
       const tables = await client.query("SELECT to_regclass('stores') AS stores, to_regclass('integrations') AS integrations, to_regclass('sessions') AS sessions")
       assert.ok(migrations.rows[0].count > 0, 'fresh schema must record explicitly baselined migrations')
-      assert.deepEqual(tables.rows[0], { stores: 'stores', integrations: 'integrations', sessions: 'sessions' })
+      assert.deepEqual(tables.rows[0], { stores: 'stores', integrations: null, sessions: 'sessions' })
     })
+
+    // Reconstruct the pre-scaling schema and exercise the actual additive SQL.
+    await withSchemaClient(databaseUrl, schema, async client => {
+      await client.query('DROP TABLE "checkout_shipping_quotes", "event_dispatch_receipts"');
+      await client.query('ALTER TABLE "jobs" DROP COLUMN "deduplicationKey"');
+      await client.query('DELETE FROM "_prisma_migrations" WHERE migration_name IN ($1, $2)', ['20260925_checkout_quote_snapshots', '20260926_transactional_event_outbox']);
+      await client.query(`INSERT INTO "jobs" ("id", "type", "payload", "updatedAt") VALUES ('legacy-scaling-job', 'EXISTING_JOB', '{}', now())`);
+    });
+    assert.equal(runSafeDeploy(databaseUrl), 0, 'scaling additions deploy over an existing schema');
+    await withSchemaClient(databaseUrl, schema, async client => {
+      assert.equal((await client.query(`SELECT count(*)::int AS count FROM "jobs" WHERE id = 'legacy-scaling-job'`)).rows[0].count, 1);
+      assert.equal((await client.query('SELECT count(*)::int AS count FROM "checkout_shipping_quotes"')).rows[0].count, 0);
+      assert.equal((await client.query('SELECT count(*)::int AS count FROM "event_dispatch_receipts"')).rows[0].count, 0);
+    });
 
     // Existing history with the destructive session migration made pending.
     await withSchemaClient(databaseUrl, schema, async (client) => {
@@ -271,6 +286,14 @@ async function validateActualDeploymentAndHistories() {
     // Operator-reviewed recovery restores only migration history, never deleted
     // session data, then lets the safe wrapper continue.
     runMigrationResolve(databaseUrl, 'applied', '20260710_hash_persisted_sessions')
+
+    // Historical installations retain credential tables during rollback. Recreate
+    // only that legacy fixture; fresh environment-only installs omit them.
+    await withSchemaClient(databaseUrl, schema, async client => {
+      await client.query(`CREATE TYPE "IntegrationStatus" AS ENUM ('ACTIVE','INACTIVE','ERROR');
+        CREATE TABLE integrations (id text PRIMARY KEY, "providerKey" text, name text, type text, status "IntegrationStatus", "createdAt" timestamptz DEFAULT now(), "updatedAt" timestamptz DEFAULT now());
+        CREATE TABLE integration_secrets (id text PRIMARY KEY, "integrationId" text REFERENCES integrations(id), key text, value text);`);
+    });
 
     // Pending unsafe singleton predecessor with duplicates: wrapper fails. The
     // documented resolve path then applies the corrective migration itself.

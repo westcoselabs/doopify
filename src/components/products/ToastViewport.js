@@ -1,11 +1,13 @@
 "use client";
+import { memo } from "react";
+
 
 import { createPortal } from 'react-dom';
-import { useProductStore } from '../../context/ProductContext';
+import { useProductNotifications } from '../../context/ProductContext';
 import styles from './ToastViewport.module.css';
 
-export default function ToastViewport() {
-  const { toasts, actions } = useProductStore();
+function ToastViewport() {
+  const { toasts, actions } = useProductNotifications();
 
   if (!toasts.length || typeof document === 'undefined') {
     return null;
@@ -29,3 +31,5 @@ export default function ToastViewport() {
 
   return createPortal(toastUi, document.body);
 }
+
+export default memo(ToastViewport);

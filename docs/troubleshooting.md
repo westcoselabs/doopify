@@ -6,13 +6,13 @@ Common setup and runtime issues with resolutions.
 
 ## Invalid Stripe key
 
-**Symptom:** Checkout page fails to load the payment form. Admin Settings → Payments shows an error on verify.
+**Symptom:** Checkout page fails to load the payment form. Admin System → Developer shows an error on verify.
 
 **Resolution:**
 1. Confirm `STRIPE_SECRET_KEY` starts with `sk_test_` (test mode) or `sk_live_` (production).
 2. Confirm `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` starts with `pk_test_` or `pk_live_`.
 3. Make sure both keys come from the same Stripe account and the same mode (test vs. live).
-4. In the admin, go to **Settings → Payments**, open the Stripe drawer, re-enter your keys, and click **Test connection**.
+4. In the admin, go to **System → Developer** and run **Test connection**; correct credentials in deployment environment variables and redeploy.
 5. If keys are correct but checkout still fails, check the browser console for Stripe.js errors.
 
 ---
@@ -62,7 +62,7 @@ Common setup and runtime issues with resolutions.
 3. For weight-based rates: all cart item variants must have a weight value. Check the product variants in the admin.
 4. For FREE-over-amount rates: the cart subtotal must exceed the threshold.
 5. Use the **Test rates** button in shipping settings to diagnose which condition is failing.
-6. For live provider rates: confirm the provider is verified, ship-from address is set, and default package dimensions are configured.
+6. For live provider rates: confirm the selected environment provider is configured and passes an explicit connection test, ship-from address is set, and default package dimensions are configured.
 
 ---
 
@@ -100,13 +100,13 @@ See [docs/setup/first-owner.md](./setup/first-owner.md) and [docs/ADMIN_USER_REC
 4. After adding or changing env vars in Vercel, you must redeploy for changes to take effect.
 
 **Most commonly missing:**
-- `ENCRYPTION_KEY` — required for integration secret storage
+- `DATA_ENCRYPTION_KEY` — required for encrypted application data
 - `STRIPE_WEBHOOK_SECRET` — required for order creation via webhook
 - `WEBHOOK_RETRY_SECRET` — required for cron-called retry routes
 
 ---
 
-## Email provider not configured (preview mode)
+## Email provider not configured
 
 **Symptom:** Email delivery records show `FAILED` with reason `"No email provider configured"`.
 
@@ -116,7 +116,7 @@ This is expected behavior when no email provider is set. Emails are logged but n
 
 To enable live email:
 1. Set `RESEND_API_KEY` (or SMTP vars) in your environment.
-2. Go to **Settings → Email** in the admin and save credentials.
+2. Set `EMAIL_PROVIDER=resend` or `smtp` and the required credentials in deployment environment variables, then redeploy.
 3. Use **Resend** in the delivery log to retry failed deliveries.
 
 Email is optional for private beta. See [docs/setup/email.md](./setup/email.md).
@@ -135,7 +135,7 @@ Email is optional for private beta. See [docs/setup/email.md](./setup/email.md).
    - warning/critical usually indicates queued due jobs, failed jobs, or stale/idle runner heartbeats.
 3. Confirm your worker/cron is calling `POST /api/jobs/run`.
 4. For failed/bounced/complained deliveries, use **Retry** in Delivery logs when available.
-5. If runner is healthy but email still fails, verify email provider credentials in **Settings -> Email**.
+5. If runner is healthy but email still fails, check environment configuration and run an explicit test under **System -> Developer**.
 
 This is visibility-only monitoring: checkout/order success does not depend on email send success.
 
@@ -176,5 +176,5 @@ This regenerates the Prisma client from the current schema. Run it after any sch
 
 - Run `npm run doopify:doctor` for a local diagnostics report.
 - Check `/admin/webhooks` for failed webhook deliveries and replay tools.
-- Check **Settings → Setup** for the launch readiness panel.
+- Check **System → Developer** for the launch readiness panel.
 - See [docs/PRODUCTION_RUNBOOK.md](./PRODUCTION_RUNBOOK.md) for operational procedures.

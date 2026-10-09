@@ -1,125 +1,50 @@
 import { describe, expect, it } from 'vitest'
-
-import { buildSetupDoctorReport, deriveSafeNextActions, type SetupDoctorFacts } from './setup.service'
-
-function baseFacts(): SetupDoctorFacts {
+import { buildSetupDoctorReport, type SetupDoctorFacts } from './setup.service'
+function facts(): SetupDoctorFacts {
   return {
-    nodeVersion: 'v22.12.0',
-    nodeMajorVersion: 22,
-    minimumNodeMajor: 20,
-    npmAvailable: true,
-    npmVersion: '10.9.0',
-    dependenciesInstalled: true,
-    missingDependencies: [],
-    hasEnvFile: true,
-    hasEnvLocalFile: true,
-    databaseUrlPresent: true,
-    databaseReachable: true,
-    prismaClientGenerated: true,
-    storeCount: 1,
-    ownerCount: 1,
-    storeConfigured: true,
-    storeContactConfigured: true,
-    jwtSecret: 'a-very-long-random-jwt-secret-value-1234567890',
-    stripeSecretKeyPresent: true,
-    stripePublishableKeyPresent: true,
-    stripeWebhookSecretPresent: true,
-    webhookRetrySecret: 'a-strong-retry-secret-1234567890',
-    resendApiKeyPresent: true,
-    resendWebhookSecretPresent: true,
-    emailProviderWebhooksEnabled: true,
-    nextPublicStoreUrl: 'https://shop.example.com',
-    vercelEnvironmentDetected: true,
-    vercelUrlPresent: true,
+    nodeVersion: 'v22.18.0', npmAvailable: true, dependenciesInstalled: true, missingDependencies: [],
+    hasEnvFile: true, hasEnvLocalFile: true, databaseReachable: true, prismaClientGenerated: true,
+    storeCount: 1, ownerCount: 1, userRoleAdminSupported: true, storeConfigured: true, storeContactConfigured: true,
+    environment: { DATABASE_URL: 'postgresql://private:password@localhost/db', JWT_SECRET: 'jwt-at-least-sixteen-characters',
+      NODE_ENV: 'production', DATA_ENCRYPTION_KEY: 'D9g_7eQx3mF5aP1vK8rT2yW6cN4hJ0sL9bU5zX1qR7M',
+      STRIPE_SECRET_KEY: 'sk_test_private', NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: 'pk_test_public', STRIPE_WEBHOOK_SECRET: 'whsec_private',
+      WEBHOOK_RETRY_SECRET: 'retry-key-more-than-sixteen', EMAIL_PROVIDER: 'none', NEXT_PUBLIC_STORE_URL: 'https://shop.example.com' },
   }
 }
-
-describe('buildSetupDoctorReport', () => {
-  it('returns ok when required checks pass (app profile)', () => {
-    const report = buildSetupDoctorReport(baseFacts(), { profile: 'app' })
-
+describe('shared CLI doctor report', () => {
+  it('uses the runtime environment contract and never claims live provider verification', () => {
+    const report = buildSetupDoctorReport(facts())
     expect(report.ok).toBe(true)
-    expect(report.requiredFailCount).toBe(0)
-    expect(report.failCount).toBe(0)
-    expect(report.checks.some((check) => check.id === 'node-version')).toBe(false)
+    expect(report.checks.find((check) => check.id === 'integration-stripe')?.summary).toContain('No live provider check')
+    expect(JSON.stringify(report)).not.toContain('sk_test_private')
+    expect(JSON.stringify(report)).not.toContain('postgresql:')
   })
-
-  it('includes runtime checks in cli profile', () => {
-    const report = buildSetupDoctorReport(baseFacts(), { profile: 'cli' })
-
-    expect(report.checks.some((check) => check.id === 'node-version')).toBe(true)
-    expect(report.checks.some((check) => check.id === 'npm-available')).toBe(true)
+  it('reports disabled email as a warning and never infers preview from missing credentials', () => {
+    const report = buildSetupDoctorReport(facts())
+    expect(report.checks.find((check) => check.id === 'email-disabled')).toMatchObject({ status: 'WARN', summary: 'Transactional email is disabled.' })
   })
-
-  it('fails when required env values are missing', () => {
-    const facts = baseFacts()
-    facts.databaseUrlPresent = false
-    facts.databaseReachable = false
-    facts.jwtSecret = 'short'
-
-    const report = buildSetupDoctorReport(facts, { profile: 'app' })
-
+  it('rejects explicit production preview and malformed environment values', () => {
+    const input = facts(); input.environment.EMAIL_PROVIDER = 'preview'
+    const report = buildSetupDoctorReport(input)
     expect(report.ok).toBe(false)
-    expect(report.requiredFailCount).toBeGreaterThan(0)
-    expect(report.checks.find((check) => check.id === 'database-url')?.status).toBe('FAIL')
-    expect(report.checks.find((check) => check.id === 'jwt-secret')?.status).toBe('FAIL')
+    expect(report.checks.find((check) => check.id === 'environment')?.summary).toContain('EMAIL_PROVIDER')
+    input.environment.SMTP_PORT = 'invalid-private'
+    expect(JSON.stringify(buildSetupDoctorReport(input))).not.toContain('invalid-private')
   })
-
-  it('treats missing resend api key as preview mode warning', () => {
-    const facts = baseFacts()
-    facts.resendApiKeyPresent = false
-    facts.emailProviderWebhooksEnabled = false
-    facts.resendWebhookSecretPresent = false
-
-    const report = buildSetupDoctorReport(facts, { profile: 'app' })
-
-    expect(report.checks.find((check) => check.id === 'resend-api-or-preview')?.status).toBe('WARN')
-    expect(report.checks.find((check) => check.id === 'resend-webhook-secret-enabled')?.status).toBe('WARN')
+  it('requires credentials for the selected SMTP provider', () => {
+    const input = facts(); input.environment.EMAIL_PROVIDER = 'smtp'
+    expect(buildSetupDoctorReport(input).checks.find((check) => check.id === 'integration-smtp')?.status).toBe('FAIL')
   })
-
-  it('does not claim Stripe API verification from env-only checks', () => {
-    const report = buildSetupDoctorReport(baseFacts(), { profile: 'app' })
-    const stripeCheck = report.checks.find((check) => check.id === 'stripe-keys')
-
-    expect(stripeCheck?.status).toBe('PASS')
-    expect(stripeCheck?.summary).toContain('Provider API verification has not been run from this screen')
+  it('retains public URL placeholder and production localhost guards', () => {
+    for (const url of ['https://your-doopify-beta-domain.vercel.app', 'http://localhost:3000']) {
+      const input = facts(); input.environment.NEXT_PUBLIC_STORE_URL = url
+      expect(buildSetupDoctorReport(input).checks.find((check) => check.id === 'next-public-store-url')?.status).toBe('FAIL')
+    }
   })
-
-  it('explains resend webhook verification when api key exists but webhook secret is missing', () => {
-    const facts = baseFacts()
-    facts.resendApiKeyPresent = true
-    facts.resendWebhookSecretPresent = false
-    facts.emailProviderWebhooksEnabled = true
-
-    const report = buildSetupDoctorReport(facts, { profile: 'app' })
-    const resendWebhookCheck = report.checks.find((check) => check.id === 'resend-webhook-secret-enabled')
-
-    expect(resendWebhookCheck?.status).toBe('FAIL')
-    expect(resendWebhookCheck?.summary).toContain(
-      'Live email sending may work, but bounce/complaint webhook verification is not configured.'
-    )
-  })
-
-  it('derives safe next actions from failing/warn checks', () => {
-    const facts = baseFacts()
-    facts.jwtSecret = 'short'
-    facts.nextPublicStoreUrl = undefined
-
-    const report = buildSetupDoctorReport(facts, { profile: 'app' })
-    const actions = deriveSafeNextActions(report.checks)
-
-    expect(actions.length).toBeGreaterThan(0)
-    expect(actions.some((action) => action.includes('JWT_SECRET'))).toBe(true)
-  })
-
-  it('fails public URL check when NEXT_PUBLIC_STORE_URL uses placeholder domain', () => {
-    const facts = baseFacts()
-    facts.nextPublicStoreUrl = 'https://your-doopify-beta-domain.vercel.app'
-
-    const report = buildSetupDoctorReport(facts, { profile: 'app' })
-    const urlCheck = report.checks.find((check) => check.id === 'next-public-store-url')
-
-    expect(urlCheck?.status).toBe('FAIL')
-    expect(urlCheck?.summary).toContain('placeholder domain')
+  it('requires Node 22.18 and database ADMIN enum support', () => {
+    const input = facts(); input.nodeVersion = 'v22.12.0'; input.userRoleAdminSupported = false
+    const report = buildSetupDoctorReport(input)
+    expect(report.checks.find((check) => check.id === 'node-version')?.status).toBe('FAIL')
+    expect(report.checks.find((check) => check.id === 'user-role-admin-enum')?.status).toBe('FAIL')
   })
 })

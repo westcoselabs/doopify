@@ -1,5 +1,6 @@
 import { DigitalDownloadEventResult, type Prisma } from '@prisma/client'
-import { Client as MinioClient } from 'minio'
+import { env } from '@/lib/env'
+import { getPrivateS3Storage } from '@/server/media/s3-client'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import type { Readable } from 'node:stream'
@@ -62,14 +63,6 @@ type GrantWithAsset = {
   } | null
 }
 
-type S3PrivateConfig = {
-  region: string
-  bucket: string
-  accessKey: string
-  secretKey: string
-  endpoint?: string
-}
-
 function toEventResult(value: Extract<DownloadAttemptResult, `DENIED_${string}` | 'ALLOWED'>): DigitalDownloadEventResult {
   switch (value) {
     case 'ALLOWED':
@@ -114,7 +107,7 @@ function parsePrivateStorageKeyToSegments(storageKey: string) {
 }
 
 function resolvePrivateLocalRootDirectory() {
-  const baseDirectory = process.env.DIGITAL_ASSET_LOCAL_DIR?.trim() || '.private-digital-assets'
+  const baseDirectory = env.DIGITAL_ASSET_LOCAL_DIR || '.private-digital-assets'
   return path.resolve(baseDirectory)
 }
 
@@ -136,60 +129,9 @@ async function readFromLocalPrivateStorage(storageKey: string) {
   return readFile(filePath)
 }
 
-function resolveS3PrivateConfig(): S3PrivateConfig {
-  const region = process.env.MEDIA_S3_REGION?.trim()
-  const bucket = process.env.MEDIA_S3_BUCKET?.trim()
-  const accessKey = process.env.MEDIA_S3_ACCESS_KEY_ID?.trim()
-  const secretKey = process.env.MEDIA_S3_SECRET_ACCESS_KEY?.trim()
-  const endpoint = process.env.MEDIA_S3_ENDPOINT?.trim()
-
-  if (!region || !bucket || !accessKey || !secretKey) {
-    throw new Error(
-      'S3 private digital download requires MEDIA_S3_REGION, MEDIA_S3_BUCKET, MEDIA_S3_ACCESS_KEY_ID, and MEDIA_S3_SECRET_ACCESS_KEY.'
-    )
-  }
-
-  return {
-    region,
-    bucket,
-    accessKey,
-    secretKey,
-    endpoint: endpoint || undefined,
-  }
-}
-
-function createS3PrivateClient(config: S3PrivateConfig) {
-  if (!config.endpoint) {
-    return new MinioClient({
-      endPoint: 's3.amazonaws.com',
-      useSSL: true,
-      region: config.region,
-      accessKey: config.accessKey,
-      secretKey: config.secretKey,
-      pathStyle: false,
-    })
-  }
-
-  const normalizedEndpoint = config.endpoint.includes('://')
-    ? config.endpoint
-    : `https://${config.endpoint}`
-  const parsed = new URL(normalizedEndpoint)
-
-  return new MinioClient({
-    endPoint: parsed.hostname,
-    useSSL: parsed.protocol === 'https:',
-    port: parsed.port ? Number(parsed.port) : undefined,
-    region: config.region,
-    accessKey: config.accessKey,
-    secretKey: config.secretKey,
-    pathStyle: true,
-  })
-}
-
 async function readFromS3PrivateStorage(storageKey: string) {
-  const config = resolveS3PrivateConfig()
-  const client = createS3PrivateClient(config)
-  const objectStream = await client.getObject(config.bucket, storageKey)
+  const { bucket, client } = getPrivateS3Storage()
+  const objectStream = await client.getObject(bucket, storageKey)
   return streamToBuffer(objectStream)
 }
 

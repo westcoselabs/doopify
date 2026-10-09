@@ -36,6 +36,7 @@ export const easypostProviderAdapter: ShippingProviderAdapter = {
     try {
       const response = await fetch(`${EASYPOST_API_BASE}/users`, {
         method: 'GET',
+        signal: AbortSignal.timeout(5_000),
         headers: {
           Authorization: `Basic ${buildBasicAuthToken(input.apiKey)}`,
           Accept: 'application/json',
@@ -76,6 +77,7 @@ export const easypostProviderAdapter: ShippingProviderAdapter = {
   async getRates(input) {
     const response = await fetch(`${EASYPOST_API_BASE}/shipments`, {
       method: 'POST',
+      signal: AbortSignal.timeout(15_000),
       headers: {
         Authorization: `Basic ${buildBasicAuthToken(input.apiKey)}`,
         'Content-Type': 'application/json',
@@ -172,6 +174,7 @@ export const easypostProviderAdapter: ShippingProviderAdapter = {
 
     const response = await fetch(`${EASYPOST_API_BASE}/shipments/${encodeURIComponent(shipmentId)}/buy`, {
       method: 'POST',
+      signal: AbortSignal.timeout(15_000),
       headers: {
         Authorization: `Basic ${buildBasicAuthToken(input.apiKey)}`,
         'Content-Type': 'application/json',
@@ -246,16 +249,19 @@ export const easypostProviderAdapter: ShippingProviderAdapter = {
     if (shipmentId) {
       response = await fetch(`${EASYPOST_API_BASE}/shipments/${encodeURIComponent(shipmentId)}`, {
         method: 'GET',
+      signal: AbortSignal.timeout(15_000),
         headers,
       })
     } else if (input.providerLabelId?.trim()) {
       response = await fetch(`${EASYPOST_API_BASE}/trackers/${encodeURIComponent(input.providerLabelId.trim())}`, {
         method: 'GET',
+      signal: AbortSignal.timeout(15_000),
         headers,
       })
     } else if (input.trackingNumber?.trim()) {
       response = await fetch(`${EASYPOST_API_BASE}/trackers/${encodeURIComponent(input.trackingNumber.trim())}`, {
         method: 'GET',
+      signal: AbortSignal.timeout(15_000),
         headers,
       })
     } else {

@@ -1,3 +1,4 @@
+import { pruneExpiredCheckoutShippingQuotes } from '@/server/checkout/shipping-quote-cache'
 import { err, ok } from '@/lib/api'
 import { getJobRunnerSecret, isJobRunnerAuthorized } from '@/server/jobs/auth'
 import {
@@ -33,6 +34,7 @@ export async function POST(req: Request) {
 
   try {
     const result = await runDueJobs({ limit, workerId })
+    await pruneExpiredCheckoutShippingQuotes()
 
     try {
       await recordJobRunnerSuccess(runnerName, {

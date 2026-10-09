@@ -1,6 +1,8 @@
 "use client";
 
 import Link from 'next/link';
+import Image from 'next/image';
+import CatalogPagination from './CatalogPagination';
 import { useState } from 'react';
 
 import { useCart } from '@/context/CartContext';
@@ -377,10 +379,10 @@ export default function CollectionDetailView({ collection, peerCollections = [] 
 
       <div className="collection-root">
         <nav className="collection-nav">
-          <Link className="nav-logo" href="/">Doopify</Link>
+          <Link prefetch={false} className="nav-logo" href="/">Doopify</Link>
           <div className="nav-right">
-            <Link className="nav-link" href="/shop">Shop</Link>
-            <Link className="nav-link" href="/collections">Collections</Link>
+            <Link prefetch={false} className="nav-link" href="/shop">Shop</Link>
+            <Link prefetch={false} className="nav-link" href="/collections">Collections</Link>
             <button className="cart-btn" onClick={openCart} type="button">
               Bag
               {count > 0 ? <span className="cart-count">{count}</span> : null}
@@ -403,7 +405,7 @@ export default function CollectionDetailView({ collection, peerCollections = [] 
         {peerCollections.length ? (
           <div className="collection-switcher">
             {peerCollections.map((item) => (
-              <Link className="collection-chip" href={`/collections/${item.handle}`} key={item.id}>
+              <Link prefetch={false} className="collection-chip" href={`/collections/${item.handle}`} key={item.id}>
                 {item.title}
               </Link>
             ))}
@@ -420,10 +422,10 @@ export default function CollectionDetailView({ collection, peerCollections = [] 
               const isAdded = added[product.id];
 
               return (
-                <Link className="product-card" href={`/shop/${product.handle}`} key={product.id}>
+                <Link prefetch={false} className="product-card" href={`/shop/${product.handle}`} key={product.id}>
                   <div className="product-image">
                     {image ? (
-                      <img alt={product.title} src={image} />
+                      <Image alt={product.title} src={image} width={800} height={800} sizes="(max-width: 640px) 100vw, (max-width: 980px) 50vw, 33vw" />
                     ) : (
                       <div className="placeholder">✦</div>
                     )}
@@ -463,11 +465,12 @@ export default function CollectionDetailView({ collection, peerCollections = [] 
             <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.36)', marginBottom: 28, lineHeight: 1.7 }}>
               Products haven&apos;t been assigned here yet.<br />Use the admin collection workspace to add products.
             </p>
-            <Link href="/shop" style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 20px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.14)', color: '#f2ede4', fontSize: 12, letterSpacing: '0.12em', textTransform: 'uppercase', textDecoration: 'none' }}>
+            <Link prefetch={false} href="/shop" style={{ display: 'inline-flex', alignItems: 'center', minHeight: 44, padding: '0 20px', borderRadius: 999, border: '1px solid rgba(255,255,255,0.14)', color: '#f2ede4', fontSize: 12, letterSpacing: '0.12em', textTransform: 'uppercase', textDecoration: 'none' }}>
               Browse all products
             </Link>
           </div>
         )}
+        <CatalogPagination pagination={collection.pagination} pathname={`/collections/${collection.handle}`} />
       </div>
     </>
   );

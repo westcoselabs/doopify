@@ -1,50 +1,16 @@
-import { describe, expect, it } from 'vitest'
-
-import {
-  buildLegacyProviderFields,
-  resolveActiveRateProvider,
-} from './shipping-provider-selection'
-
+import { describe, expect, it, vi } from 'vitest'
+const env = vi.hoisted(() => ({ SHIPPING_RATE_PROVIDER: 'none', SHIPPING_LABEL_PROVIDER: 'none' }))
+vi.mock('@/lib/env', () => ({ env }))
+import { getShippingProviderSelection } from './shipping-provider-selection'
 describe('shipping provider selection', () => {
-  it('returns SHIPPO when activeRateProvider is SHIPPO', () => {
-    expect(
-      resolveActiveRateProvider({
-        activeRateProvider: 'SHIPPO',
-        shippingLiveProvider: null,
-        shippingProviderUsage: 'LIVE_AND_LABELS',
-      })
-    ).toBe('SHIPPO')
+  it('keeps live-rate and label selection independent', () => {
+    env.SHIPPING_RATE_PROVIDER = 'shippo'
+    env.SHIPPING_LABEL_PROVIDER = 'easypost'
+    expect(getShippingProviderSelection()).toEqual({ rateProvider: 'SHIPPO', labelProvider: 'EASYPOST' })
   })
-
-  it('falls back to shippingLiveProvider when activeRateProvider is not selected and usage allows live rates', () => {
-    expect(
-      resolveActiveRateProvider({
-        activeRateProvider: 'NONE',
-        shippingLiveProvider: 'SHIPPO',
-        shippingProviderUsage: 'LIVE_AND_LABELS',
-      })
-    ).toBe('SHIPPO')
-  })
-
-  it('returns null when shippingProviderUsage is LABELS_ONLY', () => {
-    expect(
-      resolveActiveRateProvider({
-        activeRateProvider: 'NONE',
-        shippingLiveProvider: 'SHIPPO',
-        shippingProviderUsage: 'LABELS_ONLY',
-      })
-    ).toBeNull()
-  })
-
-  it('builds compatible legacy fields for Shippo live-rate selection', () => {
-    expect(
-      buildLegacyProviderFields({
-        activeRateProvider: 'SHIPPO',
-        labelProvider: 'SHIPPO',
-      })
-    ).toEqual({
-      shippingLiveProvider: 'SHIPPO',
-      shippingProviderUsage: 'LIVE_AND_LABELS',
-    })
+  it('does not infer a live-rate provider from a label provider', () => {
+    env.SHIPPING_RATE_PROVIDER = 'none'
+    env.SHIPPING_LABEL_PROVIDER = 'shippo'
+    expect(getShippingProviderSelection()).toEqual({ rateProvider: null, labelProvider: 'SHIPPO' })
   })
 })

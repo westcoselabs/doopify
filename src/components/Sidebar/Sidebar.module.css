@@ -194,3 +194,11 @@
     border-radius: 1.25rem;
   }
 }
+
+.mobileMenu { display: none; }
+@media (max-width: 1100px) {
+  .mobileMenu { display: flex; align-items: center; gap: .5rem; min-height: 44px; padding: .5rem; color: var(--on-surface); text-align: left; }
+  .mobileMenu:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+  .sidebar[data-mobile-open='false'] .nav,
+  .sidebar[data-mobile-open='false'] .bottomNav { display: none; }
+}

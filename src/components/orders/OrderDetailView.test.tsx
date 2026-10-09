@@ -22,8 +22,6 @@ vi.mock('../../context/SettingsContext', () => ({
 import OrderDetailView, {
   isDigitalOnlyOrder,
   orderStatusChipTone,
-  resolveOrderLabelProviderSelection,
-  STORE_DEFAULT_LABEL_PROVIDER_OPTION,
 } from './OrderDetailView'
 
 function buildOrder(overrides: Record<string, unknown> = {}) {
@@ -189,11 +187,11 @@ describe('OrderDetailView', () => {
     expect(html).not.toContain('Get Shippo label rates')
     expect(html).toContain('Email tracking to customer')
     expect(html).toContain('Label provider')
-    expect(html).toContain('Manage providers')
+    expect(html).toContain('Environment &amp; integrations')
     expect(html).not.toContain('Save tracking and mark shipped')
   })
 
-  it('renders provider selector with store default, EasyPost, and Shippo when both are connected', () => {
+  it('renders only the configured label provider when both providers have credentials', () => {
     const html = renderToStaticMarkup(
       <OrderDetailView
         order={buildOrder({
@@ -202,10 +200,9 @@ describe('OrderDetailView', () => {
       />
     )
 
-    expect(html).toContain('Store default')
     expect(html).toContain('EasyPost')
-    expect(html).toContain('Shippo')
-    expect(html).toContain('Store default: EasyPost')
+    expect(html).not.toContain('Store default')
+    expect(html).not.toContain('Shippo')
   })
 
   it('does not show tracking form fields for digital-only orders', () => {
@@ -732,21 +729,4 @@ describe('OrderDetailView', () => {
     ).toBe(false)
   })
 
-  it('builds provider override for selected provider and falls back to store default when requested', () => {
-    const explicitProvider = resolveOrderLabelProviderSelection({
-      connectedProviders: ['SHIPPO', 'EASYPOST'],
-      storeDefaultProvider: 'EASYPOST',
-      selectedChoice: 'SHIPPO',
-    })
-    expect(explicitProvider.selectedProvider).toBe('SHIPPO')
-    expect(explicitProvider.providerOverride).toBe('SHIPPO')
-
-    const storeDefault = resolveOrderLabelProviderSelection({
-      connectedProviders: ['SHIPPO', 'EASYPOST'],
-      storeDefaultProvider: 'EASYPOST',
-      selectedChoice: STORE_DEFAULT_LABEL_PROVIDER_OPTION,
-    })
-    expect(storeDefault.selectedProvider).toBe('EASYPOST')
-    expect(storeDefault.providerOverride).toBeUndefined()
-  })
 })

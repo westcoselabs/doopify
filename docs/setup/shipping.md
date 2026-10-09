@@ -1,81 +1,27 @@
-# Shipping Setup
+# Shipping setup
 
-Configure shipping rates so customers can complete checkout.
+Infrastructure and store fulfillment policy have separate owners.
 
-Shipping is required for any physical product order. At least one active shipping method must exist before checkout can complete.
+Developers set `SHIPPING_RATE_PROVIDER` and `SHIPPING_LABEL_PROVIDER` to `none`, `shippo` or `easypost` independently, plus the selected provider's `SHIPPO_API_KEY` or `EASYPOST_API_KEY`. Restart or redeploy after changes. Admin shows the selections read-only; requests cannot switch providers.
 
----
+Owners can run an explicit provider connection test in **System → Developer**. Configuration presence alone does not prove carrier availability, address validity or label eligibility.
 
-## Shipping modes
+## Merchant shipping configuration
 
-Go to **Settings → Shipping & delivery** in the admin to configure.
+Open **Settings → Shipping & delivery** at `/admin/settings/shipping`.
 
-### Manual rates (recommended for private beta)
+- **Manual:** add active destination rules with flat, weight-based, subtotal-based or free rates as supported by the editor.
+- **Live:** use the environment-selected provider; configure an active ship-from location, default package and product variant weights.
+- **Hybrid:** resolve live rates first and apply the selected fallback policy when live rates are unavailable.
+- Maintain fallback rates and choose `SHOW_FALLBACK`, `HIDE_SHIPPING` or `MANUAL_QUOTE` as appropriate.
+- Configure manual fulfillment instructions, local delivery, pickup and packing-slip fields.
 
-Define flat, per-item, weight-based, or free-over-amount rates for specific destinations or globally.
+A physical checkout needs an applicable shipping option. Test the customer's destination through the real storefront quote flow; selected quotes are revalidated on the server before the PaymentIntent amount is created. Digital-only orders do not need physical shipping.
 
-Setup:
-1. Set mode to **Manual rates**.
-2. Click **Add rate**.
-3. Set rate type, amount, destination (country or leave blank for all), and mark it active.
-4. Save.
+## Labels and tracking
 
-At checkout, the customer's address is matched against active manual rates. At least one rate must match or checkout shows no shipping options.
+Order detail obtains and revalidates label rates from the environment-selected label provider. Labels have their own stored cost and fulfillment linkage; a label purchase cannot alter a paid order's checkout totals. Manual checkout rates and label purchasing remain independent.
 
-**Minimum for launch:** One active flat-rate for your primary destination.
+Configure provider callbacks at `/api/webhooks/shipping-provider?provider=SHIPPO` or `provider=EASYPOST`, and set the corresponding `SHIPPO_WEBHOOK_SECRET` or `EASYPOST_WEBHOOK_SECRET`. Only verified callbacks can update tracked fulfillment delivery state. Background tracking and email jobs require a working runner.
 
-### Live rates (Shippo or EasyPost)
-
-Get real-time carrier rates at checkout.
-
-Prerequisites:
-- Provider API key saved and verified in Settings → Shipping & delivery
-- Ship-from address configured
-- Default package dimensions and weight configured
-
-Setup:
-1. Set mode to **Live carrier rates**.
-2. Connect a provider: open the provider drawer and save credentials.
-3. Click **Test provider** to verify connectivity.
-4. Configure ship-from location and default package.
-
-### Hybrid mode
-
-Tries live rates first. Falls back to manual rates if the live provider returns no results or errors.
-
----
-
-## Shipping zones and tax rules
-
-Manual rates can be scoped to shipping zones (groups of countries/regions). Tax rules can be jurisdiction-scoped by country/region/postal prefix.
-
-Configure at **Settings → Taxes & duties**.
-
----
-
-## Label purchasing (Shippo / EasyPost)
-
-After creating a manual fulfillment, you can purchase a shipping label directly from the order detail page.
-
-Prerequisites:
-- Provider is connected and verified
-- Ship-from address is configured
-- Default package dimensions are set
-
-Labels are stored in the `ShippingLabel` table and linked to fulfillments.
-
----
-
-## Troubleshooting: no shipping options at checkout
-
-1. Confirm at least one manual rate exists and is marked active.
-2. Check the rate's destination country — if set, the customer's country must match.
-3. For weight-based rates, all cart items need a weight value on the variant.
-4. Use the **Test rates** button in shipping settings to diagnose mismatches.
-5. See [docs/troubleshooting.md](../troubleshooting.md) for more.
-
----
-
-## Setup status
-
-The **Launch readiness** panel in **Settings → Setup** reports whether shipping is configured correctly before launch.
+If rates are unavailable, check destination matching, package dimensions, product weights, origin/contact fields, provider permissions and the selected fallback behavior. Run the explicit launch check in **System → Developer** for saved business readiness. See [worker deployment](../deployment/worker.md).

@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const selection = vi.hoisted(() => ({ label: 'EASYPOST' as 'SHIPPO' | 'EASYPOST' | null }))
+vi.mock('@/server/shipping/shipping-provider-selection', () => ({ resolveLabelProvider: () => selection.label }))
+
 const mocks = vi.hoisted(() => ({
   prisma: {
     order: {
@@ -10,7 +13,7 @@ const mocks = vi.hoisted(() => ({
     },
   },
   getShippingProviderConnectionStatus: vi.fn(),
-  getRuntimeProviderConnection: vi.fn(),
+  isTransactionalEmailConfigured: vi.fn(),
 }))
 
 vi.mock('@/lib/prisma', () => ({
@@ -21,8 +24,8 @@ vi.mock('@/server/shipping/shipping-provider.service', () => ({
   getShippingProviderConnectionStatus: mocks.getShippingProviderConnectionStatus,
 }))
 
-vi.mock('@/server/services/provider-connection.service', () => ({
-  getRuntimeProviderConnection: mocks.getRuntimeProviderConnection,
+vi.mock('@/server/email/provider', () => ({
+  isTransactionalEmailConfigured: mocks.isTransactionalEmailConfigured,
 }))
 
 import { getAdminOrderDetailByOrderNumber } from './admin-order-detail.service'
@@ -30,19 +33,14 @@ import { getAdminOrderDetailByOrderNumber } from './admin-order-detail.service'
 describe('getAdminOrderDetailByOrderNumber', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  selection.label = 'EASYPOST'
     mocks.prisma.store.findFirst.mockResolvedValue({
-      shippingLiveProvider: 'EASYPOST',
-      shippingProviderUsage: 'LIVE_AND_LABELS',
-      labelProvider: 'EASYPOST',
     })
     mocks.getShippingProviderConnectionStatus.mockImplementation(async (provider: string) => ({
       provider,
       connected: provider === 'EASYPOST',
     }))
-    mocks.getRuntimeProviderConnection.mockResolvedValue({
-      source: 'runtime',
-      credentials: { API_KEY: 're_test_key' },
-    })
+    mocks.isTransactionalEmailConfigured.mockReturnValue(true)
   })
 
   it('returns normalized admin detail payload', async () => {

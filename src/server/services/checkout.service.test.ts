@@ -1,8 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { clearCheckoutShippingQuoteCache } from '@/server/checkout/shipping-quote-cache'
+
+
+const { quoteRows } = vi.hoisted(() => ({ quoteRows: new Map<string, any>() }))
 
 const mocks = vi.hoisted(() => ({
   prisma: {
+    checkoutShippingQuote: {
+      create: vi.fn(async ({ data }) => { quoteRows.set(data.tokenHash, data); return data }),
+      findUnique: vi.fn(async ({ where }) => quoteRows.get(where.tokenHash) ?? null),
+    },
     productVariant: {
       findMany: vi.fn(),
     },
@@ -35,7 +41,6 @@ const mocks = vi.hoisted(() => ({
   issueDigitalDownloadGrantsForPaidOrder: vi.fn(),
   getBuyerDigitalDownloadAvailabilityForPaidOrder: vi.fn(),
   getShippingRatesForCheckout: vi.fn(),
-  getStripeRuntimeConnection: vi.fn(),
 }))
 
 vi.mock('@/lib/prisma', () => ({
@@ -81,9 +86,6 @@ vi.mock('@/server/shipping/shipping-rate.service', () => ({
   getShippingRatesForCheckout: mocks.getShippingRatesForCheckout,
 }))
 
-vi.mock('@/server/payments/stripe-runtime.service', () => ({
-  getStripeRuntimeConnection: mocks.getStripeRuntimeConnection,
-}))
 
 import {
   completeCheckoutFromPaymentIntent,
@@ -131,23 +133,12 @@ function makePromotionRecord(overrides: Record<string, unknown> = {}) {
 describe('checkout service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    clearCheckoutShippingQuoteCache()
+    quoteRows.clear()
     mocks.getStoreSettings.mockResolvedValue({
       currency: 'USD',
       shippingThresholdCents: 7500,
     })
     mocks.prisma.promotion.findMany.mockResolvedValue([])
-    mocks.getStripeRuntimeConnection.mockResolvedValue({
-      source: 'env',
-      verified: false,
-      mode: 'test',
-      publishableKey: 'pk_test_checkout',
-      secretKey: 'sk_test_checkout',
-      webhookSecret: 'whsec_test_checkout',
-      accountId: null,
-      chargesEnabled: null,
-      payoutsEnabled: null,
-    })
     mocks.getCustomerByEmail.mockResolvedValue(null)
     mocks.issueDigitalDownloadGrantsForPaidOrder.mockResolvedValue({
       created: 0,
@@ -210,7 +201,6 @@ describe('checkout service', () => {
       metadata: {
         checkoutEmail: 'ada@example.com',
       },
-      secretKey: 'sk_test_checkout',
     })
     expect(mocks.prisma.checkoutSession.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -400,107 +390,8 @@ describe('checkout service', () => {
     ).rejects.toThrow('Shipping address is required for physical products.')
   })
 
-  it('uses verified DB Stripe runtime secret key when available', async () => {
-    mocks.getStripeRuntimeConnection.mockResolvedValueOnce({
-      source: 'db',
-      verified: true,
-      mode: 'live',
-      publishableKey: 'pk_live_checkout',
-      secretKey: 'sk_live_db_checkout',
-      webhookSecret: 'whsec_live_checkout',
-      accountId: 'acct_live_checkout',
-      chargesEnabled: true,
-      payoutsEnabled: true,
-    })
-    mocks.prisma.productVariant.findMany.mockResolvedValue([
-      {
-        id: 'variant_1',
-        productId: 'product_1',
-        title: 'Default',
-        sku: 'SKU-1',
-        price: 25,
-        inventory: 3,
-        product: {
-          id: 'product_1',
-          title: 'Test Shirt',
-        },
-      },
-    ])
-    mocks.createStripePaymentIntent.mockResolvedValue({
-      id: 'pi_db_runtime',
-      client_secret: 'secret_db_runtime',
-      amount: 5999,
-      currency: 'usd',
-      status: 'requires_payment_method',
-    })
-    mocks.prisma.checkoutSession.create.mockResolvedValue({
-      id: 'checkout_db_runtime',
-    })
-
-    await createCheckoutPaymentIntent({
-      email: 'ada@example.com',
-      items: [{ variantId: 'variant_1', quantity: 2 }],
-      shippingAddress: address,
-    })
-
-    expect(mocks.createStripePaymentIntent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        secretKey: 'sk_live_db_checkout',
-      })
-    )
-  })
-
-  it('uses env fallback Stripe runtime secret key when no verified DB runtime exists', async () => {
-    mocks.prisma.productVariant.findMany.mockResolvedValue([
-      {
-        id: 'variant_1',
-        productId: 'product_1',
-        title: 'Default',
-        sku: 'SKU-1',
-        price: 25,
-        inventory: 3,
-        product: {
-          id: 'product_1',
-          title: 'Test Shirt',
-        },
-      },
-    ])
-    mocks.createStripePaymentIntent.mockResolvedValue({
-      id: 'pi_env_runtime',
-      client_secret: 'secret_env_runtime',
-      amount: 5999,
-      currency: 'usd',
-      status: 'requires_payment_method',
-    })
-    mocks.prisma.checkoutSession.create.mockResolvedValue({
-      id: 'checkout_env_runtime',
-    })
-
-    await createCheckoutPaymentIntent({
-      email: 'ada@example.com',
-      items: [{ variantId: 'variant_1', quantity: 2 }],
-      shippingAddress: address,
-    })
-
-    expect(mocks.createStripePaymentIntent).toHaveBeenCalledWith(
-      expect.objectContaining({
-        secretKey: 'sk_test_checkout',
-      })
-    )
-  })
-
-  it('returns setup error when Stripe runtime has no secret key', async () => {
-    mocks.getStripeRuntimeConnection.mockResolvedValueOnce({
-      source: 'none',
-      verified: false,
-      mode: null,
-      publishableKey: null,
-      secretKey: null,
-      webhookSecret: null,
-      accountId: null,
-      chargesEnabled: null,
-      payoutsEnabled: null,
-    })
+  it('propagates the env adapter configuration error without creating a checkout', async () => {
+    mocks.createStripePaymentIntent.mockRejectedValueOnce(new Error('STRIPE_SECRET_KEY is not configured'))
     mocks.prisma.productVariant.findMany.mockResolvedValue([
       {
         id: 'variant_1',
@@ -523,10 +414,10 @@ describe('checkout service', () => {
         shippingAddress: address,
       })
     ).rejects.toThrow(
-      'Stripe checkout is not configured. Save and verify Stripe credentials in Settings -> Payments or set STRIPE_SECRET_KEY.'
+      'STRIPE_SECRET_KEY is not configured'
     )
 
-    expect(mocks.createStripePaymentIntent).not.toHaveBeenCalled()
+    expect(mocks.prisma.checkoutSession.create).not.toHaveBeenCalled()
   })
 
   it('includes manual tax settings in stripe amount calculation', async () => {
@@ -586,7 +477,6 @@ describe('checkout service', () => {
       metadata: {
         checkoutEmail: 'ada@example.com',
       },
-      secretKey: 'sk_test_checkout',
     })
     expect(checkout).toMatchObject({
       shippingAmountCents: 0,
@@ -645,7 +535,6 @@ describe('checkout service', () => {
       metadata: {
         checkoutEmail: 'ada@example.com',
       },
-      secretKey: 'sk_test_checkout',
     })
     expect(checkout).toMatchObject({
       checkoutSessionId: 'checkout_zone_tax',
@@ -713,7 +602,6 @@ describe('checkout service', () => {
       metadata: {
         checkoutEmail: 'ada@example.com',
       },
-      secretKey: 'sk_test_checkout',
     })
     expect(mocks.prisma.checkoutSession.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -2126,7 +2014,6 @@ describe('checkout service', () => {
       metadata: {
         checkoutEmail: 'ada@example.com',
       },
-      secretKey: 'sk_test_checkout',
     })
     expect(mocks.prisma.checkoutSession.create).toHaveBeenCalledWith({
       data: expect.objectContaining({
@@ -2257,7 +2144,7 @@ describe('checkout service', () => {
     })
     const selectedShippingQuoteId = shippingRates.quotes[0]?.selectedShippingQuoteId
 
-    clearCheckoutShippingQuoteCache()
+    quoteRows.clear()
 
     await expect(
       createCheckoutPaymentIntent({

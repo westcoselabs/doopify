@@ -1,0 +1,22 @@
+{
+  "capturedAt": "2026-09-24T04:25:47.909Z",
+  "target": "Disposable local PostgreSQL16, port55432; fresh synthetic source and pg_dump-restored schemas",
+  "verification": {
+    "verified": true,
+    "environmentVariablesChecked": 23,
+    "destinationsChecked": 1,
+    "encryptedValuesChecked": 2
+  },
+  "contracted": {
+    "contracted": true,
+    "droppedTables": 3,
+    "droppedStoreColumns": 4,
+    "deliveryHistoryPreserved": true
+  },
+  "backupRestored": true,
+  "undrainedContractRefused": true,
+  "encryptedMfaAndDownloadEnvelopesUnchanged": true,
+  "outboundDeliveryIdAndPayloadPreserved": true,
+  "commerceAndStoreRowsPreserved": true,
+  "liveProviderCalls": 0
+}

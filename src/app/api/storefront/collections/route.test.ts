@@ -16,7 +16,7 @@ describe('GET /api/storefront/collections', () => {
   })
 
   it('returns storefront-safe collection summaries', async () => {
-    mocks.getStorefrontCollectionSummaries.mockResolvedValue([
+    mocks.getStorefrontCollectionSummaries.mockResolvedValue({ collections: [
       {
         id: 'col_1',
         title: 'Featured',
@@ -27,14 +27,14 @@ describe('GET /api/storefront/collections', () => {
         updatedAt: new Date('2026-04-26T00:00:00.000Z'),
         productCount: 3,
       },
-    ])
+    ], pagination: { page: 2, pageSize: 24, total: 30, totalPages: 2 } })
 
-    const response = await GET()
+    const response = await GET(new Request('http://localhost/api/storefront/collections?page=2&pageSize=24'))
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual({
       success: true,
-      data: [
+      data: { collections: [
         {
           id: 'col_1',
           title: 'Featured',
@@ -45,7 +45,7 @@ describe('GET /api/storefront/collections', () => {
           updatedAt: '2026-04-26T00:00:00.000Z',
           productCount: 3,
         },
-      ],
+      ], pagination: { page: 2, pageSize: 24, total: 30, totalPages: 2 } },
     })
   })
 })

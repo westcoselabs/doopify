@@ -1,231 +1,42 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-
-const mocks = vi.hoisted(() => ({
-  prisma: {
-    webhookDelivery: {
-      upsert: vi.fn(),
-      update: vi.fn(),
-      updateMany: vi.fn(),
-      findMany: vi.fn(),
-      count: vi.fn(),
-      findUnique: vi.fn(),
-    },
-    checkoutSession: {
-      findUnique: vi.fn(),
-    },
-    payment: {
-      findUnique: vi.fn(),
-    },
-  },
-  emitInternalEvent: vi.fn(),
-}))
-
-vi.mock('@/lib/prisma', () => ({
-  prisma: mocks.prisma,
-}))
-vi.mock('@/server/events/dispatcher', () => ({
-  emitInternalEvent: mocks.emitInternalEvent,
-}))
-
-import {
-  getWebhookDeliveries,
-  getWebhookDeliveryById,
-  getWebhookDeliveryDiagnostics,
-  getDueWebhookDeliveriesForRetry,
-  hashWebhookPayload,
-  MAX_WEBHOOK_DELIVERY_ATTEMPTS,
-  claimWebhookDeliveryForRetry,
-  markWebhookDeliveryFailed,
-  markWebhookDeliveryProcessed,
-  recordWebhookDeliveryAttempt,
-  storeVerifiedWebhookPayload,
-} from './webhook-delivery.service'
-
-describe('webhook delivery service', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mocks.prisma.webhookDelivery.update.mockResolvedValue({
-      id: 'delivery_1',
-      provider: 'stripe',
-      providerEventId: 'evt_1',
-      eventType: 'payment_intent.succeeded',
-      status: 'PROCESSED',
-      attempts: 1,
-    })
-  })
-
-  it('records webhook delivery attempts with a durable payload hash', async () => {
-    mocks.prisma.webhookDelivery.upsert.mockResolvedValue({
-      id: 'delivery_1',
-      provider: 'stripe',
-      providerEventId: 'evt_1',
-      status: 'RECEIVED',
-      attempts: 1,
-    })
-
-    await recordWebhookDeliveryAttempt({
-      provider: 'stripe',
-      providerEventId: 'evt_1',
-      eventType: 'payment_intent.succeeded',
-      payload: '{"id":"evt_1","type":"payment_intent.succeeded"}',
-    })
-
-    expect(mocks.prisma.webhookDelivery.upsert).toHaveBeenCalledWith({
-      where: {
-        provider_providerEventId: {
-          provider: 'stripe',
-          providerEventId: 'evt_1',
-        },
-      },
-      create: expect.objectContaining({
-        provider: 'stripe',
-        providerEventId: 'evt_1',
-        eventType: 'payment_intent.succeeded',
-        status: 'RECEIVED',
-        attempts: 1,
-        nextRetryAt: null,
-      }),
-      update: expect.objectContaining({
-        status: 'RECEIVED',
-        attempts: { increment: 1 },
-        lastError: null,
-        nextRetryAt: null,
-      }),
-    })
-    expect(mocks.prisma.webhookDelivery.upsert.mock.calls[0][0].create.payloadHash).toBe(
-      hashWebhookPayload('{"id":"evt_1","type":"payment_intent.succeeded"}')
-    )
-  })
-
-  it('stores verified payload only when requested', async () => {
-    await storeVerifiedWebhookPayload({
-      provider: 'stripe',
-      providerEventId: 'evt_1',
-      rawPayload: '{"id":"evt_1"}',
-    })
-
-    expect(mocks.prisma.webhookDelivery.update).toHaveBeenCalledWith({
-      where: {
-        provider_providerEventId: {
-          provider: 'stripe',
-          providerEventId: 'evt_1',
-        },
-      },
-      data: {
-        rawPayload: '{"id":"evt_1"}',
-        payloadHash: hashWebhookPayload('{"id":"evt_1"}'),
-      },
-    })
-  })
-
-  it('falls back to a deterministic unknown event id when provider event id is missing', async () => {
-    mocks.prisma.webhookDelivery.upsert.mockResolvedValue({
-      id: 'delivery_unknown',
-      provider: 'stripe',
-      providerEventId: 'unknown:abc',
-      status: 'RECEIVED',
-      attempts: 1,
-    })
-
-    await recordWebhookDeliveryAttempt({
-      provider: 'stripe',
-      eventType: 'unknown',
-      payload: '{"invalid":true}',
-    })
-
-    const call = mocks.prisma.webhookDelivery.upsert.mock.calls[0][0]
-    expect(call.where.provider_providerEventId.providerEventId).toMatch(/^unknown:[a-f0-9]{24}$/)
-  })
-
-  it('marks processed deliveries with timestamp and clears errors', async () => {
-    await markWebhookDeliveryProcessed({
-      provider: 'stripe',
-      providerEventId: 'evt_1',
-    })
-
-    expect(mocks.prisma.webhookDelivery.update).toHaveBeenCalledWith({
-      where: {
-        provider_providerEventId: {
-          provider: 'stripe',
-          providerEventId: 'evt_1',
-        },
-      },
-      data: {
-        status: 'PROCESSED',
-        processedAt: expect.any(Date),
-        lastError: null,
-        nextRetryAt: null,
-      },
-    })
-  })
-
-  it('marks non-retryable failed deliveries with status and last error details', async () => {
-    mocks.prisma.webhookDelivery.findUnique.mockResolvedValue({ attempts: 1 })
-
-    await markWebhookDeliveryFailed({
-      provider: 'stripe',
-      providerEventId: 'evt_1',
-      status: 'SIGNATURE_FAILED',
-      error: 'Stripe webhook signature verification failed',
-    })
-
-    expect(mocks.prisma.webhookDelivery.update).toHaveBeenCalledWith({
-      where: {
-        provider_providerEventId: {
-          provider: 'stripe',
-          providerEventId: 'evt_1',
-        },
-      },
-      data: {
-        status: 'SIGNATURE_FAILED',
-        processedAt: null,
-        lastError: 'Stripe webhook signature verification failed',
-        nextRetryAt: null,
-      },
-    })
-  })
-
-  it('schedules retryable failures while attempts remain', async () => {
-    mocks.prisma.webhookDelivery.findUnique.mockResolvedValue({ attempts: 2 })
-
-    await markWebhookDeliveryFailed({
-      provider: 'stripe',
-      providerEventId: 'evt_retry',
-      error: 'Order finalization failed',
-      retryable: true,
-    })
-
-    expect(mocks.prisma.webhookDelivery.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          status: 'RETRY_PENDING',
-          lastError: 'Order finalization failed',
-          nextRetryAt: expect.any(Date),
-        }),
-      })
-    )
-  })
-
-  it('exhausts retryable failures after the maximum attempt count', async () => {
-    mocks.prisma.webhookDelivery.findUnique.mockResolvedValue({ attempts: MAX_WEBHOOK_DELIVERY_ATTEMPTS })
-
-    await markWebhookDeliveryFailed({
-      provider: 'stripe',
-      providerEventId: 'evt_exhausted',
-      error: 'Still failing',
-      retryable: true,
-    })
-
-    expect(mocks.prisma.webhookDelivery.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          status: 'RETRY_EXHAUSTED',
-          nextRetryAt: null,
-        }),
-      })
-    )
-  })
-
+import {beforeEach,describe,expect,it,vi} from 'vitest'
+const mocks=vi.hoisted(()=>({prisma:{webhookDelivery:{upsert:vi.fn(),updateManyAndReturn:vi.fn(),updateMany:vi.fn(),findMany:vi.fn(),findFirst:vi.fn(),findUnique:vi.fn(),count:vi.fn()},checkoutSession:{findUnique:vi.fn()},payment:{findUnique:vi.fn()}},emitInternalEvent:vi.fn()}))
+vi.mock('@/lib/prisma',()=>({prisma:mocks.prisma}))
+vi.mock('@/server/events/dispatcher',()=>({emitInternalEvent:mocks.emitInternalEvent}))
+import {getWebhookDeliveries,getWebhookDeliveryById,getWebhookDeliveryDiagnostics,getDueWebhookDeliveriesForRetry,hashWebhookPayload,MAX_WEBHOOK_DELIVERY_ATTEMPTS,claimWebhookDelivery,claimWebhookDeliveryForRetry,markWebhookDeliveryFailed,markWebhookDeliveryProcessed,recordVerifiedWebhookDelivery,recordRejectedWebhook} from './webhook-delivery.service'
+const claim={provider:'stripe',providerEventId:'evt_1',claimToken:'worker-claim'}
+const delivery={id:'delivery_1',provider:'stripe',providerEventId:'evt_1',eventType:'payment_intent.succeeded',status:'PROCESSED',attempts:1,claimToken:'worker-claim'}
+describe('webhook delivery leases and verified state',()=>{
+ beforeEach(()=>{vi.resetAllMocks();mocks.prisma.webhookDelivery.updateManyAndReturn.mockResolvedValue([delivery]);mocks.prisma.webhookDelivery.findFirst.mockResolvedValue({attempts:1})})
+ it('records verified payload once without resetting an existing outcome, retry schedule, or lease',async()=>{
+  const payload='{"id":"evt_1"}'
+  await recordVerifiedWebhookDelivery({provider:'stripe',providerEventId:'evt_1',eventType:'payment_intent.succeeded',payload})
+  expect(mocks.prisma.webhookDelivery.upsert).toHaveBeenCalledWith({where:{provider_providerEventId:{provider:'stripe',providerEventId:'evt_1'}},create:{provider:'stripe',providerEventId:'evt_1',eventType:'payment_intent.succeeded',rawPayload:payload,payloadHash:hashWebhookPayload(payload),status:'RECEIVED',attempts:0},update:{}})
+ })
+ it('isolates rejected payloads from attacker-supplied canonical event IDs',async()=>{
+  const payload='{"id":"evt_existing_paid_order"}'
+  await recordRejectedWebhook({provider:'stripe',payload,error:'bad signature'})
+  const input=mocks.prisma.webhookDelivery.upsert.mock.calls[0][0]
+  expect(input.where.provider_providerEventId).toEqual({provider:'stripe',providerEventId:`invalid:${hashWebhookPayload(payload)}`})
+  expect(input.create).toMatchObject({status:'SIGNATURE_FAILED',eventType:'unverified'})
+  expect(input.create).not.toHaveProperty('rawPayload')
+  expect(input.update).toEqual({})
+ })
+ it('atomically claims verified due or expired deliveries with an ownership token',async()=>{
+  const now=new Date('2026-09-24T00:00:00.000Z')
+  expect(await claimWebhookDeliveryForRetry('delivery_1',now)).toEqual(delivery)
+  const input=mocks.prisma.webhookDelivery.updateManyAndReturn.mock.calls[0][0]
+  expect(input.where).toMatchObject({id:'delivery_1',rawPayload:{not:null},attempts:{lt:MAX_WEBHOOK_DELIVERY_ATTEMPTS},OR:[{status:'RECEIVED',OR:[{claimToken:null},{leaseExpiresAt:{lte:now}}]},{status:'RETRY_PENDING',nextRetryAt:{lte:now},claimToken:null}]})
+  expect(input.data).toMatchObject({status:'RECEIVED',attempts:{increment:1},claimToken:expect.any(String),leaseExpiresAt:expect.any(Date),nextRetryAt:null})
+  expect(input.data.leaseExpiresAt.getTime()).toBeGreaterThan(now.getTime())
+ })
+ it('returns no claim when an active owner already won',async()=>{mocks.prisma.webhookDelivery.updateManyAndReturn.mockResolvedValue([]);expect(await claimWebhookDelivery('delivery_1')).toBeNull()})
+ it('manual replay still fences active claims and excludes rejected payloads',async()=>{const now=new Date();await claimWebhookDelivery('delivery_1',true,now);expect(mocks.prisma.webhookDelivery.updateManyAndReturn).toHaveBeenCalledWith(expect.objectContaining({where:{id:'delivery_1',rawPayload:{not:null},status:{not:'SIGNATURE_FAILED'},OR:[{claimToken:null},{leaseExpiresAt:{lte:now}}]}}))})
+ it('finalizes only the current unexpired claim and releases ownership',async()=>{await markWebhookDeliveryProcessed(claim);expect(mocks.prisma.webhookDelivery.updateManyAndReturn).toHaveBeenCalledWith(expect.objectContaining({where:{...claim,leaseExpiresAt:{gt:expect.any(Date)}},data:expect.objectContaining({status:'PROCESSED',claimToken:null,leaseExpiresAt:null,nextRetryAt:null})}));expect(mocks.emitInternalEvent).toHaveBeenCalledWith('webhook.delivered',expect.objectContaining({providerEventId:'evt_1'}))})
+ it('does not emit success for a stale or expired claim',async()=>{mocks.prisma.webhookDelivery.updateManyAndReturn.mockResolvedValue([]);expect(await markWebhookDeliveryProcessed(claim)).toBeNull();expect(mocks.emitInternalEvent).not.toHaveBeenCalled()})
+ it.each([[1,true,'RETRY_PENDING'],[MAX_WEBHOOK_DELIVERY_ATTEMPTS,true,'RETRY_EXHAUSTED'],[1,false,'FAILED']])('persists retry policy for attempts %s and retryable %s',async(attempts,retryable,status)=>{mocks.prisma.webhookDelivery.findFirst.mockResolvedValue({attempts});await markWebhookDeliveryFailed({...claim,error:'processing failure',retryable});expect(mocks.prisma.webhookDelivery.updateManyAndReturn).toHaveBeenCalledWith(expect.objectContaining({where:{...claim,leaseExpiresAt:{gt:expect.any(Date)}},data:expect.objectContaining({status,nextRetryAt:status==='RETRY_PENDING'?expect.any(Date):null,claimToken:null,leaseExpiresAt:null})}))})
+ it('ignores a failed outcome from a worker that lost its claim',async()=>{mocks.prisma.webhookDelivery.findFirst.mockResolvedValue(null);expect(await markWebhookDeliveryFailed({...claim,error:'stale'})).toBeNull();expect(mocks.prisma.webhookDelivery.updateManyAndReturn).not.toHaveBeenCalled();expect(mocks.emitInternalEvent).not.toHaveBeenCalled()})
+ it('does not emit failure after an ownership race between read and update',async()=>{mocks.prisma.webhookDelivery.updateManyAndReturn.mockResolvedValue([]);expect(await markWebhookDeliveryFailed({...claim,error:'stale'})).toBeNull();expect(mocks.emitInternalEvent).not.toHaveBeenCalled()})
+ it('makes exhausted crashed workers visible before loading a bounded retry page',async()=>{const now=new Date();mocks.prisma.webhookDelivery.findMany.mockResolvedValue([]);await getDueWebhookDeliveriesForRetry(500,now);expect(mocks.prisma.webhookDelivery.updateMany).toHaveBeenCalledWith(expect.objectContaining({where:{status:'RECEIVED',attempts:{gte:MAX_WEBHOOK_DELIVERY_ATTEMPTS},leaseExpiresAt:{lte:now}},data:expect.objectContaining({status:'RETRY_EXHAUSTED',claimToken:null,leaseExpiresAt:null})}));expect(mocks.prisma.webhookDelivery.findMany).toHaveBeenCalledWith(expect.objectContaining({take:50,select:{id:true},where:expect.objectContaining({rawPayload:{not:null},attempts:{lt:MAX_WEBHOOK_DELIVERY_ATTEMPTS}})}))})
   it('returns paginated webhook deliveries with filters', async () => {
     mocks.prisma.webhookDelivery.findMany.mockResolvedValue([
       {
@@ -289,50 +100,6 @@ describe('webhook delivery service', () => {
     expect(delivery).toMatchObject({
       id: 'delivery_1',
       provider: 'stripe',
-    })
-  })
-
-  it('loads due retry deliveries with verified payloads', async () => {
-    const now = new Date('2026-04-28T12:00:00.000Z')
-    mocks.prisma.webhookDelivery.findMany.mockResolvedValue([])
-
-    await getDueWebhookDeliveriesForRetry(3, now)
-
-    expect(mocks.prisma.webhookDelivery.findMany).toHaveBeenCalledWith({
-      where: {
-        status: 'RETRY_PENDING',
-        nextRetryAt: { lte: now },
-        rawPayload: { not: null },
-        attempts: { lt: MAX_WEBHOOK_DELIVERY_ATTEMPTS },
-      },
-      orderBy: { nextRetryAt: 'asc' },
-      take: 3,
-    })
-  })
-
-  it('claims due retry deliveries before processing', async () => {
-    const now = new Date('2026-04-28T12:00:00.000Z')
-    mocks.prisma.webhookDelivery.updateMany.mockResolvedValue({ count: 1 })
-    mocks.prisma.webhookDelivery.findUnique.mockResolvedValue({
-      id: 'delivery_1',
-      provider: 'stripe',
-    })
-
-    await claimWebhookDeliveryForRetry('delivery_1', now)
-
-    expect(mocks.prisma.webhookDelivery.updateMany).toHaveBeenCalledWith({
-      where: {
-        id: 'delivery_1',
-        status: 'RETRY_PENDING',
-        nextRetryAt: { lte: now },
-      },
-      data: {
-        status: 'RECEIVED',
-        attempts: { increment: 1 },
-        lastRetriedAt: now,
-        nextRetryAt: null,
-        lastError: null,
-      },
     })
   })
 

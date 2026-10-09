@@ -7,6 +7,7 @@ import styles from './layout/AppShell.module.css';
 
 export default function AppShell({
   children,
+  role,
   searchValue = '',
   onSearchChange,
   onCreateOrder,
@@ -22,7 +23,7 @@ export default function AppShell({
 
   return (
     <div className={styles.appContainer}>
-      <Sidebar />
+      <Sidebar role={role} />
       <div className={styles.mainCanvas}>
         <Header
           onCreateOrder={handleCreateOrder}

@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({
-  getStripeRuntimeConnection: vi.fn(),
+  getStripePublicConfig: vi.fn(),
 }))
 
-vi.mock('@/server/payments/stripe-runtime.service', () => ({
-  getStripeRuntimeConnection: mocks.getStripeRuntimeConnection,
+vi.mock('@/lib/stripe-client', () => ({
+  getStripePublicConfig: mocks.getStripePublicConfig,
 }))
 
 import { GET } from './route'
@@ -15,18 +15,8 @@ describe('GET /api/checkout/stripe-config', () => {
     vi.clearAllMocks()
   })
 
-  it('returns publishable key with source and mode only', async () => {
-    mocks.getStripeRuntimeConnection.mockResolvedValue({
-      source: 'env',
-      verified: false,
-      mode: 'test',
-      publishableKey: 'pk_test_public',
-      secretKey: 'sk_test_hidden',
-      webhookSecret: 'whsec_hidden',
-      accountId: null,
-      chargesEnabled: null,
-      payoutsEnabled: null,
-    })
+  it('returns only the safe publishable key and mode', async () => {
+    mocks.getStripePublicConfig.mockReturnValue({ publishableKey: 'pk_test_public', mode: 'test' })
 
     const response = await GET()
     expect(response.status).toBe(200)
@@ -36,7 +26,6 @@ describe('GET /api/checkout/stripe-config', () => {
       success: true,
       data: {
         publishableKey: 'pk_test_public',
-        source: 'env',
         mode: 'test',
       },
     })

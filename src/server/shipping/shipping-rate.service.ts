@@ -4,7 +4,6 @@ import { prisma } from '@/lib/prisma'
 import { findPrimaryStore } from '@/server/services/primary-store.service'
 import {
   getShippingProviderApiKey,
-  getShippingProviderConnectionStatus,
   getShippingProviderLiveRates,
 } from '@/server/shipping/shipping-provider.service'
 import { resolveActiveRateProvider } from '@/server/shipping/shipping-provider-selection'
@@ -29,6 +28,7 @@ export class ShippingRateSetupError extends Error {
 
 export type GetShippingRatesForCheckoutInput = {
   storeId?: string
+  store?: NonNullable<ShippingRateStore>
   subtotalCents: number
   totalWeightOz?: number
   shippingAddress: ShippingRateAddress
@@ -255,7 +255,7 @@ function getMode(store: NonNullable<ShippingRateStore>): ShippingMode {
 }
 
 function getProvider(store: NonNullable<ShippingRateStore>): ShippingLiveProvider | null {
-  return resolveActiveRateProvider(store)
+  return resolveActiveRateProvider()
 }
 
 function getFallbackBehavior(store: NonNullable<ShippingRateStore>) {
@@ -538,16 +538,7 @@ async function resolveLiveQuotes(input: {
   const apiKey = await getShippingProviderApiKey(input.provider)
   if (!apiKey) {
     throw new ShippingRateSetupError(
-      `Live rates require ${input.provider} credentials. Connect provider credentials in settings or configure ${input.provider}_API_KEY in env.`
-    )
-  }
-
-  const connectionStatus = await getShippingProviderConnectionStatus(input.provider)
-  const isUsingEnvFallback = !connectionStatus.connected
-
-  if (isUsingEnvFallback && process.env.NODE_ENV === 'production') {
-    throw new ShippingRateSetupError(
-      `Live rates provider ${input.provider} is not connected in Settings. Configure and verify provider credentials before using production live rates.`
+      `Live rates require ${input.provider} credentials. Configure ${input.provider}_API_KEY in env.`
     )
   }
 
@@ -628,7 +619,7 @@ function diagnoseModernManualRateMismatch(input: {
 export async function getShippingRatesForCheckout(input: GetShippingRatesForCheckoutInput): Promise<ShippingRateQuote[]> {
   ensureValidSubtotalCents(input.subtotalCents)
 
-  const store = await getShippingRateStore(input.storeId)
+  const store = input.store ?? await getShippingRateStore(input.storeId)
   if (!store) {
     throw new ShippingRateSetupError('Store not configured for shipping.')
   }
@@ -666,17 +657,6 @@ export async function getShippingRatesForCheckout(input: GetShippingRatesForChec
   }
 
   if (!provider) {
-    const legacyLiveProviderConfigured = Boolean(store.shippingLiveProvider)
-    if (
-      legacyLiveProviderConfigured &&
-      (store.shippingProviderUsage ?? 'LIVE_AND_LABELS') === 'LABELS_ONLY' &&
-      (mode === 'LIVE_RATES' || mode === 'HYBRID')
-    ) {
-      throw new ShippingRateSetupError(
-        'Provider is configured for labels only. Enable live-rate usage to quote checkout rates.'
-      )
-    }
-
     if (mode === 'HYBRID') {
       const manual = manualQuotes()
       if (manual.length) return manual
@@ -684,19 +664,8 @@ export async function getShippingRatesForCheckout(input: GetShippingRatesForChec
     }
 
     throw new ShippingRateSetupError(
-      'Live shipping mode is enabled, but no live-rate provider is selected. Go to Settings -> Shipping & delivery -> Live rates provider and choose Shippo or EasyPost.'
+      'Live shipping mode is enabled, but no live-rate provider is selected. Set SHIPPING_RATE_PROVIDER to shippo or easypost in the deployment environment.'
     )
-  }
-
-  const providerUsage = store.shippingProviderUsage ?? 'LIVE_AND_LABELS'
-  if (providerUsage === 'LABELS_ONLY') {
-    if (mode === 'HYBRID') {
-      const manual = manualQuotes()
-      if (manual.length) return manual
-      throw new ShippingRateSetupError('Provider is configured for labels only. Add manual rates for hybrid checkout.')
-    }
-
-    throw new ShippingRateSetupError('Provider is configured for labels only. Enable live-rate usage to quote checkout rates.')
   }
 
   if (mode === 'LIVE_RATES') {

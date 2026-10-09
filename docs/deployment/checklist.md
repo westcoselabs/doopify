@@ -1,177 +1,35 @@
-# Production Deployment Checklist
+# Production deployment checklist
 
-> Repeatable launch checklist for private beta and early production.
->
-> Last updated: May 3, 2026
+Updated September 24, 2026. This checklist records deployment work; branch-local tests do not establish production readiness.
 
-## Preconditions
+## Before promotion
 
-- [ ] Local verification gate is green (see Section 1)
-- [ ] Required production secrets are available
-- [ ] Neon project/branch is ready for production traffic (see `docs/deployment/vercel.md`)
-- [ ] Stripe account and webhook endpoint are configured (see `docs/setup/stripe.md`)
-- [ ] Resend domain and webhook endpoint are configured, or email is intentionally skipped
-- [ ] At least one active product with a valid price and available inventory exists
-- [ ] Shipping is configured (manual rates or live provider)
-- [ ] Tax is configured or intentionally disabled
+- [ ] Run Prisma generation, lint, TypeScript, fast tests and production build.
+- [ ] Run relevant real-DB payment/inventory/refund/return, delivery-claim and migration tests against a disposable target.
+- [ ] Record production bundle/request/query comparisons against the same fixture and build mode.
+- [ ] Back up the target database and verify restoration access.
+- [ ] Existing stores: complete export and verification in the [environment-only migration runbook](../ENV_ONLY_MIGRATION_RUNBOOK.md). Apply additive migrations while retaining legacy tables and encryption key values.
+- [ ] Verify `DATABASE_URL`, `JWT_SECRET`, `DATA_ENCRYPTION_KEY` and `NEXT_PUBLIC_STORE_URL` in the intended deployment environment.
+- [ ] Configure matching Stripe keys and webhook signing secret.
+- [ ] Configure explicit email/shipping/storage selection and the corresponding environment credentials.
+- [ ] Deploy the static outbound destination declarations with preserved IDs and environment signing/header keys.
+- [ ] Configure authenticated POST job/retry/recovery scheduling and its environment secrets.
+- [ ] Require `SETUP_TOKEN` for first-owner bootstrap; preserve existing owner MFA/session migration settings when upgrading.
+- [ ] Verify an active sellable product, applicable physical shipping, and intended tax policy.
 
----
+## After deployment
 
-## 1. Local Verification Gate
+- [ ] Log in as owner; verify password, MFA and role boundaries as applicable.
+- [ ] Load focused General/Brand/Shipping/Tax/Email/Account/Team pages and save representative business changes.
+- [ ] **System → Developer** shows safe presence states. Run explicit provider tests; no secrets are returned or editable.
+- [ ] Run a saved launch check. Review warnings instead of treating Configured as proof of live health.
+- [ ] Complete test-mode checkout: webhook creates one paid order, accurate money/discount snapshots and one stock change.
+- [ ] Repeat/replay the verified event; no duplicate order or inventory effect.
+- [ ] Confirm invalid signatures cannot alter an existing canonical delivery.
+- [ ] Verify refunds/returns and digital downloads as used by this store.
+- [ ] Confirm background heartbeats, inbound/outbound retries and delivery exhaustion visibility.
+- [ ] Confirm real email delivery; missing configuration/preview must not be marked sent. Reconcile uncertain send outcomes before retrying.
+- [ ] Validate storage uploads, public media and private digital asset boundaries.
+- [ ] Confirm backups, operational alerting and rollback ownership.
 
-Run before deploying:
-
-```bash
-npm ci
-npm run db:generate
-npx tsc --noEmit
-npm run test
-npm run build
-```
-
-Optional integration pass when disposable Postgres is configured:
-
-```bash
-DATABASE_URL_TEST="postgresql://..." npm run test:integration
-```
-
-For a disposable `public` schema, additionally provide an exactly matching
-`E2E_DATABASE_URL` and `DOOPIFY_ALLOW_PUBLIC_TEST_SCHEMA=1`; otherwise use a
-dedicated non-public schema.
-
----
-
-## 2. Required Environment Variables
-
-Confirm each variable is set in your production environment. See `docs/ENVIRONMENT_VARIABLE_REFERENCE.md` for full details.
-
-### Core app
-
-- [ ] `DATABASE_URL` — Postgres connection string with `sslmode=verify-full` for Neon/production
-- [ ] `DIRECT_URL` — Direct Prisma URL (recommended)
-- [ ] `JWT_SECRET` — At least 32 characters, high entropy, not a placeholder
-- [ ] `ENCRYPTION_KEY` — Required for encrypted integration secrets in production
-- [ ] `SESSION_LEGACY_TOKEN_CUTOFF` — During the one-time session-token rollout only: set a fixed absolute ISO-8601 value equal to deployment time plus seven days (for example, `2030-01-08T12:00:00.000Z`). Missing or invalid values disable legacy plaintext-session compatibility; do not extend the value on redeploy without security review.
-- [ ] `NEXT_PUBLIC_STORE_URL` — Public storefront base URL
-- [ ] `WEBHOOK_RETRY_SECRET` — Protects `POST /api/webhook-retries/run`
-
-### Stripe
-
-- [ ] `STRIPE_SECRET_KEY` — Server-side API key
-- [ ] `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` — Client-side checkout key
-- [ ] `STRIPE_WEBHOOK_SECRET` — Signing secret for `POST /api/webhooks/stripe`
-
-### Email (optional for private beta)
-
-- [ ] `RESEND_API_KEY` — Required for live transactional email sends
-- [ ] `RESEND_WEBHOOK_SECRET` — Required for bounce/complaint webhook verification
-
-### Shipping (if using live provider)
-
-- [ ] `SHIPPO_API_KEY` or `EASYPOST_API_KEY` — Required for live shipping rates
-- [ ] `SHIPPO_WEBHOOK_SECRET` or `EASYPOST_WEBHOOK_SECRET` — Required for shipping provider webhooks
-
-### Media / object storage (optional for private beta)
-
-- [ ] On Vercel: `MEDIA_STORAGE_PROVIDER=vercel-blob` and `BLOB_READ_WRITE_TOKEN` configured
-- [ ] On S3/R2: `MEDIA_STORAGE_PROVIDER=s3` plus `MEDIA_S3_REGION`, `MEDIA_S3_BUCKET`, `MEDIA_S3_ACCESS_KEY_ID`, `MEDIA_S3_SECRET_ACCESS_KEY`
-
-### Rate limiting (multi-instance)
-
-- [ ] `DOOPIFY_RATE_LIMIT_STORE=postgres` — Set explicitly for multi-instance deployments (auto-defaults to postgres in production)
-
----
-
-## 3. Configure App Locally
-
-Use guided setup:
-
-```bash
-npm run doopify:setup
-```
-
-Then run deployment setup actions:
-
-```bash
-npm run doopify:db:check
-npm run db:deploy:safe
-npm run doopify:stripe:webhook
-npm run doopify:env:push
-```
-
----
-
-## 4. Deploy
-
-Use the CLI deploy flow:
-
-```bash
-npm run doopify:deploy
-```
-
-This runs:
-
-- production build preflight
-- optional DB check
-- optional webhook automation
-- optional Vercel env sync
-- Vercel production deployment command
-
----
-
-## 5. Post-Deploy Smoke Checks
-
-### Auth and admin
-
-- [ ] `/login` renders
-- [ ] Admin login works with owner credentials
-- [ ] `/settings` loads, including Setup tab
-- [ ] Settings → Setup tab shows Launch readiness and Deployment validation panels
-- [ ] Launch readiness: all required checks show "Ready" or "Skipped"
-- [ ] Deployment validation: no "Needs setup" items for configured providers
-
-### Commerce path
-
-- [ ] Storefront loads at `NEXT_PUBLIC_STORE_URL`
-- [ ] At least one product is visible on the storefront
-- [ ] Checkout loads (`/checkout`) and Stripe.js initializes
-- [ ] Stripe test checkout completes successfully (use card `4242 4242 4242 4242`)
-- [ ] Order appears in admin only after webhook success (not on browser redirect)
-- [ ] Inventory is decremented after paid order
-- [ ] Order detail (`/orders/[orderNumber]`) loads correctly
-
-### Webhooks and email
-
-- [ ] `POST /api/webhooks/stripe` receives Stripe events (check `/admin/webhooks`)
-- [ ] `POST /api/webhooks/email-provider` receives provider events (if Resend configured)
-- [ ] Order confirmation email delivery record visible (if email configured)
-
-### Media
-
-- [ ] Media upload works (`/media` admin)
-- [ ] Product images load on storefront with Postgres storage
-- [ ] If using Vercel Blob or S3/R2: product images redirect/stream from object storage correctly
-
----
-
-## 6. Release Claim Guardrails
-
-Do not claim production readiness unless:
-
-- CI is passing on current commit
-- Deployment checklist completed
-- Backup/restore path validated (see `docs/BACKUP_AND_RESTORE.md`)
-- Admin recovery runbook tested (see `docs/ADMIN_USER_RECOVERY_GUIDE.md`)
-- Known risks documented in `docs/HARDENING.md`
-
----
-
-## 7. Rollback Path
-
-If release causes severe regression:
-
-1. Roll back to previous Vercel deployment using Vercel dashboard or CLI.
-2. Validate core routes and webhook processing.
-3. If data repair is needed, use `docs/BACKUP_AND_RESTORE.md`.
-4. If admin access is broken, use `docs/ADMIN_USER_RECOVERY_GUIDE.md`.
-5. Check `/admin/webhooks` for failed deliveries requiring manual retry.
+Keep the compatibility schema until the agreed rollback window closes. Run legacy contraction only in a maintenance window after the migration tool verifies configuration/data and queues are drained. See [production runbook](../PRODUCTION_RUNBOOK.md).
