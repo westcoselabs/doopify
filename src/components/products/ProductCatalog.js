@@ -1,4 +1,6 @@
 "use client";
+import { memo } from "react";
+
 
 import Image from 'next/image';
 import { useDeferredValue, useMemo } from 'react';
@@ -10,7 +12,7 @@ import {
   productMatchesFilter,
   productMatchesSearch,
 } from '../../lib/productUtils';
-import { useProductStore } from '../../context/ProductContext';
+import { useProductCatalog } from '../../context/ProductContext';
 import AdminButton from '../admin/ui/AdminButton';
 import AdminCard from '../admin/ui/AdminCard';
 import AdminDropdown from '../admin/ui/AdminDropdown';
@@ -53,8 +55,8 @@ function ProductCatalogTableSkeleton({ rows = 6 }) {
   );
 }
 
-export default function ProductCatalog() {
-  const { products, selectedProductId, searchQuery, activeFilter, catalogLoaded, editor, formatMoney, actions } = useProductStore();
+function ProductCatalog() {
+  const { products, selectedProductId, searchQuery, activeFilter, catalogLoaded, draftId, formatMoney, actions } = useProductCatalog();
   const deferredSearchQuery = useDeferredValue(searchQuery);
 
   const visibleProducts = useMemo(
@@ -69,7 +71,7 @@ export default function ProductCatalog() {
 
   const viewState = getCatalogViewState({
     catalogLoaded,
-    hasDraftProduct: Boolean(editor.draftProduct),
+    hasDraftProduct: Boolean(draftId),
     totalProducts: products.length,
     visibleProducts: visibleProducts.length,
   });
@@ -237,7 +239,7 @@ export default function ProductCatalog() {
             getRowId={product => product.id}
             onRowClick={product => actions.requestSelectProduct(product.id)}
             rows={visibleProducts}
-            selectedId={selectedProductId || editor.draftProduct?.id || null}
+            selectedId={selectedProductId || draftId || null}
           />
         ) : null}
       </div>
@@ -249,3 +251,5 @@ export default function ProductCatalog() {
     </AdminCard>
   );
 }
+
+export default memo(ProductCatalog);

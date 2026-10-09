@@ -42,6 +42,8 @@ function getPrismaAdapter() {
     globalForPrisma.prismaAdapter ??
     new PrismaPg({
       connectionString,
+      max: env.DATABASE_POOL_MAX,
+      connectionTimeoutMillis: env.DATABASE_POOL_TIMEOUT_MS,
     }, schema ? { schema } : undefined)
   )
 }
@@ -71,7 +73,7 @@ const { adapter, client } = globalForPrisma.prisma
 
 export const prisma = client
 
-if (env.NODE_ENV !== 'production') {
-  globalForPrisma.prisma = prisma
-  globalForPrisma.prismaAdapter = adapter
-}
+// Next can evaluate this module from several server bundles in one runtime.
+// Share in production too so each bundle cannot allocate another full pool.
+globalForPrisma.prisma = prisma
+globalForPrisma.prismaAdapter = adapter

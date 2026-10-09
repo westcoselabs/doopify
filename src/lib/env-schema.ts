@@ -31,6 +31,8 @@ export function parseDataEncryptionKey(source: Record<string, unknown>, name: Da
 
 export const environmentFields = {
   DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+  DATABASE_POOL_MAX: z.preprocess(optionalValue, z.coerce.number().int().min(1).max(100).default(10)),
+  DATABASE_POOL_TIMEOUT_MS: z.preprocess(optionalValue, z.coerce.number().int().min(100).max(60_000).default(5000)),
   JWT_SECRET: z.string().min(16, 'JWT_SECRET must be at least 16 characters'),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   SESSION_LEGACY_TOKEN_CUTOFF: z.string().datetime({ offset: true }).optional(),

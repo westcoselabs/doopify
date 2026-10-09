@@ -79,11 +79,12 @@ function extractAnalyticsReferences<K extends AnalyticsEventName>(
 
 export async function recordAnalyticsEvent<K extends AnalyticsEventName>(
   event: K,
-  payload: DoopifyEvents[K]
+  payload: DoopifyEvents[K],
+  client: Pick<Prisma.TransactionClient, 'analyticsEvent'> = prisma
 ) {
   const refs = extractAnalyticsReferences(event, payload)
 
-  return (prisma as Prisma.TransactionClient | typeof prisma).analyticsEvent.create({
+  return client.analyticsEvent.create({
     data: {
       event,
       payload: payload as Prisma.InputJsonValue,

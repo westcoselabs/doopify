@@ -1,6 +1,30 @@
 export const DELIVERY_LEASE_MS = 120_000
 export const PROVIDER_TIMEOUT_MS = 15_000
 
+/** Claim just in time; stop each slot as soon as the shared queue is empty. */
+export async function runAvailable<T, R>(limit: number, claim: () => Promise<T | null>, execute: (item: T) => Promise<R>) {
+  const results: PromiseSettledResult<R>[] = []
+  const deadline = Date.now() + 45_000
+  let remaining = Number.isFinite(limit) ? Math.max(1, Math.min(100, Math.floor(limit))) : 25
+  let drained = false
+  let claimFailed = false
+  let claimError: unknown
+  await Promise.all(Array.from({ length: Math.min(4, remaining) }, async () => {
+    while (!drained && remaining > 0 && Date.now() < deadline) {
+      remaining--
+      let item: T | null
+      try { item = await claim() }
+      catch (reason) { drained = true; claimFailed = true; claimError = reason; return }
+      if (item === null) { drained = true; return }
+      try { results.push({ status: 'fulfilled', value: await execute(item) }) }
+      catch (reason) { results.push({ status: 'rejected', reason }) }
+    }
+  }))
+  // Let already-owned work finish before reporting an acquisition failure.
+  if (claimFailed) throw claimError
+  return results
+}
+
 /** Acquire work only while runner time remains; never preclaim a waiting queue. */
 export async function runBounded<T, R>(items: T[], execute: (item: T) => Promise<R>) {
   const results: PromiseSettledResult<R>[] = []

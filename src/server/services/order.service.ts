@@ -3,7 +3,7 @@ import { Prisma, type FulfillmentStatus, type OrderStatus, type PaymentStatus } 
 import { centsToDollars } from '@/lib/money'
 import { prisma } from '@/lib/prisma'
 import type { CheckoutAppliedDiscount } from '@/server/checkout/pricing'
-import { emitInternalEvent } from '@/server/events/dispatcher'
+import { enqueueCommerceEvent } from '@/server/events/outbox'
 import { resolveOrderFulfillmentSnapshot } from '@/server/services/fulfillment-status.service'
 import type { PromotionRewardType, PromotionType } from '@/server/promotions/contracts'
 
@@ -873,45 +873,45 @@ export async function createOrder(data: {
         }
       }
 
+      await enqueueCommerceEvent(tx, 'order.created', {
+        orderId: createdOrder.id,
+        orderNumber: createdOrder.orderNumber,
+        email: createdOrder.email,
+        total: centsToDollars(createdOrder.totalCents),
+        currency: createdOrder.currency,
+      }, createdOrder.id)
+
+      if (createdOrder.paymentStatus === 'PAID') {
+        const shippingAddress = createdOrder.addresses.find((address) => address.type === 'SHIPPING')
+
+        await enqueueCommerceEvent(tx, 'order.paid', {
+          orderId: createdOrder.id,
+          orderNumber: createdOrder.orderNumber,
+          email: createdOrder.email,
+          total: centsToDollars(createdOrder.totalCents),
+          currency: createdOrder.currency,
+          items: createdOrder.items.map((item) => ({
+            title: item.title,
+            variantTitle: item.variantTitle,
+            quantity: item.quantity,
+            price: centsToDollars(item.priceCents),
+          })),
+          shippingAddress: shippingAddress
+            ? {
+                firstName: shippingAddress.firstName,
+                lastName: shippingAddress.lastName,
+                address1: shippingAddress.address1,
+                city: shippingAddress.city,
+                province: shippingAddress.province,
+                postalCode: shippingAddress.postalCode,
+                country: shippingAddress.country,
+              }
+            : undefined,
+        }, createdOrder.id)
+      }
+
       return createdOrder
     })
-
-    await emitInternalEvent('order.created', {
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      email: order.email,
-      total: centsToDollars(order.totalCents),
-      currency: order.currency,
-    })
-
-    if (order.paymentStatus === 'PAID') {
-      const shippingAddress = order.addresses.find((address) => address.type === 'SHIPPING')
-
-      await emitInternalEvent('order.paid', {
-        orderId: order.id,
-        orderNumber: order.orderNumber,
-        email: order.email,
-        total: centsToDollars(order.totalCents),
-        currency: order.currency,
-        items: order.items.map((item) => ({
-          title: item.title,
-          variantTitle: item.variantTitle,
-          quantity: item.quantity,
-          price: centsToDollars(item.priceCents),
-        })),
-        shippingAddress: shippingAddress
-          ? {
-              firstName: shippingAddress.firstName,
-              lastName: shippingAddress.lastName,
-              address1: shippingAddress.address1,
-              city: shippingAddress.city,
-              province: shippingAddress.province,
-              postalCode: shippingAddress.postalCode,
-              country: shippingAddress.country,
-            }
-          : undefined,
-      })
-    }
 
     return order
   } catch (error) {
@@ -943,51 +943,49 @@ export async function createOrderEvent(
 }
 
 export async function updatePaymentStatus(orderId: string, paymentStatus: PaymentStatus) {
-  const order = await prisma.order.update({
-    where: { id: orderId },
-    data: { paymentStatus },
-    include: {
-      items: true,
-      addresses: true,
-    },
-  })
-
-  await createOrderEvent(orderId, {
-    type: 'PAYMENT_STATUS_UPDATED',
-    title: `Payment status updated to ${paymentStatus}`,
-    actorType: 'STAFF',
-  })
-
-  if (paymentStatus === 'PAID') {
-    const shippingAddress = order.addresses.find((address) => address.type === 'SHIPPING')
-
-    await emitInternalEvent('order.paid', {
-      orderId: order.id,
-      orderNumber: order.orderNumber,
-      email: order.email,
-      total: centsToDollars(order.totalCents),
-      currency: order.currency,
-      items: order.items.map((item) => ({
-        title: item.title,
-        variantTitle: item.variantTitle,
-        quantity: item.quantity,
-        price: centsToDollars(item.priceCents),
-      })),
-      shippingAddress: shippingAddress
-        ? {
-            firstName: shippingAddress.firstName,
-            lastName: shippingAddress.lastName,
-            address1: shippingAddress.address1,
-            city: shippingAddress.city,
-            province: shippingAddress.province,
-            postalCode: shippingAddress.postalCode,
-            country: shippingAddress.country,
-          }
-        : undefined,
+  return prisma.$transaction(async tx => {
+    const order = await tx.order.update({
+      where: { id: orderId },
+      data: { paymentStatus },
+      include: {
+        items: true,
+        addresses: true,
+      },
     })
-  }
 
-  return order
+    await tx.orderEvent.create({ data: { orderId, type: 'PAYMENT_STATUS_UPDATED', title: `Payment status updated to ${paymentStatus}`, actorType: 'STAFF' } })
+
+    if (paymentStatus === 'PAID') {
+      const shippingAddress = order.addresses.find((address) => address.type === 'SHIPPING')
+
+      await enqueueCommerceEvent(tx, 'order.paid', {
+        orderId: order.id,
+        orderNumber: order.orderNumber,
+        email: order.email,
+        total: centsToDollars(order.totalCents),
+        currency: order.currency,
+        items: order.items.map((item) => ({
+          title: item.title,
+          variantTitle: item.variantTitle,
+          quantity: item.quantity,
+          price: centsToDollars(item.priceCents),
+        })),
+        shippingAddress: shippingAddress
+          ? {
+              firstName: shippingAddress.firstName,
+              lastName: shippingAddress.lastName,
+              address1: shippingAddress.address1,
+              city: shippingAddress.city,
+              province: shippingAddress.province,
+              postalCode: shippingAddress.postalCode,
+              country: shippingAddress.country,
+            }
+          : undefined,
+      }, order.id)
+    }
+
+    return order
+  })
 }
 
 export async function updateFulfillmentStatus(orderId: string, fulfillmentStatus: FulfillmentStatus) {
@@ -1091,14 +1089,13 @@ export async function createFulfillment(data: {
       },
     })
 
+    await enqueueCommerceEvent(tx, 'fulfillment.created', {
+      fulfillmentId: createdFulfillment.id,
+      orderId: data.orderId,
+      trackingNumber: data.trackingNumber,
+      sendTrackingEmail: Boolean(data.trackingNumber || data.trackingUrl),
+    }, createdFulfillment.id)
     return createdFulfillment
-  })
-
-  await emitInternalEvent('fulfillment.created', {
-    fulfillmentId: fulfillment.id,
-    orderId: data.orderId,
-    trackingNumber: data.trackingNumber,
-    sendTrackingEmail: Boolean(data.trackingNumber || data.trackingUrl),
   })
 
   return fulfillment
@@ -1273,20 +1270,13 @@ export async function createManualFulfillment(data: {
       })
     }
 
+    await enqueueCommerceEvent(tx, 'fulfillment.created', {
+      fulfillmentId: createdFulfillment.id, orderId: data.orderId,
+      trackingNumber: createdFulfillment.trackingNumber ?? undefined,
+      sendTrackingEmail: Boolean(data.sendTrackingEmail),
+    }, createdFulfillment.id)
     return createdFulfillment
   })
-
-  // fulfillment is already committed — event emission is best-effort
-  try {
-    await emitInternalEvent('fulfillment.created', {
-      fulfillmentId: fulfillment.id,
-      orderId: data.orderId,
-      trackingNumber: fulfillment.trackingNumber ?? undefined,
-      sendTrackingEmail: Boolean(data.sendTrackingEmail),
-    })
-  } catch (error) {
-    console.error('[createManualFulfillment] event emission failed after fulfillment commit', error)
-  }
 
   return fulfillment
 }

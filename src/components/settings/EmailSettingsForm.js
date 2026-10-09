@@ -1,4 +1,5 @@
 "use client";
+import useSettingsDraft from "./useSettingsDraft";
 import { useState } from "react";
 import Link from "next/link";
 import AdminButton from "../admin/ui/AdminButton";
@@ -18,13 +19,14 @@ const TEXT_FIELDS = [
   ["replyToEmail", "Reply-to email"],
 ];
 function TemplateForm({ initialTemplate }) {
-  const [draft, setDraft] = useState(initialTemplate.fields);
+  const { draft, setDraft, dirty, reset, accept, changes } = useSettingsDraft(initialTemplate.fields);
   const [recipient, setRecipient] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const path = `/api/email-templates/${initialTemplate.templateKey}`;
   async function action(kind) {
+    if (busy || (kind === "save" && !dirty)) return;
     setBusy(true);
     setError("");
     setNotice("");
@@ -33,17 +35,17 @@ function TemplateForm({ initialTemplate }) {
         const result = await settingsRequest(
           path,
           jsonRequest("PATCH", {
-            ...draft,
-            replyToEmail: draft.replyToEmail || null,
+            ...changes(["enabled", ...TEXT_FIELDS.map(([key]) => key)]),
+            ...(changes(["replyToEmail"]).replyToEmail === "" ? { replyToEmail: null } : {}),
           }),
         );
-        setDraft(result.fields);
+        accept(result.fields);
         setNotice("Template saved.");
       } else if (kind === "reset") {
         const result = await settingsRequest(`${path}/reset`, {
           method: "POST",
         });
-        setDraft(result.fields);
+        accept(result.fields);
         setNotice("Template reset to defaults.");
       } else {
         const result = await settingsRequest(
@@ -72,6 +74,7 @@ function TemplateForm({ initialTemplate }) {
       }}
       className={styles.configStack}
     >
+      <fieldset disabled={busy} className={styles.formFields}>
       <h2>
         {initialTemplate.templateKey === "order_confirmation"
           ? "Order confirmation"
@@ -117,7 +120,7 @@ function TemplateForm({ initialTemplate }) {
         .
       </p>
       <div className={styles.compactActionRow}>
-        <AdminButton type="submit" disabled={busy}>
+        <AdminButton type="submit" disabled={busy || !dirty}>
           Save template
         </AdminButton>
         <AdminButton
@@ -129,6 +132,7 @@ function TemplateForm({ initialTemplate }) {
           Reset to defaults
         </AdminButton>
       </div>
+      <AdminButton variant="ghost" disabled={!dirty} onClick={reset}>Discard changes</AdminButton>
       <details className={styles.disclosure}>
       <summary>Send a test of the saved message</summary>
       <div className={styles.configStack}>
@@ -151,6 +155,7 @@ function TemplateForm({ initialTemplate }) {
       </details>
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
+      </fieldset>
     </form>
   );
 }

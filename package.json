@@ -63,6 +63,9 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@opentelemetry/api": "1.9.1",
+    "@opentelemetry/context-async-hooks": "2.9.0",
+    "@opentelemetry/sdk-trace": "2.9.0",
     "@playwright/test": "^1.60.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.9",

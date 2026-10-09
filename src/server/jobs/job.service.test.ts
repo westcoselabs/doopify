@@ -80,6 +80,12 @@ function applyJobUpdate(job: JobRecord, data: Record<string, any>) {
 }
 
 const prismaMock = vi.hoisted(() => ({
+  $queryRaw: vi.fn(async (query: { values: any[] }) => {
+    const [now, , cutoff, limit, , workerId, claimToken, leaseExpiresAt] = query.values;
+    const jobs = state.jobs.filter(job => ((["PENDING", "RETRYING"].includes(job.status) && job.runAt <= now && !job.claimToken) || (job.status === "RUNNING" && (job.leaseExpiresAt ? job.leaseExpiresAt <= now : job.lockedAt && job.lockedAt <= cutoff)))).slice(0, limit);
+    jobs.forEach(job => applyJobUpdate(job, { status: "RUNNING", lockedAt: now, lockedBy: workerId, claimToken, leaseExpiresAt, attempts: { increment: 1 } }));
+    return jobs.map(cloneJob);
+  }),
   job: {
     create: vi.fn(async ({ data }: { data: any }) => {
       state.id += 1

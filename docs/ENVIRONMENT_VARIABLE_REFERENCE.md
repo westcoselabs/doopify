@@ -9,6 +9,8 @@
 | Variable | Required | Purpose |
 | --- | --- | --- |
 | `DATABASE_URL` | Yes | Primary Postgres connection string used by Prisma/runtime. |
+| `DATABASE_POOL_MAX` | Optional | Maximum connections per shared Prisma runtime pool; default 10, range 1–100. Budget replicas and isolates together. |
+| `DATABASE_POOL_TIMEOUT_MS` | Optional | Pool connection acquisition timeout; default 5,000 ms, range 100–60,000. |
 | `JWT_SECRET` | Yes | Auth JWT signing secret. Use high-entropy value. |
 | `DATA_ENCRYPTION_KEY` | Required outside tests | High-entropy application-data encryption key for MFA and private download tokens; preserve the old effective key value when upgrading. |
 | `DATA_ENCRYPTION_KEY_PREVIOUS` | During rotation only | Previous application-data key retained until guarded re-encryption and validation finish. |

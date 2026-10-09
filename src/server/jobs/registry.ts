@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { dispatchOutboxEvent } from '@/server/events/outbox'
 
 import { processShippingTrackingSyncJob } from '@/server/shipping/shipping-tracking-jobs.service'
 import {
@@ -9,6 +10,7 @@ import { ANALYTICS_EVENT_NAMES, recordAnalyticsEvent } from '@/server/services/a
 import { processOutboundWebhook } from '@/server/services/outbound-webhook.service'
 
 export const JOB_TYPES = [
+  'DISPATCH_INTERNAL_EVENT',
   'SEND_ORDER_CONFIRMATION_EMAIL',
   'SEND_FULFILLMENT_EMAIL',
   'SYNC_SHIPPING_TRACKING',
@@ -50,6 +52,7 @@ const recordAnalyticsEventPayloadSchema = z.object({
 })
 
 const handlers: Record<JobType, JobHandler> = {
+  DISPATCH_INTERNAL_EVENT: dispatchOutboxEvent,
   SEND_ORDER_CONFIRMATION_EMAIL: async (payload, context) => {
     const parsed = sendOrderConfirmationEmailPayloadSchema.parse(payload)
     await processOrderConfirmationEmailDeliveryJob(parsed, context)

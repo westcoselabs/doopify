@@ -1,3 +1,7 @@
+import type { Prisma } from '@prisma/client'
+
+export type EventPersistenceContext = { client: Prisma.TransactionClient }
+
 export type DoopifyEvents = {
   'checkout.created': {
     checkoutSessionId: string
@@ -167,7 +171,7 @@ export type DoopifyEventName = keyof DoopifyEvents
 
 export type InternalEventHandler<K extends DoopifyEventName = DoopifyEventName> = {
   event: K
-  handle: (payload: DoopifyEvents[K]) => Promise<void> | void
+  handle: (payload: DoopifyEvents[K], context?: EventPersistenceContext) => Promise<void> | void
 }
 
 export type AnyInternalEventHandler = {

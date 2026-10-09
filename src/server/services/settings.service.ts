@@ -303,6 +303,11 @@ export async function updateBrandKit(input: unknown) {
   return mapStoreBrandKit(updated as BrandKitRecord)
 }
 
+/** Document chrome only needs the favicon; preserve primary/legacy resolution. */
+export function getStorefrontDocumentSettings() {
+  return findPrimaryStore({ select: { faviconUrl: true } })
+}
+
 export async function getPublicStorefrontSettings() {
   const store = await getStoreSettingsLite()
   if (!store) return null

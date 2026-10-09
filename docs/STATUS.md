@@ -1,7 +1,7 @@
 # Doopify Status
 
 > Canonical current repository status. Documentation refresh: September 24, 2026.
-> Active work: environment-only commerce simplification, implemented on `codex/env-only-commerce-simplification`; production rollout is pending.
+> Active work: the 100-RPS latency gate remains open on `codex/env-only-commerce-simplification`. Narrow read reductions and corrected measurements are implemented locally; one of three final runs failed. Preserve freshness, two replicas and ten connections per replica. Production rollout is pending.
 
 Doopify is a developer-first, self-hostable commerce engine with a protected operational admin, public storefront, Next.js 16, Prisma/Postgres, Stripe payments and explicit server-side extension seams.
 
@@ -20,6 +20,19 @@ Doopify is a developer-first, self-hostable commerce engine with a protected ope
 - Analytics uses server aggregate queries over the complete dataset with separate per-currency money totals, instead of calculating store totals from the first admin list page.
 - Jobs and inbound/outbound webhook deliveries use expiring ownership claims and guarded completion. Inbound signatures are verified before canonical records are written. Runner batches use bounded concurrency and time budgets.
 - Queued email sends persist send-attempt state; unknown outcomes after a provider send require reconciliation instead of blind automatic resend. Missing email configuration and preview never masquerade as successful delivery.
+
+## Scaling hardening on this branch
+
+- Live checkout quotes use expiring, hashed-token Postgres snapshots shared across replicas, with bounded worker cleanup.
+- Commerce transactions persist events into the existing jobs table. Dispatch receipts and transactional consumers prevent duplicate internal fan-out after retry/crash; external provider delivery still follows existing reconciliation rules.
+- Jobs and outbound workers claim available rows with SKIP LOCKED and acquire only for free execution slots. Prisma clients/pools are shared across production bundles in one runtime; pool size and acquisition timeout are explicit environment settings.
+- Media reads follow the asset's saved storage provider and stream private S3 objects. Product upload previews, requests and timers have owned cleanup; catalog/editor/notification subscriptions and immutable draft updates reduce typing work.
+- Shipping has isolated editor drafts, narrow workspace reads and mutation-result merging; nullable rate limits and free-shipping thresholds round-trip. Tax preview matches the active flat checkout calculation, while retained regional rules remain read-only. General, Brand and Email use dirty saves and reset/discard controls.
+- Shop and collection peer navigation now project only collection IDs, titles and handles; the storefront document reads only the favicon through primary/legacy store resolution. Public collection summaries remain unchanged and fresh requests reflect edits on both replicas. The fixture performs six fewer SQL queries on 80% of requests (about 480 fewer queries/second at the same mix).
+
+Local verification passed: Prisma generation, TypeScript, production build, lint (25 existing warnings), 1,453 fast tests, 47 real-DB integration tests, harness checks and HTTP freshness/public-boundary checks. The preceding additive migration rehearsal and production Settings browser checks remain recorded in [scaling evidence and rollout](performance/scaling-hardening.md).
+
+The corrected 100-RPS baselines were 57/51/57 ms p95; final untraced runs were **216/7,887/146 ms**. The failing run dropped 142 requests and had 48 request failures, with zero worker failures. Pool queues reached 508 waiting acquisitions within the unchanged ten-connection limit; scheduling remained healthy. Query/payload work fell, but repeatable p95 improvement is **not established**. The historical 1.39-second measurement and saturated 500-RPS run remain preserved with limitations. No burst or soak was run in this pass. The immediate priority remains attributing and reducing the intermittent 100-RPS saturation; deployment capacity and restore/provider gates remain open.
 
 ## Settings refinement
 
@@ -42,7 +55,7 @@ The preceding remediation work was merged to master at `06c8336cfd7140435ef5a45f
 
 Existing installations must follow the [environment-only migration runbook](ENV_ONLY_MIGRATION_RUNBOOK.md): export and validate configuration, apply additive changes, deploy with legacy tables intact, validate real operations, retain a rollback window, then explicitly contract legacy credential tables and columns. Never rotate the application encryption key as a side effect of moving provider configuration.
 
-Local acceptance passed: Prisma generation, lint, TypeScript, production build, 1,431 fast tests after the Settings refinement, 20 browser tests (two live-provider checks skipped) and eight production Settings/System routes. The earlier 40 disposable real-DB tests and synthetic restored-database migration rehearsal also passed. General route-specific gzip JS is now 83.8% below merged master and navigation queries remain 94.5% lower. See [acceptance evidence](performance/env-only-acceptance.md) for measurement boundaries, warnings and exact artifacts. Actual production smoke checks and rollback-window closure remain operator work.
+The earlier Settings refinement acceptance passed Prisma generation, lint, TypeScript, production build, 1,431 fast tests, 20 browser tests (two live-provider checks skipped) and eight production Settings/System routes. Its 40 disposable real-DB tests and synthetic restored-database migration rehearsal also passed. At that revision, General route-specific gzip JS measured 83.8% below merged master and navigation queries measured 94.5% lower. See [earlier acceptance evidence](performance/env-only-acceptance.md) for measurement boundaries, warnings and exact artifacts; current scaling verification is reported above. Actual production smoke checks and rollback-window closure remain operator work.
 
 CI integration tests now provision a disposable Postgres 16 service on every push/PR, without requiring a shared database secret. The published branch's initial dependency-install and workflow-condition failures have repository fixes; final-head remote checks are a separate release gate.
 

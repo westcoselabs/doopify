@@ -1,6 +1,6 @@
 import crypto from 'node:crypto'
-import { DELIVERY_LEASE_MS, runBounded } from '@/server/jobs/delivery-runtime'
-import type { Job, Prisma } from '@prisma/client'
+import { DELIVERY_LEASE_MS, runAvailable } from '@/server/jobs/delivery-runtime'
+import { type Job, Prisma } from '@prisma/client'
 
 import { prisma } from '@/lib/prisma'
 
@@ -14,6 +14,7 @@ const MAX_RETRY_DELAY_MS = 60 * 60 * 1000
 const SENSITIVE_KEY_PATTERN = /secret|token|password|authorization|api[-_]?key|signature/i
 
 export type EnqueueJobOptions = {
+  deduplicationKey?: string
   runAt?: Date
   maxAttempts?: number
 }
@@ -55,8 +56,8 @@ export type JobRunResult = {
 }
 
 function clampLimit(limit: number | undefined) {
-  if (!limit) return DEFAULT_RUN_LIMIT
-  return Math.max(1, Math.min(MAX_RUN_LIMIT, limit))
+  if (!limit || !Number.isFinite(limit)) return DEFAULT_RUN_LIMIT
+  return Math.max(1, Math.min(MAX_RUN_LIMIT, Math.floor(limit)))
 }
 
 function getWorkerId(workerId: string | undefined) {
@@ -128,6 +129,12 @@ export async function assertJobClaim(claim: JobClaim, client: Pick<Prisma.Transa
 }
 
 export async function enqueueJob(type: string, payload: Prisma.InputJsonValue, options: EnqueueJobOptions = {}, client: Pick<Prisma.TransactionClient, 'job'> = prisma) {
+  if (options.deduplicationKey) {
+    return client.job.upsert({
+      where: { deduplicationKey: options.deduplicationKey }, update: {},
+      create: { type, payload, deduplicationKey: options.deduplicationKey, status: 'PENDING', maxAttempts: Math.max(1, options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS), runAt: options.runAt ?? new Date() },
+    })
+  }
   return client.job.create({ data: { type, payload, status: 'PENDING', maxAttempts: Math.max(1, options.maxAttempts ?? DEFAULT_MAX_ATTEMPTS), runAt: options.runAt ?? new Date() } })
 }
 
@@ -141,13 +148,20 @@ async function claimJob(id: string, workerId: string, now: Date) {
 
 export async function claimDueJobs(limit = DEFAULT_RUN_LIMIT, options: ClaimDueJobsOptions = {}) {
   const now = options.now ?? new Date()
-  const jobs = await prisma.job.findMany({ where: dueJobsWhere(now), select: { id: true }, orderBy: [{ runAt: 'asc' }, { id: 'asc' }], take: clampLimit(limit) })
-  const claimed: Job[] = []
-  for (const job of jobs) {
-    const owned = await claimJob(job.id, getWorkerId(options.workerId), now)
-    if (owned) claimed.push(owned)
-  }
-  return claimed
+  return prisma.$queryRaw<Job[]>(Prisma.sql`
+    WITH candidates AS (
+      SELECT "id" FROM "jobs"
+      WHERE ("status" IN ('PENDING', 'RETRYING') AND "runAt" <= ${now} AND "claimToken" IS NULL)
+         OR ("status" = 'RUNNING' AND ("leaseExpiresAt" <= ${now}
+             OR ("leaseExpiresAt" IS NULL AND "lockedAt" <= ${new Date(now.getTime() - DELIVERY_LEASE_MS)})))
+      ORDER BY "runAt", "id" LIMIT ${clampLimit(limit)} FOR UPDATE SKIP LOCKED
+    )
+    UPDATE "jobs" AS j SET "status" = 'RUNNING', "lockedAt" = ${now},
+      "lockedBy" = ${getWorkerId(options.workerId)}, "claimToken" = ${crypto.randomUUID()},
+      "leaseExpiresAt" = ${new Date(now.getTime() + DELIVERY_LEASE_MS)},
+      "attempts" = j."attempts" + 1, "updatedAt" = ${now}
+    FROM candidates WHERE j."id" = candidates."id" RETURNING j.*
+  `)
 }
 
 async function finishJob(jobId: string, claimToken: string, data: Prisma.JobUpdateManyMutationInput) {
@@ -204,8 +218,10 @@ export async function runJob(jobId: string, options: RunJobOptions = {}): Promis
 }
 
 export async function runDueJobs(options: RunDueJobsOptions = {}) {
-  const jobs = await prisma.job.findMany({ where: dueJobsWhere(options.now ?? new Date()), select: { id: true }, orderBy: [{ runAt: 'asc' }, { id: 'asc' }], take: clampLimit(options.limit) })
-  const settled = await runBounded(jobs, (job) => runJob(job.id, { workerId: options.workerId, now: options.now }))
+  const settled = await runAvailable(clampLimit(options.limit), async () => {
+    const [job] = await claimDueJobs(1, options)
+    return job ?? null
+  }, job => runJob(job.id, { claimToken: job.claimToken! }))
   const results: JobRunResult[] = settled.map((result) => result.status === 'fulfilled' ? result.value : { processed: true, success: false, job: null, error: normalizeError(result.reason) })
   return { processed: results.filter((result) => result.processed).length, succeeded: results.filter((result) => result.success).length, failed: results.filter((result) => result.processed && !result.success).length, skipped: results.filter((result) => !result.processed).length, results }
 }

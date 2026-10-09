@@ -3,7 +3,7 @@ import { type PaymentStatus, type Prisma } from '@prisma/client'
 import { centsToDollars } from '@/lib/money'
 import { prisma } from '@/lib/prisma'
 import { createStripeRefund } from '@/lib/stripe'
-import { emitInternalEvent } from '@/server/events/dispatcher'
+import { enqueueCommerceEvent } from '@/server/events/outbox'
 import {
   type AuditActor,
   recordAuditLogBestEffort,
@@ -354,6 +354,22 @@ export async function issueRefund(input: IssueRefundInput) {
       },
     })
 
+    await enqueueCommerceEvent(tx, 'order.refunded', {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      refundId: issued.id,
+      amount: centsToDollars(issued.amountCents),
+      currency: order.currency,
+    }, issued.id)
+
+    await enqueueCommerceEvent(tx, 'refund.issued', {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      refundId: issued.id,
+      amount: centsToDollars(issued.amountCents),
+      currency: order.currency,
+    }, issued.id)
+
     return issued
   })
 
@@ -377,22 +393,6 @@ export async function issueRefund(input: IssueRefundInput) {
       paymentStatus: newPaymentStatus,
     },
     redactions: [...REFUND_AUDIT_REDACTIONS],
-  })
-
-  await emitInternalEvent('order.refunded', {
-    orderId: order.id,
-    orderNumber: order.orderNumber,
-    refundId: refund.id,
-    amount: centsToDollars(refund.amountCents),
-    currency: order.currency,
-  })
-
-  await emitInternalEvent('refund.issued', {
-    orderId: order.id,
-    orderNumber: order.orderNumber,
-    refundId: refund.id,
-    amount: centsToDollars(refund.amountCents),
-    currency: order.currency,
   })
 
   return refund

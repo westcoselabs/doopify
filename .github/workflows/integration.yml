@@ -54,3 +54,8 @@ jobs:
 
       - name: Run integration tests
         run: npm run test:integration
+
+      - name: Rehearse safe deployment and additive scaling migrations
+        env:
+          E2E_DATABASE_URL: postgresql://doopify_test:ci_only@127.0.0.1:5432/doopify_test?schema=integration
+        run: npm run test:migrations:remediation

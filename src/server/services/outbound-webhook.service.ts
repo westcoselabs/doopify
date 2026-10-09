@@ -1,10 +1,10 @@
 import crypto from 'node:crypto'
-import type { OutboundWebhookDelivery, Prisma } from '@prisma/client'
+import { type OutboundWebhookDelivery, Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { env, getEnvironmentSecret } from '@/lib/env'
 import { outboundDestinations } from '@/server/config/outbound-webhooks'
 import type { DoopifyEventName, DoopifyEvents } from '@/server/events/types'
-import { DELIVERY_LEASE_MS, PROVIDER_TIMEOUT_MS, readBoundedResponse, runBounded } from '@/server/jobs/delivery-runtime'
+import { DELIVERY_LEASE_MS, PROVIDER_TIMEOUT_MS, readBoundedResponse, runAvailable } from '@/server/jobs/delivery-runtime'
 import { recordAuditLogBestEffort, type AuditActor } from '@/server/services/audit-log.service'
 
 const MAX_ATTEMPTS = 5
@@ -18,21 +18,21 @@ export function createOutboundWebhookSignature(input: { payload: string; secret:
   return 'sha256=' + crypto.createHmac('sha256', input.secret).update(input.timestamp + '.' + input.payload).digest('hex')
 }
 
-export async function queueOutboundWebhooks<K extends DoopifyEventName>(event: K, payload: DoopifyEvents[K]) {
+export async function queueOutboundWebhooks<K extends DoopifyEventName>(event: K, payload: DoopifyEvents[K], client: Pick<Prisma.TransactionClient, 'outboundWebhookDelivery'> = prisma) {
   const destinations = outboundDestinations.filter((destination) => destination.events.includes(event))
   if (!destinations.length) return { queued: 0 }
   const body = JSON.stringify({ event, data: payload, createdAt: new Date().toISOString() })
-  await prisma.outboundWebhookDelivery.createMany({ data: destinations.map((destination) => ({
+  await client.outboundWebhookDelivery.createMany({ data: destinations.map((destination) => ({
     integrationId: destination.id, destinationName: destination.name, destinationUrl: destination.url,
     event, payload: body, status: 'PENDING',
   })) })
   return { queued: destinations.length }
 }
 
-export async function processOutboundWebhook(deliveryId: string, manualRetry = false) {
+export async function processOutboundWebhook(deliveryId: string, manualRetry = false, claimed?: OutboundWebhookDelivery) {
   const now = new Date()
-  const claimToken = crypto.randomUUID()
-  const [delivery] = await prisma.outboundWebhookDelivery.updateManyAndReturn({
+  const claimToken = claimed?.claimToken ?? crypto.randomUUID()
+  const [delivery] = claimed ? [claimed] : await prisma.outboundWebhookDelivery.updateManyAndReturn({
     where: { id: deliveryId, ...(manualRetry ? { status: { in: ['PENDING', 'RETRYING', 'FAILED', 'EXHAUSTED'] as OutboundWebhookDelivery['status'][] }, ...availableClaim(now) } : dueWhere(now)) },
     data: { status: 'RETRYING', claimToken, leaseExpiresAt: new Date(now.getTime() + DELIVERY_LEASE_MS), lastRetriedAt: now, attempts: { increment: 1 } },
   })
@@ -81,10 +81,30 @@ export async function processOutboundWebhook(deliveryId: string, manualRetry = f
   return updated
 }
 
+export async function claimNextOutboundDelivery() {
+  const now = new Date()
+  const [delivery] = await prisma.$queryRaw<OutboundWebhookDelivery[]>(Prisma.sql`
+    WITH candidate AS (
+      SELECT "id" FROM "outbound_webhook_deliveries"
+      WHERE "status" IN ('PENDING', 'RETRYING')
+        AND ("claimToken" IS NULL OR "leaseExpiresAt" <= ${now})
+        AND ("nextRetryAt" IS NULL OR "nextRetryAt" <= ${now})
+      ORDER BY "createdAt", "id" LIMIT 1 FOR UPDATE SKIP LOCKED
+    )
+    UPDATE "outbound_webhook_deliveries" AS d
+      SET "status" = 'RETRYING', "claimToken" = ${crypto.randomUUID()},
+        "leaseExpiresAt" = ${new Date(now.getTime() + DELIVERY_LEASE_MS)}, "lastRetriedAt" = ${now},
+        "attempts" = d."attempts" + 1, "updatedAt" = ${now}
+      FROM candidate WHERE d."id" = candidate."id" RETURNING d.*
+  `)
+  return delivery ?? null
+}
+
 export async function processDueOutboundDeliveries(limit = 50) {
-  const deliveries = await prisma.outboundWebhookDelivery.findMany({ where: dueWhere(new Date()), select: { id: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: Math.max(1, Math.min(100, limit)) })
-  const results = await runBounded(deliveries, (delivery) => processOutboundWebhook(delivery.id))
-  return { processed: results.length, success: results.filter((result) => result.status === 'fulfilled' && result.value?.status === 'SUCCESS').length, failures: results.filter((result) => result.status === 'rejected' || (result.status === 'fulfilled' && result.value && result.value.status !== 'SUCCESS')).length }
+  const results = await runAvailable(limit, claimNextOutboundDelivery, delivery => processOutboundWebhook(delivery.id, false, delivery))
+  return { processed: results.filter(result => result.status === 'rejected' || result.value).length,
+    success: results.filter(result => result.status === 'fulfilled' && result.value?.status === 'SUCCESS').length,
+    failures: results.filter(result => result.status === 'rejected' || (result.value && result.value.status !== 'SUCCESS')).length }
 }
 
 export async function retryOutboundWebhookDelivery(deliveryId: string, actor?: AuditActor | null) {

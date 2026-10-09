@@ -2,10 +2,12 @@ import { z } from 'zod'
 
 import { err, ok, parseBody, unprocessable } from '@/lib/api'
 import { dollarsToCents } from '@/lib/money'
-import { serializeShippingSettings } from '@/server/shipping/shipping-settings.dto'
+import { serializeShippingSettings, serializeShippingWorkspace } from '@/server/shipping/shipping-settings.dto'
 import { requireAdmin } from '@/server/auth/require-auth'
 import { auditActorFromUser, recordAuditLogBestEffort } from '@/server/services/audit-log.service'
 import {
+  getShippingWorkspaceSettings,
+  updateShippingWorkspaceSettings,
   getShippingSettingsStore,
   updateShippingSettings,
 } from '@/server/shipping/shipping-settings.service'
@@ -38,6 +40,11 @@ export async function GET(req: Request) {
   if (!auth.ok) return auth.response
 
   try {
+    const workspace = new URL(req.url).searchParams.get('view') === 'workspace'
+    if (workspace) {
+      const store = await getShippingWorkspaceSettings()
+      return store ? ok(serializeShippingWorkspace(store)) : err('Store not configured', 404)
+    }
     const store = await getShippingSettingsStore()
     if (!store) return err('Store not configured', 404)
 
@@ -61,10 +68,11 @@ export async function PATCH(req: Request) {
   }
 
   try {
-    const store = await getShippingSettingsStore()
+    const workspace = new URL(req.url).searchParams.get('view') === 'workspace'
+    const store = workspace ? await getShippingWorkspaceSettings() : await getShippingSettingsStore()
     if (!store) return err('Store not configured', 404)
 
-    const updated = await updateShippingSettings(store.id, {
+    const updated = await (workspace ? updateShippingWorkspaceSettings : updateShippingSettings)(store.id, {
       ...(parsed.data.shippingMode !== undefined ? { shippingMode: parsed.data.shippingMode } : {}),
       ...(parsed.data.fallbackBehavior !== undefined ? { fallbackBehavior: parsed.data.fallbackBehavior } : {}),
       ...(parsed.data.shippingThreshold !== undefined
@@ -149,7 +157,7 @@ export async function PATCH(req: Request) {
       },
     })
 
-    return ok(serializeShippingSettings(updated))
+    return ok(workspace ? serializeShippingWorkspace(updated) : serializeShippingSettings(updated as NonNullable<Awaited<ReturnType<typeof getShippingSettingsStore>>>))
   } catch (error) {
     console.error('[PATCH /api/settings/shipping]', error)
     const message = error instanceof Error ? error.message : 'Failed to update shipping settings'

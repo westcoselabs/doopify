@@ -23,6 +23,7 @@ export type PutMediaObjectResult = {
 
 export type GetMediaObjectResult = {
   body?: Buffer
+  stream?: ReadableStream<Uint8Array>
   redirectUrl?: string
   mimeType: string
   filename: string
@@ -33,7 +34,7 @@ export type GetMediaObjectResult = {
 export type MediaStorageAdapter = {
   provider: MediaStorageProvider
   put(input: PutMediaObjectInput): Promise<PutMediaObjectResult>
-  get(assetId: string): Promise<GetMediaObjectResult | null>
+  get(assetId: string, signal?: AbortSignal): Promise<GetMediaObjectResult | null>
   delete(assetId: string): Promise<void>
   getPublicUrl(assetId: string): string
 }

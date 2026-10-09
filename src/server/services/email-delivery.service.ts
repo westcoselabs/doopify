@@ -457,8 +457,8 @@ export async function getEmailDeliveries(input: {
   }
 }
 
-export async function queueOrderConfirmationEmailDelivery(input: QueueOrderConfirmationEmailInput) {
-  return prisma.$transaction(async (tx) => {
+export async function queueOrderConfirmationEmailDelivery(input: QueueOrderConfirmationEmailInput, client?: Prisma.TransactionClient) {
+  const persist = async (tx: Prisma.TransactionClient) => {
     const delivery = await createEmailDelivery({
       event: 'order.paid',
       template: 'order_confirmation',
@@ -485,11 +485,12 @@ export async function queueOrderConfirmationEmailDelivery(input: QueueOrderConfi
       delivery,
       job,
     }
-  })
+  }
+  return client ? persist(client) : prisma.$transaction(persist)
 }
 
-export async function queueFulfillmentTrackingEmailDelivery(input: QueueFulfillmentTrackingEmailInput) {
-  const order = await getOrderById(input.orderId)
+export async function queueFulfillmentTrackingEmailDelivery(input: QueueFulfillmentTrackingEmailInput, client?: Prisma.TransactionClient) {
+  const order = client ? await client.order.findUnique({ where: { id: input.orderId }, select: { email: true, orderNumber: true } }) : await getOrderById(input.orderId)
   if (!order || !order.email) {
     return {
       delivery: null,
@@ -499,7 +500,7 @@ export async function queueFulfillmentTrackingEmailDelivery(input: QueueFulfillm
   }
 
   const recipientEmail = order.email
-  return prisma.$transaction(async (tx) => {
+  const persist = async (tx: Prisma.TransactionClient) => {
     const delivery = await createEmailDelivery({
       event: 'fulfillment.created',
       template: 'fulfillment_tracking',
@@ -528,7 +529,8 @@ export async function queueFulfillmentTrackingEmailDelivery(input: QueueFulfillm
       job,
       skippedReason: null,
     }
-  })
+  }
+  return client ? persist(client) : prisma.$transaction(persist)
 }
 
 

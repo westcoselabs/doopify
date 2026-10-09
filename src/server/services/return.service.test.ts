@@ -18,6 +18,10 @@ const mocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/prisma', () => ({ prisma: mocks.prisma }))
+vi.mock('@/server/events/outbox', () => ({
+  enqueueCommerceEvent: (_tx: unknown, event: unknown, payload: unknown) => mocks.emitInternalEvent(event, payload),
+}))
+
 vi.mock('@/server/events/dispatcher', () => ({ emitInternalEvent: mocks.emitInternalEvent }))
 vi.mock('@/server/services/refund.service', () => ({ issueRefund: mocks.issueRefund }))
 vi.mock('@/server/services/return-audit.service', () => ({ safeAuditReturnEvent: mocks.safeAuditReturnEvent }))

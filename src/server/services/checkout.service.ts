@@ -261,7 +261,7 @@ function isProviderBackedQuote(quote: ShippingRateQuote) {
 const SHIPPING_RATES_EXPIRED_MESSAGE =
   'Shipping rates expired. Please refresh shipping options and select a rate again.'
 
-function normalizeShippingQuoteForSelection(input: {
+async function normalizeShippingQuoteForSelection(input: {
   quote: ShippingRateQuote
   cartFingerprint: string
   addressFingerprint: string
@@ -273,7 +273,7 @@ function normalizeShippingQuoteForSelection(input: {
     }
   }
 
-  const storedQuote = storeCheckoutShippingQuote({
+  const storedQuote = await storeCheckoutShippingQuote({
     quote: input.quote,
     cartFingerprint: input.cartFingerprint,
     addressFingerprint: input.addressFingerprint,
@@ -432,7 +432,7 @@ async function resolveSelectedShippingQuote(input: {
   const addressFingerprint = buildCheckoutAddressFingerprint(input.shippingAddress)
 
   if (selectedShippingQuoteId) {
-    const storedQuote = getStoredCheckoutShippingQuote(selectedShippingQuoteId)
+    const storedQuote = await getStoredCheckoutShippingQuote(selectedShippingQuoteId)
     if (storedQuote) {
       if (
         storedQuote.cartFingerprint !== cartFingerprint ||
@@ -940,8 +940,8 @@ export async function getCheckoutShippingRates(input: {
 
   return {
     currency: (store?.currency || 'USD').toUpperCase(),
-    quotes: quotes.map((quote) => {
-      const normalizedQuote = normalizeShippingQuoteForSelection({
+    quotes: await Promise.all(quotes.map(async (quote) => {
+      const normalizedQuote = await normalizeShippingQuoteForSelection({
         quote,
         cartFingerprint,
         addressFingerprint,
@@ -952,7 +952,7 @@ export async function getCheckoutShippingRates(input: {
         selectedShippingQuoteId: normalizedQuote.selectedShippingQuoteId,
         amount: centsToDollars(normalizedQuote.amountCents),
       }
-    }),
+    })),
   }
 }
 

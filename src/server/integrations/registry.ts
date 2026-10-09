@@ -16,8 +16,8 @@ function defineHandler<K extends keyof DoopifyEvents>(handler: InternalEventHand
 function defineAnalyticsHandler<K extends AnalyticsEventName>(event: K): InternalEventHandler<K> {
   return defineHandler({
     event,
-    handle: async (payload: DoopifyEvents[K]) => {
-      await recordAnalyticsEvent(event, payload)
+    handle: async (payload: DoopifyEvents[K], context) => {
+      await recordAnalyticsEvent(event, payload, context?.client)
     },
   })
 }
@@ -31,7 +31,7 @@ export const integrationRegistry = [
   }),
   defineHandler({
     event: 'order.paid',
-    handle: async (payload: DoopifyEvents['order.paid']) => {
+    handle: async (payload: DoopifyEvents['order.paid'], context) => {
       logEvent('order.paid', payload)
       if (!payload.email) {
         return
@@ -45,7 +45,7 @@ export const integrationRegistry = [
         total: payload.total,
         items: payload.items,
         shippingAddress: payload.shippingAddress ?? null,
-      })
+      }, context?.client)
     },
   }),
   defineHandler({
@@ -62,30 +62,10 @@ export const integrationRegistry = [
   }),
   defineHandler({
     event: 'fulfillment.created',
-    handle: async (payload: DoopifyEvents['fulfillment.created']) => {
+    handle: async (payload: DoopifyEvents['fulfillment.created'], context) => {
       logEvent('fulfillment.created', payload)
-
-      try {
-        await queueShippingTrackingSyncJob({
-          fulfillmentId: payload.fulfillmentId,
-          orderId: payload.orderId,
-        })
-      } catch (error) {
-        console.error('[fulfillment.created] failed to queue tracking sync job', error)
-      }
-
-      if (!payload.sendTrackingEmail) {
-        return
-      }
-
-      try {
-        await queueFulfillmentTrackingEmailDelivery({
-          fulfillmentId: payload.fulfillmentId,
-          orderId: payload.orderId,
-        })
-      } catch (error) {
-        console.error('[fulfillment.created] failed to queue fulfillment email job', error)
-      }
+      await queueShippingTrackingSyncJob({ fulfillmentId: payload.fulfillmentId, orderId: payload.orderId }, context?.client)
+      if (payload.sendTrackingEmail) await queueFulfillmentTrackingEmailDelivery({ fulfillmentId: payload.fulfillmentId, orderId: payload.orderId }, context?.client)
     },
   }),
   defineHandler({

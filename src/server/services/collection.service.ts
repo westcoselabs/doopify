@@ -568,6 +568,22 @@ export async function deleteCollection(id: string) {
   })
 }
 
+export type StorefrontCollectionLink = { id: string; title: string; handle: string }
+
+/** Navigation needs neither image hydration nor product/pagination counts. */
+export async function getStorefrontCollectionLinks(params: { limit?: number; excludeHandle?: string } = {}): Promise<StorefrontCollectionLink[]> {
+  const { pageSize } = catalogPagination({ pageSize: params.limit })
+  return prisma.collection.findMany({
+    where: {
+      ...storefrontVisibleCollectionWhere(),
+      ...(params.excludeHandle ? { handle: { not: params.excludeHandle } } : {}),
+    },
+    select: { id: true, title: true, handle: true },
+    orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+    take: pageSize,
+  })
+}
+
 export async function getStorefrontCollectionSummaries(params: { page?: number; pageSize?: number; excludeHandle?: string } = {}) {
   const { page, pageSize } = catalogPagination(params)
   const now = new Date()

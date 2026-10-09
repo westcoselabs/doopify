@@ -1,4 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { prisma } from '@/lib/prisma'
+import type { Prisma } from '@prisma/client'
 
 import type { ShippingRateQuote } from '@/server/shipping/shipping-rate.types'
 
@@ -41,8 +43,6 @@ export type StoredCheckoutShippingQuote = {
   expiresAt: Date
 }
 
-const checkoutShippingQuoteCache = new Map<string, StoredCheckoutShippingQuote>()
-
 function hashJson(value: unknown) {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex')
 }
@@ -59,18 +59,6 @@ function getProviderShipmentId(quote: ShippingRateQuote) {
   return typeof metadataShipmentId === 'string' && metadataShipmentId.trim()
     ? metadataShipmentId.trim()
     : undefined
-}
-
-function isProviderBacked(quote: ShippingRateQuote | StoredCheckoutShippingQuote) {
-  return quote.source === 'EASYPOST' || quote.source === 'SHIPPO'
-}
-
-function pruneExpiredQuotes(now = new Date()) {
-  for (const [quoteId, quote] of checkoutShippingQuoteCache.entries()) {
-    if (quote.expiresAt <= now) {
-      checkoutShippingQuoteCache.delete(quoteId)
-    }
-  }
 }
 
 export function buildCheckoutCartFingerprint(
@@ -107,7 +95,7 @@ export function isCheckoutShippingQuoteId(value: string | null | undefined) {
   return String(value ?? '').startsWith(SHIPPING_QUOTE_ID_PREFIX)
 }
 
-export function storeCheckoutShippingQuote(input: {
+export async function storeCheckoutShippingQuote(input: {
   quote: ShippingRateQuote
   cartFingerprint: string
   addressFingerprint: string
@@ -115,7 +103,6 @@ export function storeCheckoutShippingQuote(input: {
   ttlMs?: number
 }) {
   const now = input.now ?? new Date()
-  pruneExpiredQuotes(now)
 
   const ttlMs = Number.isFinite(input.ttlMs) ? Math.max(1000, Number(input.ttlMs)) : SHIPPING_QUOTE_TTL_MS
   const quoteId = `${SHIPPING_QUOTE_ID_PREFIX}${randomUUID().replaceAll('-', '')}`
@@ -142,21 +129,31 @@ export function storeCheckoutShippingQuote(input: {
     expiresAt: new Date(now.getTime() + ttlMs),
   }
 
-  checkoutShippingQuoteCache.set(quoteId, storedQuote)
+  const { quoteId: opaqueToken, expiresAt, ...snapshot } = storedQuote
+  await prisma.checkoutShippingQuote.create({
+    data: {
+      tokenHash: hashJson(opaqueToken),
+      snapshot: Object.fromEntries(Object.entries(snapshot).filter(([, value]) => value !== undefined)) as Prisma.InputJsonObject,
+      expiresAt,
+    },
+  })
   return storedQuote
 }
 
-export function getStoredCheckoutShippingQuote(quoteId: string, now = new Date()) {
-  pruneExpiredQuotes(now)
-  const quote = checkoutShippingQuoteCache.get(quoteId)
-  if (!quote) return null
-  if (quote.expiresAt <= now) {
-    checkoutShippingQuoteCache.delete(quoteId)
-    return null
-  }
-  return quote
+export async function getStoredCheckoutShippingQuote(quoteId: string, now = new Date()): Promise<StoredCheckoutShippingQuote | null> {
+  if (!isCheckoutShippingQuoteId(quoteId)) return null
+  const quote = await prisma.checkoutShippingQuote.findUnique({ where: { tokenHash: hashJson(quoteId) } })
+  if (!quote || quote.expiresAt <= now) return null
+  return { ...(quote.snapshot as unknown as Omit<StoredCheckoutShippingQuote, 'quoteId' | 'expiresAt'>), quoteId, expiresAt: quote.expiresAt }
 }
 
-export function clearCheckoutShippingQuoteCache() {
-  checkoutShippingQuoteCache.clear()
+/** Bounded maintenance, never an O(n) sweep on checkout requests. */
+export async function pruneExpiredCheckoutShippingQuotes(now = new Date(), limit = 500) {
+  const expired = await prisma.checkoutShippingQuote.findMany({
+    where: { expiresAt: { lte: now } }, orderBy: { expiresAt: 'asc' }, take: Math.min(1000, Math.max(1, limit)),
+    select: { tokenHash: true },
+  })
+  if (!expired.length) return 0
+  const result = await prisma.checkoutShippingQuote.deleteMany({ where: { tokenHash: { in: expired.map(quote => quote.tokenHash) } } })
+  return result.count
 }

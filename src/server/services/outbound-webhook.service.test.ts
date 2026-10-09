@@ -2,10 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import crypto from 'node:crypto'
 
 const mocks = vi.hoisted(() => ({
-  updateManyAndReturn: vi.fn(), createMany: vi.fn(), findMany: vi.fn(), emit: vi.fn(), audit: vi.fn(), secret: vi.fn(),
+  queryRaw: vi.fn(), updateManyAndReturn: vi.fn(), createMany: vi.fn(), findMany: vi.fn(), emit: vi.fn(), audit: vi.fn(), secret: vi.fn(),
   destinations: [{ id: 'dest', name: 'Merchant', url: 'https://merchant.example/webhook', events: ['order.paid'], secretEnv: 'OUTBOUND_WEBHOOK_TEST', headers: { 'X-Test': 'OUTBOUND_WEBHOOK_HEADER' } }],
 }))
-vi.mock('@/lib/prisma', () => ({ prisma: { outboundWebhookDelivery: { updateManyAndReturn: mocks.updateManyAndReturn, createMany: mocks.createMany, findMany: mocks.findMany } } }))
+vi.mock('@/lib/prisma', () => ({ prisma: { $queryRaw: mocks.queryRaw, outboundWebhookDelivery: { updateManyAndReturn: mocks.updateManyAndReturn, createMany: mocks.createMany, findMany: mocks.findMany } } }))
 vi.mock('@/lib/env', () => ({ env: { NODE_ENV: 'test' }, getEnvironmentSecret: mocks.secret }))
 vi.mock('@/server/config/outbound-webhooks', () => ({ outboundDestinations: mocks.destinations }))
 vi.mock('@/server/events/dispatcher', () => ({ emitInternalEvent: mocks.emit }))
@@ -73,7 +73,8 @@ describe('developer configured outbound delivery', () => {
     expect(mocks.emit).not.toHaveBeenCalled()
   })
   it('reports actual successful sends instead of counting retry outcomes as successes', async () => {
-    mocks.findMany.mockResolvedValue([{ id: 'delivery' }]); prepare()
+    mocks.queryRaw.mockResolvedValueOnce([delivery()]).mockResolvedValue([]);
+    mocks.updateManyAndReturn.mockImplementation(async ({ data }) => [delivery(data)])
     vi.mocked(fetch).mockRejectedValue(new Error('Network unavailable'))
     expect(await processDueOutboundDeliveries()).toEqual({ processed: 1, success: 0, failures: 1 })
   })

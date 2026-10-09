@@ -984,3 +984,6 @@ a.sectionButtonActive:focus-visible {
   .configRow { flex-wrap: wrap; gap: .75rem; }
   .disclosure > .configStack { padding: 1rem; }
 }
+
+.formFields { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 16px; }
+.formActions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

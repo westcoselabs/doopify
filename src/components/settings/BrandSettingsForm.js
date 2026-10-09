@@ -1,5 +1,6 @@
 "use client";
 
+import useSettingsDraft from "./useSettingsDraft";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -16,7 +17,6 @@ const ASSETS = [
   ["emailLogoUrl", "Email logo"],
 ];
 const FIELDS = [
-  ["name", "Brand name"],
   ["supportEmail", "Support email"],
   ["emailFooterText", "Email footer"],
   ["instagramUrl", "Instagram URL"],
@@ -27,7 +27,7 @@ const FIELDS = [
 
 export default function BrandSettingsForm({ initialBrand }) {
   const router = useRouter();
-  const [draft, setDraft] = useState(initialBrand);
+  const { draft, setDraft, dirty, reset, accept, changes } = useSettingsDraft(initialBrand);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -55,20 +55,17 @@ export default function BrandSettingsForm({ initialBrand }) {
   }
   async function save(event) {
     event.preventDefault();
+    if (busy || !dirty) return;
     setBusy("save");
     setError("");
     setNotice("");
     try {
-      const payload = Object.fromEntries(
-        [...ASSETS, ...FIELDS]
-          .filter(([key]) => draft[key] !== initialBrand[key])
-          .map(([key]) => [key, draft[key] || ""]),
-      );
+      const payload = changes([...ASSETS, ...FIELDS].map(([key]) => key));
       const updated = await settingsRequest(
         "/api/settings/brand-kit",
         jsonRequest("PATCH", payload),
       );
-      setDraft(updated);
+      accept(updated);
       setNotice("Brand settings saved.");
       router.refresh();
     } catch (failure) {
@@ -84,10 +81,13 @@ export default function BrandSettingsForm({ initialBrand }) {
         Logos and support identity appear in your storefront, checkout, customer
         emails and packing slips. Theme colors remain managed by the storefront.
       </p>
+      <Link prefetch={false} href="/admin/settings/general">Edit store name in General</Link>
+      <fieldset disabled={Boolean(busy)} className={styles.formFields}>
       <div className={styles.brandFieldGrid}>
         {ASSETS.map(([key, label]) => (
-          <fieldset key={key}>
-            <legend>{label}</legend>
+          <details key={key} open={key === "logoUrl" || key === "faviconUrl"} className={styles.disclosure}>
+            <summary>{key === "checkoutLogoUrl" || key === "emailLogoUrl" ? `Use a different ${label.toLowerCase()}` : label}</summary>
+            <div className={styles.configStack}>
             {draft[key] && (
               <img
                 src={draft[key]}
@@ -103,12 +103,14 @@ export default function BrandSettingsForm({ initialBrand }) {
                 onChange={(event) => upload(key, event.target.files?.[0])}
               />
             </AdminField>
+            <details><summary>Enter an image URL</summary>
             <AdminField label={`${label} URL`}>
               <AdminInput
                 value={draft[key] || ""}
                 onChange={(event) => patch(key, event.target.value)}
               />
             </AdminField>
+            </details>
             <AdminButton
               type="button"
               variant="ghost"
@@ -116,7 +118,8 @@ export default function BrandSettingsForm({ initialBrand }) {
             >
               Remove {label.toLowerCase()}
             </AdminButton>
-          </fieldset>
+            </div>
+          </details>
         ))}
       </div>
       <div className={styles.drawerFormGrid}>
@@ -135,9 +138,11 @@ export default function BrandSettingsForm({ initialBrand }) {
       </Link>
       {error && <p role="alert">{error}</p>}
       {notice && <p role="status">{notice}</p>}
-      <AdminButton type="submit" disabled={Boolean(busy)}>
+      <AdminButton type="submit" disabled={Boolean(busy) || !dirty}>
         {busy ? "Saving…" : "Save branding"}
       </AdminButton>
+      <AdminButton variant="ghost" disabled={!dirty} onClick={reset}>Reset</AdminButton>
+      </fieldset>
     </form>
   );
 }

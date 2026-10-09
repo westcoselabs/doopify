@@ -1,7 +1,7 @@
 import { Prisma, type ShippingLiveProvider } from '@prisma/client'
 
 import { prisma } from '@/lib/prisma'
-import { emitInternalEvent } from '@/server/events/dispatcher'
+import { enqueueCommerceEvent } from '@/server/events/outbox'
 import {
   getShippingProviderApiKey,
   getShippingProviderConnectionStatus,
@@ -672,14 +672,13 @@ export async function buyOrderShippingLabel(input: {
       data: timelineEvents,
     })
 
+    await enqueueCommerceEvent(tx, 'fulfillment.created', {
+      fulfillmentId: fulfillment.id,
+      orderId: order.id,
+      trackingNumber: fulfillment.trackingNumber ?? undefined,
+      sendTrackingEmail: shouldQueueTrackingEmail,
+    }, fulfillment.id)
     return { fulfillment, shippingLabel }
-  })
-
-  await emitInternalEvent('fulfillment.created', {
-    fulfillmentId: saved.fulfillment.id,
-    orderId: order.id,
-    trackingNumber: saved.fulfillment.trackingNumber ?? undefined,
-    sendTrackingEmail: shouldQueueTrackingEmail,
   })
 
   return {

@@ -117,3 +117,5 @@ describe('POST /api/jobs/run', () => {
     )
   })
 })
+
+vi.mock('@/server/checkout/shipping-quote-cache', () => ({ pruneExpiredCheckoutShippingQuotes: vi.fn().mockResolvedValue(0) }))

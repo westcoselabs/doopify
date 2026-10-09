@@ -1,5 +1,6 @@
 "use client";
 
+import useSettingsDraft from "./useSettingsDraft";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import AdminButton from "../admin/ui/AdminButton";
@@ -15,7 +16,7 @@ import styles from "./SettingsWorkspace.module.css";
 
 export default function GeneralSettingsForm({ initialStore }) {
   const router = useRouter();
-  const [draft, setDraft] = useState(initialStore);
+  const { draft, setDraft, dirty, reset, accept, changes } = useSettingsDraft(initialStore);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -25,11 +26,12 @@ export default function GeneralSettingsForm({ initialStore }) {
   };
   async function save(event) {
     event.preventDefault();
+    if (saving || !dirty) return;
     setSaving(true);
     setError("");
     setMessage("");
     try {
-      const fields = Object.fromEntries(
+      const fields = changes(
         [
           "name",
           "email",
@@ -41,9 +43,9 @@ export default function GeneralSettingsForm({ initialStore }) {
           "country",
           "currency",
           "timezone",
-        ].map((key) => [key, draft[key] ?? ""]),
+        ],
       );
-      await settingsRequest("/api/settings", jsonRequest("PATCH", fields));
+      accept(await settingsRequest("/api/settings", jsonRequest("PATCH", fields)));
       setMessage("Store settings saved.");
       router.refresh();
     } catch (failure) {
@@ -55,6 +57,7 @@ export default function GeneralSettingsForm({ initialStore }) {
   return (
     <form onSubmit={save} className={styles.configStack}>
       <header className={styles.pageIntro}><h1>General</h1><p>Your store identity, contact details and regional preferences.</p></header>
+      <fieldset disabled={saving} className={styles.formFields}>
       <div className={styles.drawerFormGrid}>
         {[
           ["name", "Store name"],
@@ -92,9 +95,11 @@ export default function GeneralSettingsForm({ initialStore }) {
       </div>
       {error && <p role="alert">{error}</p>}
       {message && <p role="status">{message}</p>}
-      <AdminButton type="submit" disabled={saving}>
+      <AdminButton type="submit" disabled={saving || !dirty}>
         {saving ? "Saving…" : "Save settings"}
       </AdminButton>
+      <AdminButton variant="ghost" disabled={!dirty} onClick={reset}>Reset</AdminButton>
+      </fieldset>
     </form>
   );
 }

@@ -1,11 +1,13 @@
 "use client";
+import { memo } from "react";
 
-import { useProductStore } from '../../context/ProductContext';
+
+import { useProductNotifications } from '../../context/ProductContext';
 import AdminButton from '../admin/ui/AdminButton';
 import styles from './ConfirmDialog.module.css';
 
-export default function ConfirmDialog() {
-  const { confirmDialog, actions } = useProductStore();
+function ConfirmDialog() {
+  const { confirmDialog, actions } = useProductNotifications();
 
   if (!confirmDialog) {
     return null;
@@ -44,3 +46,5 @@ export default function ConfirmDialog() {
     </div>
   );
 }
+
+export default memo(ConfirmDialog);

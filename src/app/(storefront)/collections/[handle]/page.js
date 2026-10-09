@@ -4,7 +4,7 @@ import CollectionDetailView from '@/components/storefront/CollectionDetailView';
 import {
   getStorefrontCollectionByHandle,
   getStorefrontCollectionMetadata,
-  getStorefrontCollectionSummaries,
+  getStorefrontCollectionLinks,
 } from '@/server/services/collection.service';
 
 export async function generateMetadata({ params }) {
@@ -26,11 +26,11 @@ export async function generateMetadata({ params }) {
 export default async function CollectionPage({ params, searchParams }) {
   const { handle } = await params;
   const query = await searchParams;
-  const [collection, peerResult] = await Promise.all([
+  const [collection, peerCollections] = await Promise.all([
     getStorefrontCollectionByHandle(handle, { page: Number(query?.page) }),
-    getStorefrontCollectionSummaries({ pageSize: 5, excludeHandle: handle }).catch((error) => {
+    getStorefrontCollectionLinks({ limit: 5, excludeHandle: handle }).catch((error) => {
       console.error('[CollectionPage]', error);
-      return { collections: [] };
+      return [];
     }),
   ]);
 
@@ -38,5 +38,5 @@ export default async function CollectionPage({ params, searchParams }) {
     notFound();
   }
 
-  return <CollectionDetailView collection={collection} peerCollections={peerResult.collections} />;
+  return <CollectionDetailView collection={collection} peerCollections={peerCollections} />;
 }

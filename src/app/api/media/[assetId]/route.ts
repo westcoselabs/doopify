@@ -4,7 +4,6 @@ import { findPrimaryStore } from '@/server/services/primary-store.service'
 import { requireAdmin } from '@/server/auth/require-auth'
 import {
   getMediaPublicUrl,
-  getMediaStorageAdapter,
   getMediaStorageAdapterForProvider,
   MediaStorageConfigError,
 } from '@/server/media/media-storage'
@@ -15,10 +14,14 @@ interface Params {
   params: Promise<{ assetId: string }>
 }
 
-export async function GET(_req: Request, { params }: Params) {
+export async function GET(req: Request, { params }: Params) {
   try {
     const { assetId } = await params
-    const asset = await getMediaStorageAdapter().get(assetId)
+    const metadata = await prisma.mediaAsset.findUnique({
+      where: { id: assetId }, select: { storageProvider: true },
+    })
+    if (!metadata) return err('Asset not found', 404)
+    const asset = await getMediaStorageAdapterForProvider(metadata.storageProvider).get(assetId, req.signal)
     if (!asset) return err('Asset not found', 404)
     if (asset.redirectUrl) {
       return NextResponse.redirect(asset.redirectUrl, {
@@ -28,9 +31,10 @@ export async function GET(_req: Request, { params }: Params) {
         },
       })
     }
-    if (!asset.body) return err('Asset not found', 404)
+    if (!asset.body && !asset.stream) return err('Asset not found', 404)
 
-    return new NextResponse(new Uint8Array(asset.body), {
+    const body = asset.stream ?? new Uint8Array(asset.body!.buffer, asset.body!.byteOffset, asset.body!.byteLength)
+    return new NextResponse(body as BodyInit, {
       status: 200,
       headers: {
         'Content-Type': asset.mimeType,

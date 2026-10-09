@@ -49,6 +49,8 @@ import { MediaStorageConfigError } from '@/server/media/media-storage'
 describe('GET /api/media/[assetId]', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mocks.getMediaAssetById.mockResolvedValue({ storageProvider: 's3' });
+    mocks.getMediaStorageAdapterForProvider.mockReturnValue({ get: mocks.getAsset });
     mocks.getAsset.mockResolvedValue({
       redirectUrl: 'https://blob.vercel-storage.com/media/asset_1/image.png',
       mimeType: 'image/png',

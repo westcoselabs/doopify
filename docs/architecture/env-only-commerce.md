@@ -24,7 +24,7 @@ Postgres owns products, prices, stock, customers, orders, refunds, returns, stor
 | `/admin/settings/general` | Store identity, address, currency and timezone |
 | `/admin/settings/brand` | Logos, support identity and social links |
 | `/admin/settings/shipping` | Shipping behavior, manual/fallback rates, packages, origin locations, pickup, local delivery and packing slips |
-| `/admin/settings/taxes` | Tax strategy, rules and origin |
+| `/admin/settings/taxes` | Flat manual tax controls and preview; retained regional rules/origin are read-only |
 | `/admin/settings/email` | Customer-message content, enablement and reply-to overrides |
 | `/admin/account` | Password, sessions and owner MFA |
 | `/admin/system/team` | Owner-only team and invites |
@@ -49,6 +49,8 @@ Pricing remains server-owned and uses integer minor units. Verified Stripe succe
 
 Inbound signatures are checked before canonical delivery state is written. Rejected payloads use a separate hash-derived identity. Verified duplicate receipts cannot reset payload, outcome or retry ownership. Ingress, automatic retries and manual replay share atomic expiring claims. Jobs and outbound delivery completion also require the current unexpired claim.
 
+Commerce event intent is written into the existing jobs table inside the producing transaction. A dispatch receipt and all internal consumer writes share a fenced transaction, so crash recovery does not duplicate internal fan-out. Checkout live quotes are expiring Postgres snapshots shared across replicas.
+
 Runner batches bound concurrency and acquisition time; crashed claims can expire and become eligible again. An email send can succeed externally just before a process crashes. Such uncertain outcomes require operator reconciliation rather than an automatic duplicate send. This is not an exactly-once external-delivery guarantee.
 
 ## Performance acceptance
@@ -63,7 +65,7 @@ Measure production client chunks and real browser requests separately. Compare t
 | Logos, favicon, support identity, social links, email footer | Brand; merchant identity. Frontend colors/fonts/button styles are code-owned, and the admin mutation API rejects them. Existing values remain readable during migration. |
 | Shipping mode, manual/fallback rates and fallback policy | Shipping; customer-facing pricing behavior. Provider selectors and credentials remain env-only. |
 | Locations, packages, fulfillment instructions, pickup/local delivery, packing slips | Shipping; operational business preferences. Locations can be added and edited from the page. |
-| Tax enablement, strategy, rates, origin and shipping/inclusive-tax rules | Taxes; server-owned commerce calculations. |
+| Tax enablement, flat manual rate and shipping/inclusive-tax rules | Taxes; server-owned commerce calculations. Regional rules and origin are retained read-only until an explicit behavior migration. |
 | Customer email enablement, subject, copy, footer and reply-to | Customer emails; message content. Store contact is edited once in General; sender transport/authentication remain deployment concerns. |
 | Password, sessions, MFA | My account; personal security, outside merchant Settings. |
 | Users, roles, invites | System → Team; owner-only access administration. |

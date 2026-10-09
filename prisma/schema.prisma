@@ -1345,8 +1345,19 @@ model EmailDelivery {
   @@map("email_deliveries")
 }
 
+model CheckoutShippingQuote {
+  tokenHash String @id
+  snapshot Json
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("checkout_shipping_quotes")
+}
+
 model Job {
   id          String    @id @default(cuid())
+  deduplicationKey String? @unique
   type        String
   payload     Json
   status      JobStatus @default(PENDING)
@@ -1367,6 +1378,13 @@ model Job {
   @@index([lockedAt])
   @@index([status, leaseExpiresAt])
   @@map("jobs")
+}
+
+model EventDispatchReceipt {
+  eventId String @id
+  dispatchedAt DateTime @default(now())
+
+  @@map("event_dispatch_receipts")
 }
 
 model JobRunnerHeartbeat {

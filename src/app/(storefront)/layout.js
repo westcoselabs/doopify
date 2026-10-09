@@ -2,7 +2,7 @@ import '../_styles/shared-base.css';
 import '../_styles/storefront-theme.css';
 import { inter, manrope } from '../_shared/fonts';
 import { CartProvider } from '@/context/CartContext';
-import { getPublicStorefrontSettings } from '@/server/services/settings.service';
+import { getStorefrontDocumentSettings } from '@/server/services/settings.service';
 
 export const metadata = {
   title: 'Doopify | Storefront',
@@ -13,7 +13,7 @@ export default async function StorefrontLayout({ children }) {
   let store = null;
 
   try {
-    store = await getPublicStorefrontSettings();
+    store = await getStorefrontDocumentSettings();
   } catch (error) {
     console.error('[StorefrontLayout]', error);
   }

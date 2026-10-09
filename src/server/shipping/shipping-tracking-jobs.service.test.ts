@@ -64,7 +64,8 @@ describe('shipping tracking jobs service', () => {
     expect(mocks.enqueueJob).toHaveBeenCalledWith(
       'SYNC_SHIPPING_TRACKING',
       { fulfillmentId: 'ful_1', orderId: 'order_1' },
-      expect.objectContaining({ maxAttempts: 5 })
+      expect.objectContaining({ maxAttempts: 5 }),
+      undefined
     )
   })
 

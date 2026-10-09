@@ -1,3 +1,4 @@
+import { PassThrough } from 'node:stream'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { buildS3MediaStorageKey, createS3MediaStorageAdapter } from './s3-media-storage'
@@ -239,3 +240,29 @@ describe('s3 media storage adapter', () => {
     expect(mock.getObject).not.toHaveBeenCalled()
   })
 })
+
+it('streams private objects incrementally and releases the source on cancellation', async () => {
+  const body = new PassThrough();
+  const mock = buildDeps({ getObject: vi.fn().mockResolvedValue(body) });
+  const adapter = createS3MediaStorageAdapter({ endpoint: 'https://example.test', bucket: 'media', accessKeyId: 'inert', secretAccessKey: 'inert', region: 'auto' }, mock.deps as any);
+  const result = await adapter.get('asset_123');
+  expect(result?.body).toBeUndefined();
+  const reader = result!.stream!.getReader();
+  body.write(Buffer.from('first chunk'));
+  expect(new TextDecoder().decode((await reader.read()).value)).toBe('first chunk');
+  await reader.cancel();
+  expect(body.destroyed).toBe(true);
+});
+
+it('propagates request cancellation to the object source', async () => {
+  const body = new PassThrough();
+  const mock = buildDeps({ getObject: vi.fn().mockResolvedValue(body) });
+  const adapter = createS3MediaStorageAdapter({ endpoint: 'https://example.test', bucket: 'media', accessKeyId: 'inert', secretAccessKey: 'inert', region: 'auto' }, mock.deps as any);
+  const abort = new AbortController();
+  const result = await adapter.get('asset_123', abort.signal);
+  const reader = result!.stream!.getReader();
+  const pending = reader.read();
+  abort.abort();
+  await expect(pending).rejects.toThrow('Media request cancelled');
+  expect(body.destroyed).toBe(true);
+});

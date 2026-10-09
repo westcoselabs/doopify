@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/prisma'
 import { enqueueJob } from '@/server/jobs/job.service'
 import { getShippingProviderTrackingStatus } from '@/server/shipping/shipping-provider.service'
@@ -61,7 +62,7 @@ async function queueFollowUpTrackingPoll(input: {
 export async function queueShippingTrackingSyncJob(input: {
   fulfillmentId: string
   orderId: string
-}) {
+}, client?: Prisma.TransactionClient) {
   return enqueueJob(
     'SYNC_SHIPPING_TRACKING',
     {
@@ -71,7 +72,8 @@ export async function queueShippingTrackingSyncJob(input: {
     {
       runAt: new Date(),
       maxAttempts: 5,
-    }
+    },
+    client
   )
 }
 

@@ -16,7 +16,8 @@ Repository checks and a synthetic rehearsal do not complete step 5.
 
 ## Next work
 
-- Close the post-commit event crash window with a transactional outbox. Preserve the static registry, saved checkout/promotion snapshots and consumer idempotency.
+- Immediate engineering priority remains the 100-RPS p95. Route balancing, buffered tracing, collection-link reads and favicon projection are implemented and verified locally. Final runs were 216/7,887/146 ms p95; one failed with drops and request errors, so repeatable latency improvement is not established. Capture the saturation window with the corrected connection-owner tracing and distinguish pool hold/wait time from SQL, framework/GC and host contention before another targeted change. Preserve freshness and two replicas with ten connections each. See [the focused evidence](performance/scaling-hardening.md#focused-100-rps-pass). Burst, soak and deployment work remain pending.
+- Transactional commerce outbox, shared shipping quotes and Settings draft/rendering simplifications are implemented on the branch. Roll out matching application/worker artifacts and additive migrations, then complete the [capacity and soak gates](performance/scaling-hardening.md).
 - Migrate remaining legacy Store shipping/tax fields to canonical locations, packages, rates and rules only after proving equivalent behavior on restored data. Historical theme values remain readable; the admin cannot change frontend design tokens. Do not drop fields or remove compatibility readers during a UI cleanup.
 - Complete deployment-specific restore, webhook, email deliverability, CSP enforcement and load/capacity checks from [HARDENING](HARDENING.md).
 - Extend real-DB race tests as new consumers are added; move remaining route business logic into existing services.

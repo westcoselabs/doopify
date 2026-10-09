@@ -1,0 +1,451 @@
+{
+  "measuredAt": "2026-09-24T23:02:34.920Z",
+  "revision": "c7b36d7ba428e530f518060e29d30d58687981bc",
+  "workingTree": "Uncommitted scaling hardening changes; implementation report describes scope.",
+  "buildId": "UOkbznfV7Sedymf07tNAB",
+  "environment": {
+    "os": "win32",
+    "node": "v24.11.1",
+    "replicas": 2,
+    "poolMaxPerReplica": 10,
+    "fixture": {
+      "products": 1000,
+      "variants": 2000,
+      "orders": 10000
+    },
+    "targets": "Two loopback production Next.js servers and Postgres 16 on the same machine; no provider I/O"
+  },
+  "runs": [
+    {
+      "phase": "before production pool reuse",
+      "runId": "capacity-1790290161975",
+      "rate": 100,
+      "seconds": 60,
+      "replicas": 2,
+      "offered": 6000,
+      "completed": 6000,
+      "dropped": 0,
+      "failures": 0,
+      "workerFailures": 0,
+      "statuses": {
+        "200": 6000
+      },
+      "achievedRps": 99.9352105040021,
+      "p50Ms": 48.63959999999497,
+      "p95Ms": 1374.5208999999995,
+      "p99Ms": 2026.4920999999995,
+      "database": [
+        {
+          "at": 1790290168774,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 31
+        },
+        {
+          "at": 1790290174060,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 31
+        },
+        {
+          "at": 1790290178891,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 31
+        },
+        {
+          "at": 1790290183682,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 31
+        },
+        {
+          "at": 1790290188587,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 30
+        },
+        {
+          "at": 1790290193680,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 30
+        },
+        {
+          "at": 1790290198572,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 31
+        },
+        {
+          "at": 1790290203642,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 31
+        },
+        {
+          "at": 1790290208813,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 30
+        },
+        {
+          "at": 1790290213617,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 30
+        },
+        {
+          "at": 1790290218568,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 30
+        },
+        {
+          "at": 1790290223558,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 30
+        }
+      ],
+      "passed": false,
+      "runtime": [
+        {
+          "pid": 27488,
+          "sampleCount": 12,
+          "poolCountMax": 3,
+          "poolConnectionsMax": 16,
+          "poolWaitMax": 157,
+          "rssMiBMin": 337.7265625,
+          "rssMiBMax": 738.48828125,
+          "heapMiBMin": 142.53126525878906,
+          "heapMiBMax": 509.1736145019531,
+          "eventLoopP99MsMax": 68.091903,
+          "cpuCorePercentMax": 129.68
+        },
+        {
+          "pid": 29876,
+          "sampleCount": 12,
+          "poolCountMax": 3,
+          "poolConnectionsMax": 15,
+          "poolWaitMax": 73,
+          "rssMiBMin": 336.921875,
+          "rssMiBMax": 755.6171875,
+          "heapMiBMin": 162.8675765991211,
+          "heapMiBMax": 510.319091796875,
+          "eventLoopP99MsMax": 92.012543,
+          "cpuCorePercentMax": 131.26
+        }
+      ]
+    },
+    {
+      "phase": "after production pool reuse",
+      "routeLatencies": {
+        "/shop": {
+          "requests": 3600,
+          "p50Ms": 44.61729999999989,
+          "p95Ms": 1360.0952000000034,
+          "p99Ms": 1725.4956999999995
+        },
+        "/shop/performance-product-20": {
+          "requests": 600,
+          "p50Ms": 30.04439999999886,
+          "p95Ms": 717.8943999999974,
+          "p99Ms": 839.4185999999972
+        },
+        "/admin/settings/shipping": {
+          "requests": 600,
+          "p50Ms": 31.772399999999834,
+          "p95Ms": 1941.4199999999983,
+          "p99Ms": 2197.5252000000037
+        },
+        "/collections/performance-collection-1": {
+          "requests": 600,
+          "p50Ms": 44.48649999999907,
+          "p95Ms": 1842.8689999999988,
+          "p99Ms": 2062.4380999999994
+        },
+        "/collections/performance-collection-0": {
+          "requests": 600,
+          "p50Ms": 38.68890000000101,
+          "p95Ms": 1597.4251999999979,
+          "p99Ms": 1760.5912000000026
+        }
+      },
+      "runId": "capacity-1790290547556",
+      "rate": 100,
+      "seconds": 60,
+      "replicas": 2,
+      "offered": 6000,
+      "completed": 6000,
+      "dropped": 0,
+      "failures": 0,
+      "workerFailures": 0,
+      "statuses": {
+        "200": 6000
+      },
+      "achievedRps": 98.71330952144558,
+      "p50Ms": 42.39000000000124,
+      "p95Ms": 1390.9686999999976,
+      "p99Ms": 1905.2655000000013,
+      "database": [
+        {
+          "at": 1790290554413,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290559288,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290564247,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290569274,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 20
+        },
+        {
+          "at": 1790290574235,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290579244,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290584231,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290589249,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290594242,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290599246,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290605453,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290609694,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290609956,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        }
+      ],
+      "passed": false,
+      "runtime": [
+        {
+          "pid": 24260,
+          "sampleCount": 12,
+          "poolCountMax": 1,
+          "poolConnectionsMax": 10,
+          "poolWaitMax": 92,
+          "rssMiBMin": 322.046875,
+          "rssMiBMax": 531.0859375,
+          "heapMiBMin": 111.65760040283203,
+          "heapMiBMax": 305.716064453125,
+          "eventLoopP99MsMax": 116.981759,
+          "cpuCorePercentMax": 123.14
+        },
+        {
+          "pid": 34840,
+          "sampleCount": 12,
+          "poolCountMax": 1,
+          "poolConnectionsMax": 10,
+          "poolWaitMax": 125,
+          "rssMiBMin": 312.58984375,
+          "rssMiBMax": 585.1484375,
+          "heapMiBMin": 139.93570709228516,
+          "heapMiBMax": 374.3865966796875,
+          "eventLoopP99MsMax": 46.923775,
+          "cpuCorePercentMax": 117.18
+        }
+      ]
+    },
+    {
+      "phase": "overload after production pool reuse",
+      "routeLatencies": {
+        "/shop/performance-product-20": {
+          "requests": 899,
+          "p50Ms": 736.6491999999998,
+          "p95Ms": 1644.1034000000002,
+          "p99Ms": 1857.1950000000006
+        },
+        "/shop": {
+          "requests": 5631,
+          "p50Ms": 2743.831000000001,
+          "p95Ms": 8104.541900000004,
+          "p99Ms": 8692.580500000004
+        },
+        "/collections/performance-collection-0": {
+          "requests": 916,
+          "p50Ms": 1251.8006999999998,
+          "p95Ms": 3057.2640999999994,
+          "p99Ms": 3186.8525
+        },
+        "/collections/performance-collection-1": {
+          "requests": 890,
+          "p50Ms": 4428.707400000003,
+          "p95Ms": 8680.095999999998,
+          "p99Ms": 9068.006999999998
+        },
+        "/admin/settings/shipping": {
+          "requests": 926,
+          "p50Ms": 4978.272700000001,
+          "p95Ms": 9849.821300000003,
+          "p99Ms": 10019.8724
+        }
+      },
+      "runId": "capacity-1790290745748",
+      "rate": 500,
+      "seconds": 60,
+      "replicas": 2,
+      "offered": 30000,
+      "completed": 9262,
+      "dropped": 20738,
+      "failures": 13,
+      "workerFailures": 0,
+      "statuses": {
+        "200": 9249
+      },
+      "achievedRps": 146.66123915572592,
+      "p50Ms": 2837.8482000000004,
+      "p95Ms": 8482.868000000002,
+      "p99Ms": 9523.432399999998,
+      "database": [
+        {
+          "at": 1790290754201,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290758943,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290763582,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290768727,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290774030,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290780242,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290786187,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290791802,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290802338,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290808795,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        },
+        {
+          "at": 1790290809439,
+          "pending": 0,
+          "oldestSeconds": null,
+          "connections": 21
+        }
+      ],
+      "passed": false,
+      "runtime": [
+        {
+          "pid": 24260,
+          "sampleCount": 13,
+          "poolCountMax": 1,
+          "poolConnectionsMax": 10,
+          "poolWaitMax": 979,
+          "rssMiBMin": 352.79296875,
+          "rssMiBMax": 890.83203125,
+          "heapMiBMin": 150.30583953857422,
+          "heapMiBMax": 454.4358825683594,
+          "eventLoopP99MsMax": 92.274687,
+          "cpuCorePercentMax": 155.02
+        },
+        {
+          "pid": 34840,
+          "sampleCount": 13,
+          "poolCountMax": 1,
+          "poolConnectionsMax": 10,
+          "poolWaitMax": 999,
+          "rssMiBMin": 364.27734375,
+          "rssMiBMax": 1192.48046875,
+          "heapMiBMin": 155.0058364868164,
+          "heapMiBMax": 874.1682205200195,
+          "eventLoopP99MsMax": 74.514431,
+          "cpuCorePercentMax": 161.9
+        }
+      ]
+    }
+  ],
+  "buildIdAppliesTo": "The two runs after production pool reuse; the preceding run used the previous build."
+}

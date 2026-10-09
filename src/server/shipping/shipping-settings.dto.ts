@@ -1,4 +1,4 @@
-import type { getShippingSettingsStore } from "./shipping-settings.service";
+import type { getShippingSettingsStore, getShippingWorkspaceSettings } from "./shipping-settings.service";
 import { centsToDollars } from "@/lib/money";
 import {
   resolveActiveRateProvider,
@@ -9,17 +9,7 @@ export function serializeShippingSettings(
   store: NonNullable<Awaited<ReturnType<typeof getShippingSettingsStore>>>,
 ) {
   return {
-    storeId: store.id,
-    storeCountry: store.country,
-    shippingMode: store.shippingMode,
-    activeRateProvider: resolveActiveRateProvider() || "NONE",
-    labelProvider: resolveLabelProvider() || "NONE",
-    fallbackBehavior:
-      store.fallbackBehavior ||
-      (store.shippingFallbackEnabled === false
-        ? "HIDE_SHIPPING"
-        : "SHOW_FALLBACK"),
-    currency: store.currency,
+    ...serializeShippingWorkspace(store),
     shippingOriginName: store.shippingOriginName,
     shippingOriginPhone: store.shippingOriginPhone,
     shippingOriginAddress1: store.shippingOriginAddress1,
@@ -50,6 +40,47 @@ export function serializeShippingSettings(
     shippingInternationalRate: centsToDollars(
       store.shippingInternationalRateCents,
     ),
+    shippingZones: store.shippingZones.map(zone => ({
+      id: zone.id,
+      name: zone.name,
+      countryCode: zone.countryCode,
+      provinceCode: zone.provinceCode,
+      isActive: zone.isActive,
+      priority: zone.priority,
+      rates: zone.rates.map(rate => ({
+        id: rate.id,
+        name: rate.name,
+        method: rate.method,
+        amount: centsToDollars(rate.amountCents),
+        minSubtotal:
+          rate.minSubtotalCents == null
+            ? null
+            : centsToDollars(rate.minSubtotalCents),
+        maxSubtotal:
+          rate.maxSubtotalCents == null
+            ? null
+            : centsToDollars(rate.maxSubtotalCents),
+        isActive: rate.isActive,
+        priority: rate.priority,
+      })),
+    })),
+  };
+}
+
+/** Safe, minimal payload for the shipping workspace; legacy zones are not active UI. */
+export function serializeShippingWorkspace(store: NonNullable<Awaited<ReturnType<typeof getShippingWorkspaceSettings>>>) {
+  return {
+    storeId: store.id,
+    storeCountry: store.country,
+    currency: store.currency,
+    shippingMode: store.shippingMode,
+    activeRateProvider: resolveActiveRateProvider() || 'NONE',
+    labelProvider: resolveLabelProvider() || 'NONE',
+    fallbackBehavior: store.fallbackBehavior || (store.shippingFallbackEnabled === false ? 'HIDE_SHIPPING' : 'SHOW_FALLBACK'),
+    email: store.email,
+    phone: store.phone,
+    supportEmail: store.supportEmail,
+    shippingOriginPhone: store.shippingOriginPhone,
     manualFulfillmentInstructions: store.manualFulfillmentInstructions,
     manualTrackingBehavior: store.manualTrackingBehavior,
     localDeliveryEnabled: store.localDeliveryEnabled,
@@ -71,7 +102,7 @@ export function serializeShippingSettings(
     packingSlipShowSku: store.packingSlipShowSku,
     packingSlipShowProductImages: store.packingSlipShowProductImages,
     packingSlipFooterNote: store.packingSlipFooterNote,
-    shippingPackages: (store.shippingPackages || []).map((entry: any) => ({
+    shippingPackages: (store.shippingPackages || []).map(entry => ({
       id: entry.id,
       name: entry.name,
       type: entry.type,
@@ -86,7 +117,7 @@ export function serializeShippingSettings(
       createdAt: entry.createdAt,
       updatedAt: entry.updatedAt,
     })),
-    shippingLocations: (store.shippingLocations || []).map((location: any) => ({
+    shippingLocations: (store.shippingLocations || []).map(location => ({
       id: location.id,
       name: location.name,
       contactName: location.contactName,
@@ -104,7 +135,7 @@ export function serializeShippingSettings(
       createdAt: location.createdAt,
       updatedAt: location.updatedAt,
     })),
-    shippingManualRates: (store.shippingManualRates || []).map((rate: any) => ({
+    shippingManualRates: (store.shippingManualRates || []).map(rate => ({
       id: rate.id,
       name: rate.name,
       regionCountry: rate.regionCountry,
@@ -132,7 +163,7 @@ export function serializeShippingSettings(
       updatedAt: rate.updatedAt,
     })),
     shippingFallbackRates: (store.shippingFallbackRates || []).map(
-      (rate: any) => ({
+      rate => ({
         id: rate.id,
         name: rate.name,
         regionCountry: rate.regionCountry,
@@ -145,29 +176,5 @@ export function serializeShippingSettings(
         updatedAt: rate.updatedAt,
       }),
     ),
-    shippingZones: store.shippingZones.map((zone: any) => ({
-      id: zone.id,
-      name: zone.name,
-      countryCode: zone.countryCode,
-      provinceCode: zone.provinceCode,
-      isActive: zone.isActive,
-      priority: zone.priority,
-      rates: zone.rates.map((rate: any) => ({
-        id: rate.id,
-        name: rate.name,
-        method: rate.method,
-        amount: centsToDollars(rate.amountCents),
-        minSubtotal:
-          rate.minSubtotalCents == null
-            ? null
-            : centsToDollars(rate.minSubtotalCents),
-        maxSubtotal:
-          rate.maxSubtotalCents == null
-            ? null
-            : centsToDollars(rate.maxSubtotalCents),
-        isActive: rate.isActive,
-        priority: rate.priority,
-      })),
-    })),
   };
 }

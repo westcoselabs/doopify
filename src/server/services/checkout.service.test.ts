@@ -1,8 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { clearCheckoutShippingQuoteCache } from '@/server/checkout/shipping-quote-cache'
+
+
+const { quoteRows } = vi.hoisted(() => ({ quoteRows: new Map<string, any>() }))
 
 const mocks = vi.hoisted(() => ({
   prisma: {
+    checkoutShippingQuote: {
+      create: vi.fn(async ({ data }) => { quoteRows.set(data.tokenHash, data); return data }),
+      findUnique: vi.fn(async ({ where }) => quoteRows.get(where.tokenHash) ?? null),
+    },
     productVariant: {
       findMany: vi.fn(),
     },
@@ -127,7 +133,7 @@ function makePromotionRecord(overrides: Record<string, unknown> = {}) {
 describe('checkout service', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    clearCheckoutShippingQuoteCache()
+    quoteRows.clear()
     mocks.getStoreSettings.mockResolvedValue({
       currency: 'USD',
       shippingThresholdCents: 7500,
@@ -2138,7 +2144,7 @@ describe('checkout service', () => {
     })
     const selectedShippingQuoteId = shippingRates.quotes[0]?.selectedShippingQuoteId
 
-    clearCheckoutShippingQuoteCache()
+    quoteRows.clear()
 
     await expect(
       createCheckoutPaymentIntent({

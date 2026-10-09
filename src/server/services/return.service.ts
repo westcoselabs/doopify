@@ -1,7 +1,7 @@
 import { type Prisma, type ReturnStatus } from '@prisma/client'
 
 import { prisma } from '@/lib/prisma'
-import { emitInternalEvent } from '@/server/events/dispatcher'
+import { enqueueCommerceEvent } from '@/server/events/outbox'
 import type { AuditActor } from '@/server/services/audit-log.service'
 import { issueRefund } from '@/server/services/refund.service'
 import { safeAuditReturnEvent, type ReturnAuditAction } from '@/server/services/return-audit.service'
@@ -105,19 +105,19 @@ export async function createReturn(input: CreateReturnInput) {
       },
     })
 
+    await enqueueCommerceEvent(tx, 'order.return_requested', {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      returnId: created.id,
+    }, created.id)
+
+    await enqueueCommerceEvent(tx, 'return.requested', {
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      returnId: created.id,
+    }, created.id)
+
     return created
-  })
-
-  await emitInternalEvent('order.return_requested', {
-    orderId: order.id,
-    orderNumber: order.orderNumber,
-    returnId: returnRecord.id,
-  })
-
-  await emitInternalEvent('return.requested', {
-    orderId: order.id,
-    orderNumber: order.orderNumber,
-    returnId: returnRecord.id,
   })
 
   await emitReturnAuditEventSafely({
@@ -193,23 +193,23 @@ export async function updateReturnStatus(
       },
     })
 
-    return result
-  })
-
-  await emitInternalEvent('order.return_updated', {
-    orderId: existing.orderId,
-    orderNumber: existing.order.orderNumber,
-    returnId,
-    status: data.status,
-  })
-
-  if (data.status === 'CLOSED') {
-    await emitInternalEvent('return.closed', {
+    await enqueueCommerceEvent(tx, 'order.return_updated', {
       orderId: existing.orderId,
       orderNumber: existing.order.orderNumber,
       returnId,
-    })
-  }
+      status: data.status,
+    }, `${returnId}:${data.status}`)
+
+    if (data.status === 'CLOSED') {
+      await enqueueCommerceEvent(tx, 'return.closed', {
+        orderId: existing.orderId,
+        orderNumber: existing.order.orderNumber,
+        returnId,
+      }, `${returnId}:${data.status}`)
+    }
+
+    return result
+  })
 
   const statusToAction: Partial<Record<ReturnStatus, ReturnAuditAction>> = {
     APPROVED: 'return.approved',

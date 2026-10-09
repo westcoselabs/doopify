@@ -19,6 +19,11 @@ describe('environment validation', () => {
     expect(envSchema.parse(productionBase).EMAIL_PROVIDER).toBe('none')
     expect(envSchema.safeParse({ ...productionBase, EMAIL_PROVIDER: 'preview' }).success).toBe(false)
   })
+  it('bounds per-runtime database pool configuration', () => {
+    expect(envSchema.parse(productionBase)).toMatchObject({ DATABASE_POOL_MAX: 10, DATABASE_POOL_TIMEOUT_MS: 5000 })
+    expect(envSchema.parse({ ...productionBase, DATABASE_POOL_MAX: '20', DATABASE_POOL_TIMEOUT_MS: '2500' })).toMatchObject({ DATABASE_POOL_MAX: 20, DATABASE_POOL_TIMEOUT_MS: 2500 })
+    for (const value of ['0', '101', 'invalid']) expect(envSchema.safeParse({ ...productionBase, DATABASE_POOL_MAX: value }).success).toBe(false)
+  })
   it('accepts an absent previous key in a migration export while preserving the effective current key', () => {
     const config = parseEnvironment({ ...productionBase, DATA_ENCRYPTION_KEY: ` ${productionBase.DATA_ENCRYPTION_KEY} `, DATA_ENCRYPTION_KEY_PREVIOUS: '' })
     expect(config.DATA_ENCRYPTION_KEY).toBe(productionBase.DATA_ENCRYPTION_KEY)

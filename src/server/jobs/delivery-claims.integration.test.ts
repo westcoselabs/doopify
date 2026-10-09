@@ -26,6 +26,15 @@ suite('real database delivery ownership', () => {
     expect((await prisma.job.findUniqueOrThrow({ where: { id: created.id } })).attempts).toBe(2)
   })
 
+  it('claims a batch across replicas without overlap or starvation', async () => {
+    const jobs = await Promise.all(Array.from({ length: 24 }, () => enqueueJob('CLAIM_TEST', {})));
+    const batches = await Promise.all(Array.from({ length: 4 }, () => claimDueJobs(6)));
+    const ids = batches.flat().map(row => row.id);
+    expect(ids).toHaveLength(24);
+    expect(new Set(ids).size).toBe(24);
+    expect(new Set(ids)).toEqual(new Set(jobs.map(row => row.id)));
+  });
+
   it('shares one inbound claim between ingress and replay, then recovers expiration', async () => {
     const delivery = await recordVerifiedWebhookDelivery({ provider: 'claim-test', providerEventId: 'evt_claim', eventType: 'order.paid', payload: '{"verified":true}' })
     const claims = (await Promise.all([claimWebhookDelivery(delivery.id), claimWebhookDelivery(delivery.id, true)])).filter(Boolean)
